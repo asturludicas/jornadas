@@ -8,9 +8,9 @@
 <!-- ═══════════ CONFIGURACIÓN — edita solo aquí ═══════════ -->
 <script>
 const CFG = {
-  ADMIN_PASS:      'asturludicas2025',
-  JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
-  JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
+  ADMIN_PASS:      'DanielyAlex',
+  JSONBIN_BIN_ID:  'PON_AQUI_TU_BIN_ID',
+  JSONBIN_API_KEY: 'PON_AQUI_TU_API_KEY',
   EVENTO:          'Jornadas Astur Lúdicas',
 
   // Servicios de comida en orden. todos=automático según modalidad, optin=el inscrito se apunta
@@ -178,12 +178,17 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 .card-title{font-size:14px;font-weight:600}
 
 /* ─── STATS ───────────────────────────────────────────── */
-.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
 @media(min-width:500px){.stats{grid-template-columns:repeat(3,1fr)}}
-@media(min-width:900px){.stats{grid-template-columns:repeat(6,1fr)}}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 12px;text-align:center}
-.stat-n{font-size:24px;font-weight:700;color:var(--accent);letter-spacing:-.5px}
-.stat-l{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;margin-top:2px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 16px;display:flex;align-items:center;gap:14px;box-shadow:var(--sh)}
+.stat-ico{font-size:24px;flex-shrink:0;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--accent-l)}
+.stat-body{flex:1;min-width:0}
+.stat-n{font-size:28px;font-weight:700;color:var(--accent);letter-spacing:-1px;line-height:1}
+.stat-l{font-size:12px;color:var(--ink3);margin-top:3px;font-weight:500}
+.stat.green .stat-ico{background:var(--green-l)}.stat.green .stat-n{color:var(--green)}
+.stat.amber .stat-ico{background:var(--amber-l)}.stat.amber .stat-n{color:var(--amber)}
+.stat.red .stat-ico{background:var(--red-l)}.stat.red .stat-n{color:var(--red)}
+.stat.purple .stat-ico{background:var(--purple-l)}.stat.purple .stat-n{color:var(--purple)}
 
 /* ─── TABLE ───────────────────────────────────────────── */
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -271,10 +276,13 @@ tbody tr:hover td{background:var(--paper)}
 /* ─── PERSON ROW ──────────────────────────────────────── */
 .prow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .prow:last-child{border-bottom:none}
+.prow.acomp{padding-left:14px;border-left:2px solid var(--border2)}
 .av{width:34px;height:34px;border-radius:50%;background:var(--accent-l);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+.av.acomp-av{background:var(--paper);color:var(--ink3);border:1px solid var(--border2)}
 .prow-info{flex:1;min-width:0}
 .prow-name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .prow-sub{font-size:11px;color:var(--ink3)}
+.prow-acomp-de{font-size:10px;color:var(--ink3);margin-top:1px;font-style:italic}
 
 /* ─── GDOT ────────────────────────────────────────────── */
 .gdot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -293,10 +301,18 @@ tbody tr:hover td{background:var(--paper)}
 
 /* ─── COMIDA CARD ─────────────────────────────────────── */
 .comida-card{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:10px}
-.comida-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--paper);cursor:pointer;user-select:none}
-.comida-body{padding:14px;display:none}
+.comida-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--surface);cursor:pointer;user-select:none;gap:10px}
+.comida-hd:hover{background:var(--paper)}
+.comida-count{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.comida-n{font-size:22px;font-weight:700;color:var(--accent);min-width:28px;text-align:right}
+.comida-body{padding:14px;display:none;border-top:1px solid var(--border)}
 .comida-body.open{display:block}
-.comida-alerg{background:var(--amber-l);border-radius:var(--rs);padding:8px 10px;font-size:12px;margin-top:10px}
+.comida-alerg-box{margin-bottom:12px}
+.comida-alerg-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--amber);margin-bottom:6px}
+.comida-alerg-item{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+.comida-alerg-item:last-child{border-bottom:none}
+.comida-alerg-nombre{font-weight:600;flex-shrink:0}
+.comida-alerg-val{color:var(--red);font-size:12px}
 
 /* ─── FILTERS ─────────────────────────────────────────── */
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
@@ -1011,13 +1027,13 @@ function renderDashboard(){
   const domOptin=Object.keys(DB.comidas_optin['comida_dom']||{}).length || (DB.comidas_optin['comida_dom']||[]).length;
 
   document.getElementById('stats-grid').innerHTML=[
-    {n:DB.personas.length, l:'Personas'},
-    {n:conAloj, l:'Con alojamiento'},
-    {n:totalPag.toFixed(0)+'€', l:'Pagado'},
-    {n:totalPend.toFixed(0)+'€', l:'Pendiente'},
-    {n:pend, l:'Solicitudes pend.'},
-    {n:domOptin, l:'Comida domingo'},
-  ].map(s=>`<div class="stat"><div class="stat-n">${s.n}</div><div class="stat-l">${s.l}</div></div>`).join('');
+    {n:DB.personas.length, ico:'👥', l:'Personas inscritas', cls:''},
+    {n:conAloj, ico:'🏨', l:'Con alojamiento', cls:'purple'},
+    {n:totalPag.toFixed(0)+'€', ico:'✅', l:'Total pagado', cls:'green'},
+    {n:totalPend.toFixed(0)+'€', ico:'⏳', l:'Pendiente de cobro', cls:'amber'},
+    {n:pend, ico:'📝', l:'Solicitudes pendientes', cls:pend>0?'red':''},
+    {n:domOptin, ico:'🍽', l:'Apuntados comida dom.', cls:''},
+  ].map(s=>`<div class="stat ${s.cls}"><div class="stat-ico">${s.ico}</div><div class="stat-body"><div class="stat-n">${s.n}</div><div class="stat-l">${s.l}</div></div></div>`).join('');
 
   document.getElementById('dash-quicklinks').innerHTML=[
     {ico:'👥',txt:'Personas',page:'personas'},
@@ -1075,10 +1091,13 @@ function renderPersonas(){
       <td><div style="display:flex;align-items:center;gap:7px">
         <span class="gdot" style="background:${gc}"></span>
         <div class="av" style="width:28px;height:28px;font-size:11px;flex-shrink:0">${av(p.Nombre||p.NombreCompleto||'')}</div>
-        <div><div style="font-weight:600;font-size:13px">${p.NombreCompleto||p.Nombre||''} ${p.Apellidos||''}</div>
-        <div style="font-size:11px;color:var(--ink3)">${p.Nick?'@'+p.Nick:''}</div></div></div></td>
+        <div>
+          <div style="font-weight:600;font-size:13px">${(p.NombreCompleto&&p.NombreCompleto.trim()&&!p.NombreCompleto.includes('undefined'))?p.NombreCompleto:(`${p.Nombre||''} ${p.Apellidos||''}`).trim()}</div>
+          ${p.Nick?`<div style="font-size:11px;color:var(--ink3)">@${p.Nick}</div>`:''}
+          ${p.GrupoID&&p.EsTitular!=='SI'?`<div style="font-size:10px;color:var(--ink3);font-style:italic">Acomp. de: ${(()=>{const t=DB.personas.find(x=>(x.ID||x.id||'')!==pid&&(x.GrupoID||'')===p.GrupoID&&x.EsTitular==='SI');return t?(t.NombreCompleto||t.Nombre||'titular'):p.GrupoID;})()}</div>`:''}
+        </div></div></td>
       <td style="font-size:12px"><div>${p.Modalidad||'—'}</div><div style="margin-top:2px">${alojChip}</div></td>
-      <td><div>${chipPago(ep)}</div>${tot>0?`<div class="pbar" style="width:70px;margin-top:3px"><div class="pbar-f ${ep==='pagado'?'':ep==='parcial'?'p':'z'}" style="width:${pct}%"></div></div><div style="font-size:10px;color:var(--ink3)">${fmt(pag)}€/${fmt(tot)}€</div>`:''}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">${chipPago(ep)}<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--ink3)" title="Marcar como pagado completamente"><input type="checkbox" ${ep==='pagado'?'checked':''} onchange="togglePagadoAdmin('${pid}',this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--green)"></label></div>${tot>0?`<div class="pbar" style="width:70px;margin-top:3px"><div class="pbar-f ${ep==='pagado'?'':ep==='parcial'?'p':'z'}" style="width:${pct}%"></div></div><div style="font-size:10px;color:var(--ink3)">${fmt(pag)}€/${fmt(tot)}€</div>`:''}</td>
       <td><code style="background:var(--paper);padding:2px 6px;border-radius:4px;font-size:11px">${p.Codigo||'—'}</code>
         ${!p.Codigo?`<button class="btn btn-xs" onclick="genCodigoPersona('${pid}')" style="margin-left:4px">🔑</button>`:''}</td>
       <td><div style="display:flex;gap:4px">
@@ -1291,7 +1310,6 @@ function exportAlojamiento(){
 function renderComidasAdmin(){
   const el=document.getElementById('comidas-list');
   el.innerHTML=CFG.COMIDAS.map(c=>{
-    // Personas que comen en este servicio
     let personas;
     if(c.optin){
       const ids=DB.comidas_optin[c.id]||[];
@@ -1299,35 +1317,41 @@ function renderComidasAdmin(){
     } else {
       personas=DB.personas.filter(p=>c.todos&&c.todos(p));
     }
-    const alergenos=personas.filter(p=>p.Alergenos).map(p=>`<strong>${p.NombreCompleto||p.Nombre||''}</strong>: ${p.Alergenos}`);
+    const conAlerg=personas.filter(p=>p.Alergenos);
+    const sinAlerg=personas.filter(p=>!p.Alergenos);
+
+    // Alérgenos primero, luego lista sin alérgenos
+    const alergenosHTML=conAlerg.length?`
+      <div class="comida-alerg-box">
+        <div class="comida-alerg-title">⚠ Alérgenos (${conAlerg.length} personas)</div>
+        ${conAlerg.map(p=>`<div class="comida-alerg-item">
+          <span class="comida-alerg-nombre">${p.NombreCompleto||p.Nombre||''}</span>
+          <span class="comida-alerg-val">${p.Alergenos}</span>
+        </div>`).join('')}
+      </div>`:'<div style="font-size:12px;color:var(--green);margin-bottom:10px">✓ Sin alérgenos en este servicio</div>';
 
     return `<div class="comida-card">
       <div class="comida-hd" onclick="toggleComida('cc-${c.id}')">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:20px">${c.icono}</span>
+        <div style="display:flex;align-items:center;gap:10px;flex:1">
+          <span style="font-size:22px">${c.icono}</span>
           <div>
-            <div style="font-weight:600;font-size:13px">${c.label}</div>
-            <div style="font-size:11px;color:var(--ink3)">${personas.length} personas${c.optin?' · opt-in':' · automático'}</div>
+            <div style="font-weight:600;font-size:14px">${c.label}</div>
+            <div style="font-size:11px;color:var(--ink3)">${c.optin?'opt-in':'automático'}${conAlerg.length?` · <span style="color:var(--amber)">⚠ ${conAlerg.length} alérgeno${conAlerg.length!==1?'s':''}`:''}</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn btn-xs" onclick="event.stopPropagation();exportComida('${c.id}','${c.label}')">⬇ CSV</button>
-          <span style="color:var(--ink3)">▾</span>
+        <div class="comida-count">
+          <div class="comida-n">${personas.length}</div>
+          <span style="font-size:11px;color:var(--ink3)">comensales</span>
+          <button class="btn btn-xs" onclick="event.stopPropagation();exportComida('${c.id}','${c.label}')">⬇</button>
+          <span style="color:var(--ink3);font-size:14px">▾</span>
         </div>
       </div>
       <div class="comida-body" id="cc-${c.id}">
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>Nombre</th><th>Nick</th><th>Modalidad</th><th>Alérgenos</th></tr></thead>
-            <tbody>${personas.map(p=>`<tr>
-              <td style="font-weight:500">${p.NombreCompleto||p.Nombre||''} ${p.Apellidos||''}</td>
-              <td style="color:var(--ink3)">${p.Nick||'—'}</td>
-              <td style="font-size:12px">${p.Modalidad||'—'}</td>
-              <td style="font-size:12px;color:${p.Alergenos?'var(--red)':'var(--ink3)'}">${p.Alergenos||'—'}</td>
-            </tr>`).join('')||'<tr><td colspan="4" style="color:var(--ink3);padding:12px">Sin personas.</td></tr>'}</tbody>
-          </table>
+        ${alergenosHTML}
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3);margin-bottom:6px">Sin alérgenos (${sinAlerg.length})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          ${sinAlerg.map(p=>`<span class="chip chip-gray">${p.NombreCompleto||p.Nombre||''} ${p.Nick?'@'+p.Nick:''}</span>`).join('')||'<span style="font-size:12px;color:var(--ink3)">—</span>'}
         </div>
-        ${alergenos.length?`<div class="comida-alerg"><strong>⚠ Alérgenos:</strong><br>${alergenos.join('<br>')}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1512,7 +1536,12 @@ function renderPortal(){
   const gid=p.GrupoID||'';
   const acomp=gid?DB.personas.filter(x=>(x.GrupoID||'')===gid&&(x.ID||x.id||'')!==pid):[];
   const ca=document.getElementById('card-acomp');
-  if(acomp.length){ ca.style.display='block'; document.getElementById('lista-acomp').innerHTML=acomp.map(a=>`<div class="prow"><div class="av">${av(a.Nombre||'')}</div><div class="prow-info"><div class="prow-name">${a.NombreCompleto||a.Nombre||''} ${a.Apellidos||''}</div><div class="prow-sub">${a.Modalidad||''} ${a.Alergenos?'· ⚠ '+a.Alergenos:''}</div></div></div>`).join(''); }
+  if(acomp.length){ ca.style.display='block'; const titular=DB.personas.find(x=>(x.ID||x.id||'')===pid);
+    const titNombre=titular?(titular.NombreCompleto||`${titular.Nombre||''} ${titular.Apellidos||''}`).trim():'';
+    document.getElementById('lista-acomp').innerHTML=acomp.map(a=>{
+      const nomAcomp=(a.NombreCompleto&&!a.NombreCompleto.includes('undefined'))?a.NombreCompleto:(`${a.Nombre||''} ${a.Apellidos||''}`).trim();
+      return `<div class="prow acomp"><div class="av acomp-av">${av(a.Nombre||'')}</div><div class="prow-info"><div class="prow-name">${nomAcomp}</div>${a.Nick?`<div class="prow-sub">@${a.Nick}</div>`:''}<div class="prow-acomp-de">Acompañante de: ${titNombre}</div>${a.Alergenos?`<div class="prow-sub" style="color:var(--amber)">⚠ ${a.Alergenos}</div>`:''}</div></div>`;
+    }).join(''); }
   else ca.style.display='none';
 
   // Pagos
@@ -1650,6 +1679,28 @@ async function toggleComidaOptin(cid, val){
   log('COMIDA_OPTIN',cid+(val?':SI':':NO'));
   await saveRemote();
   toast(val?'Apuntado a '+cid.replace('_',' '):'Eliminado de '+cid.replace('_',' '),'ok');
+}
+
+// ─── PAGO RÁPIDO (solo admin) ──────────────────────────
+async function togglePagadoAdmin(pid, checked){
+  if(ROLE!=='admin'){ toast('Solo administradores','err'); return; }
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===pid); if(!p) return;
+  const tot=Number(p.ImporteTotal||0);
+  if(checked){
+    // Crear pago completo si no existe uno que lo cubra ya
+    const yaPagado=pagadoPor(pid);
+    const resto=tot-yaPagado;
+    if(resto>0){
+      const pg={id:uid('PAG_'),ID:uid('PAG_'),personas:pid,importe:resto,metodo:'confirmado',fecha:new Date().toISOString().split('T')[0],obs:'Marcado como pagado desde panel admin',ts:new Date().toISOString()};
+      pg.ID=pg.id; DB.pagos.push(pg);
+    }
+  } else {
+    // Eliminar todos los pagos de esta persona
+    if(!confirm('¿Desmarcar todos los pagos de esta persona?')) return;
+    DB.pagos=DB.pagos.filter(pg=>!String(pg.personas||'').split(',').map(x=>x.trim()).includes(pid));
+  }
+  log('PAGO_QUICK',`${pid} → ${checked?'PAGADO':'DESMARCADO'}`);
+  await saveRemote(); renderPersonas(); toast(checked?'Marcado como pagado':'Pagos eliminados','ok');
 }
 
 // ─── EXPORT CSV ────────────────────────────────────────
