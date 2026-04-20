@@ -12,6 +12,8 @@ const CFG = {
   JSONBIN_BIN_ID:  'PON_AQUI_TU_BIN_ID',
   JSONBIN_API_KEY: 'PON_AQUI_TU_API_KEY',
   EVENTO:          'Jornadas Astur Lúdicas',
+  // Contraseña universal para inscritos
+  INSCRITO_PASS:   'jornadas2025',
 
   // Servicios de comida en orden. todos=automático según modalidad, optin=el inscrito se apunta
   COMIDAS: [
@@ -380,7 +382,7 @@ tbody tr:hover td{background:var(--paper)}
     </div>
     <div id="lp-inscrito" class="lp active">
       <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="tu@email.com" autocomplete="email"></div>
-      <div class="fg"><label>Código</label><input type="text" id="l-cod" placeholder="ABC123" style="text-transform:uppercase;letter-spacing:2px"></div>
+      <div class="fg"><label>Contraseña</label><input type="password" id="l-cod" placeholder="••••••••"></div>
       <button class="btn btn-primary" style="width:100%" onclick="loginInscrito()">Entrar →</button>
       <div class="err" id="err-i"></div>
     </div>
@@ -617,6 +619,63 @@ tbody tr:hover td{background:var(--paper)}
         </div>
       </div>
 
+      <!-- Tallas -->
+      <div id="page-tallas" class="page">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Tallas de camiseta</span>
+            <button class="btn btn-sm" onclick="exportTallas()">⬇ Exportar lista</button>
+          </div>
+          <div id="tallas-resumen"></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Listado por persona</span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Nombre</th><th>Nick</th><th>Talla</th><th>Modalidad</th></tr></thead>
+              <tbody id="tb-tallas"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contabilidad -->
+      <div id="page-contabilidad" class="page">
+        <div id="cont-resumen-cards" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">💸 Gastos</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" onclick="exportContabilidad('gastos')">⬇ CSV</button>
+                <button class="btn btn-primary btn-sm" onclick="openModal('mo-gasto')">+ Gasto</button>
+              </div>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Importe</th><th></th></tr></thead>
+                <tbody id="tb-gastos"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">💵 Cobros / Ingresos extra</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" onclick="exportContabilidad('cobros')">⬇ CSV</button>
+                <button class="btn btn-primary btn-sm" onclick="openModal('mo-cobro')">+ Cobro</button>
+              </div>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th></th></tr></thead>
+                <tbody id="tb-cobros"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ INSCRITO PAGES ════════════════════════════════ -->
 
       <!-- Mi ficha -->
@@ -787,6 +846,64 @@ tbody tr:hover td{background:var(--paper)}
   </div>
 </div>
 
+<!-- Modal Gasto -->
+<div class="mo" id="mo-gasto">
+  <div class="mo-box">
+    <div class="mo-hd"><h3>Registrar gasto</h3><button class="mo-close" onclick="closeModal('mo-gasto')">✕</button></div>
+    <div class="mo-body">
+      <input type="hidden" id="gs-id">
+      <div class="form-grid">
+        <div class="fg"><label>Fecha *</label><input type="date" id="gs-fecha"></div>
+        <div class="fg"><label>Categoría *</label>
+          <select id="gs-cat">
+            <option value="alojamiento">🏨 Alojamiento</option>
+            <option value="comidas">🍽 Comidas</option>
+            <option value="suministros">📦 Suministros</option>
+            <option value="otros">📌 Otros</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg"><label>Concepto *</label><input type="text" id="gs-concepto" placeholder="Descripción del gasto"></div>
+      <div class="form-grid">
+        <div class="fg"><label>Importe (€) *</label><input type="number" id="gs-imp" step="0.01" placeholder="0.00"></div>
+        <div class="fg"><label>Notas</label><input type="text" id="gs-notas" placeholder="Opcional"></div>
+      </div>
+    </div>
+    <div class="mo-ft"><button class="btn" onclick="closeModal('mo-gasto')">Cancelar</button><button class="btn btn-danger" onclick="guardarGasto()">Guardar gasto</button></div>
+  </div>
+</div>
+
+<!-- Modal Cobro -->
+<div class="mo" id="mo-cobro">
+  <div class="mo-box">
+    <div class="mo-hd"><h3>Registrar cobro / ingreso</h3><button class="mo-close" onclick="closeModal('mo-cobro')">✕</button></div>
+    <div class="mo-body">
+      <input type="hidden" id="cb-id">
+      <div class="fg"><label>Fecha *</label><input type="date" id="cb-fecha"></div>
+      <div class="fg"><label>Concepto *</label><input type="text" id="cb-concepto" placeholder="Ej: Venta merchandising, donación…"></div>
+      <div class="form-grid">
+        <div class="fg"><label>Importe (€) *</label><input type="number" id="cb-imp" step="0.01" placeholder="0.00"></div>
+        <div class="fg"><label>Notas</label><input type="text" id="cb-notas" placeholder="Opcional"></div>
+      </div>
+    </div>
+    <div class="mo-ft"><button class="btn" onclick="closeModal('mo-cobro')">Cancelar</button><button class="btn btn-success" onclick="guardarCobro()">Guardar cobro</button></div>
+  </div>
+</div>
+
+<!-- Modal info comida (admin) -->
+<div class="mo" id="mo-comida-info">
+  <div class="mo-box">
+    <div class="mo-hd"><h3 id="mo-comida-info-title">Info de comida</h3><button class="mo-close" onclick="closeModal('mo-comida-info')">✕</button></div>
+    <div class="mo-body">
+      <input type="hidden" id="ci-id">
+      <div class="fg"><label>Lugar / Restaurante</label><input type="text" id="ci-lugar" placeholder="Ej: Restaurante El Rincón"></div>
+      <div class="fg"><label>Hora</label><input type="time" id="ci-hora"></div>
+      <div class="fg"><label>Notas adicionales</label><textarea id="ci-notas" rows="2" placeholder="Indicaciones, dirección…"></textarea></div>
+    </div>
+    <div class="mo-ft"><button class="btn" onclick="closeModal('mo-comida-info')">Cancelar</button><button class="btn btn-primary" onclick="guardarInfoComida()">Guardar</button></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <!-- ══════════════ JAVASCRIPT ══════════════ -->
@@ -797,6 +914,9 @@ const DB = {
   asignaciones:{},   // {personaId: habId}  — una hab por persona (sin noches complejas)
   solicitudes:[], mensajes:[],
   comidas_optin:{},  // {comida_id: [personaId,...]}
+  comidas_info:{},   // {comida_id: {lugar:'', hora:''}}
+  gastos:[],         // [{id,fecha,categoria,concepto,importe,notas}]
+  cobros:[],         // [{id,fecha,concepto,importe,notas}]
   modulos:{ alojamiento:false },
   config:{ nombre:CFG.EVENTO, fechas:'', aviso:'' },
   logs:[],
@@ -901,22 +1021,23 @@ document.getElementById('l-pass').addEventListener('keydown',e=>{ if(e.key==='En
 
 async function loginAdmin(){
   if(document.getElementById('l-pass').value!==CFG.ADMIN_PASS){ showErr('err-a','Clave incorrecta.'); return; }
-  ROLE='admin'; lsSet('role','admin'); lsSet('session_ts',Date.now());
+  ROLE='admin'; lsSet('role','admin'); lsSet('session_ts', Date.now() + 365*24*3600*1000);
   await loadRemote();
   bootApp();
 }
 async function loginInscrito(){
   const email=document.getElementById('l-email').value.trim().toLowerCase();
-  const cod=document.getElementById('l-cod').value.trim().toUpperCase();
-  if(!email||!cod){ showErr('err-i','Introduce email y código.'); return; }
+  const cod=document.getElementById('l-cod').value.trim();
+  if(!email||!cod){ showErr('err-i','Introduce email y contraseña.'); return; }
   await loadRemote();
-  const p=DB.personas.find(x=>
-    String(x.Email||'').trim().toLowerCase()===email &&
-    String(x.Codigo||'').trim().toUpperCase()===cod &&
-    x.Activo!=='FALSE'
-  );
-  if(!p){ showErr('err-i','Email o código incorrecto.'); return; }
-  ROLE='inscrito'; ME=p; lsSet('role','inscrito'); lsSet('persona_id',p.ID||p.id||''); lsSet('session_ts',Date.now());
+  // Acepta contraseña universal O código individual de la persona
+  const p=DB.personas.find(x=>String(x.Email||'').trim().toLowerCase()===email && x.Activo!=='FALSE');
+  if(!p){ showErr('err-i','Email no encontrado.'); return; }
+  const codOk = cod.toUpperCase()===(String(p.Codigo||'').trim().toUpperCase()) || cod===CFG.INSCRITO_PASS;
+  if(!codOk){ showErr('err-i','Contraseña incorrecta.'); return; }
+  ROLE='inscrito'; ME=p;
+  lsSet('role','inscrito'); lsSet('persona_id',p.ID||p.id||''); lsSet('persona_email',email);
+  lsSet('session_ts', Date.now() + 365*24*3600*1000); // sesión permanente
   log('LOGIN',email);
   bootApp();
 }
@@ -949,6 +1070,7 @@ const NAV_ADMIN=[
   {sec:'Inscritos'},{id:'personas',ico:'👥',label:'Personas'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
   {sec:'Economía'},{id:'pagos',ico:'💰',label:'Pagos'},
   {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},
+  {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
 ];
 const NAV_INSCRITO=[
@@ -987,7 +1109,7 @@ function nav(page, pushHist=true){
   const titles={
     dashboard:'Dashboard',personas:'Personas',solicitudes:'Solicitudes',
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
-    importar:'Importar CSV',config:'Configuración',logs:'Logs',
+    importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
@@ -1003,6 +1125,7 @@ function nav(page, pushHist=true){
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig,
     'mi-ficha':renderPortal, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
+    tallas:renderTallas, contabilidad:renderContabilidad,
   };
   if(renders[page]) renders[page]();
 }
@@ -1343,6 +1466,7 @@ function renderComidasAdmin(){
           <div class="comida-n">${personas.length}</div>
           <span style="font-size:11px;color:var(--ink3)">comensales</span>
           <button class="btn btn-xs" onclick="event.stopPropagation();exportComida('${c.id}','${c.label}')">⬇</button>
+          <button class="btn btn-xs" onclick="event.stopPropagation();editarInfoComida('${c.id}','${c.label}')">✏ Info</button>
           <span style="color:var(--ink3);font-size:14px">▾</span>
         </div>
       </div>
@@ -1451,6 +1575,8 @@ async function eliminarPago(id){
 const _openModal=openModal;
 window.openModal=function(id){
   if(id==='mo-pago') abrirModalPago();
+  else if(id==='mo-gasto'){ abrirModalGasto(); }
+  else if(id==='mo-cobro'){ abrirModalCobro(); }
   else if(id==='mo-hab'){ document.getElementById('hb-id').value=''; ['hb-hotel','hb-num'].forEach(x=>document.getElementById(x).value=''); document.getElementById('hb-tipo').value='doble'; document.getElementById('hb-cap').value='2'; document.getElementById('hb-noches').value='ambas'; document.getElementById('hb-mods').value='TODAS'; document.getElementById('mo-hab').classList.add('open'); }
   else document.getElementById(id).classList.add('open');
 };
@@ -1653,19 +1779,28 @@ function renderMisComidas(){
       ?(DB.comidas_optin[c.id]||[]).includes(pid)
       :c.todos&&c.todos(p);
     const puedeToggle=c.optin;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:24px">${c.icono}</span>
-        <div>
-          <div style="font-weight:600;font-size:13px">${c.label}</div>
-          <div style="font-size:11px;color:var(--ink3)">${c.optin?'Opt-in — apúntate si vas a quedarte':'Incluido en tu inscripción'}</div>
+    const info=DB.comidas_info[c.id]||{};
+    const hayInfo=info.lugar||info.hora;
+    return `<div style="border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:28px;line-height:1">${c.icono}</span>
+          <div>
+            <div style="font-weight:700;font-size:15px">${c.label}</div>
+            ${hayInfo?`<div style="font-size:12px;color:var(--ink2);margin-top:2px">${info.lugar?'📍 '+info.lugar:''}${info.lugar&&info.hora?' · ':''}${info.hora?'🕐 '+info.hora:''}</div>`:''}
+            ${info.notas?`<div style="font-size:12px;color:var(--ink3);margin-top:2px">${info.notas}</div>`:''}
+            ${!hayInfo?`<div style="font-size:11px;color:var(--ink3);margin-top:2px">Lugar y hora por confirmar</div>`:''}
+          </div>
+        </div>
+        <div style="flex-shrink:0">
+          ${puedeToggle
+            ?`<label class="tog"><input type="checkbox" ${estaApuntado?'checked':''} onchange="toggleComidaOptin('${c.id}',this.checked)"><span class="tog-s"></span></label>`
+            :estaApuntado?'<span class="chip chip-green">✓ Incluido</span>':'<span class="chip chip-gray">No incluido</span>'}
         </div>
       </div>
-      <div>
-        ${puedeToggle
-          ?`<label class="tog"><input type="checkbox" ${estaApuntado?'checked':''} onchange="toggleComidaOptin('${c.id}',this.checked)"><span class="tog-s"></span></label>`
-          :estaApuntado?'<span class="chip chip-green">✓ Incluido</span>':'<span class="chip chip-gray">No incluido</span>'}
-      </div>
+      ${puedeToggle?`<div style="font-size:11px;color:var(--ink3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        Activa el toggle si vas a quedarte a comer el domingo. Nos ayuda a calcular el número real de comensales.
+      </div>`:''}
     </div>`;
   }).join('');
 }
@@ -1679,6 +1814,171 @@ async function toggleComidaOptin(cid, val){
   log('COMIDA_OPTIN',cid+(val?':SI':':NO'));
   await saveRemote();
   toast(val?'Apuntado a '+cid.replace('_',' '):'Eliminado de '+cid.replace('_',' '),'ok');
+}
+
+// ─── TALLAS ────────────────────────────────────────────
+function renderTallas(){
+  const orden=['XS','S','M','L','XL','XXL','XXXL',''];
+  const conTalla=DB.personas.filter(p=>p.TallaCamiseta);
+  const sinTalla=DB.personas.filter(p=>!p.TallaCamiseta);
+  // Contar por talla
+  const cnt={};
+  conTalla.forEach(p=>{ const t=p.TallaCamiseta; cnt[t]=(cnt[t]||0)+1; });
+  // Resumen visual
+  const tallasOrdenadas=orden.filter(t=>t&&cnt[t]);
+  document.getElementById('tallas-resumen').innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px;margin-bottom:16px">
+      ${tallasOrdenadas.map(t=>`<div class="stat"><div class="stat-ico" style="background:var(--purple-l);font-size:16px;font-weight:700;color:var(--purple)">${t}</div><div class="stat-body"><div class="stat-n" style="color:var(--purple)">${cnt[t]}</div><div class="stat-l">unidades</div></div></div>`).join('')}
+      ${sinTalla.length?`<div class="stat red"><div class="stat-ico">❓</div><div class="stat-body"><div class="stat-n">${sinTalla.length}</div><div class="stat-l">sin talla</div></div></div>`:''}
+    </div>
+    <p style="font-size:12px;color:var(--ink3)">Total con talla: ${conTalla.length} · Sin talla asignada: ${sinTalla.length}</p>`;
+  // Tabla
+  const sorted=[...DB.personas].sort((a,b)=>{
+    const ia=orden.indexOf(a.TallaCamiseta||''), ib=orden.indexOf(b.TallaCamiseta||'');
+    return (ia===-1?99:ia)-(ib===-1?99:ib);
+  });
+  document.getElementById('tb-tallas').innerHTML=sorted.map(p=>`<tr>
+    <td style="font-weight:500">${p.NombreCompleto||p.Nombre||''}</td>
+    <td style="color:var(--ink3)">${p.Nick?'@'+p.Nick:'—'}</td>
+    <td>${p.TallaCamiseta?`<span class="chip chip-purple" style="font-size:13px;padding:4px 12px">${p.TallaCamiseta}</span>`:'<span class="chip chip-red">Sin talla</span>'}</td>
+    <td style="font-size:12px;color:var(--ink3)">${p.Modalidad||'—'}</td>
+  </tr>`).join('')||'<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--ink3)">Sin personas.</td></tr>';
+}
+
+function exportTallas(){
+  const lines=['"Nombre","Nick","Email","Talla","Modalidad"'];
+  const orden=['XS','S','M','L','XL','XXL','XXXL',''];
+  const sorted=[...DB.personas].sort((a,b)=>{
+    const ia=orden.indexOf(a.TallaCamiseta||''), ib=orden.indexOf(b.TallaCamiseta||'');
+    return (ia===-1?99:ia)-(ib===-1?99:ib);
+  });
+  sorted.forEach(p=>lines.push(`"${p.NombreCompleto||p.Nombre||''}","${p.Nick||''}","${p.Email||''}","${p.TallaCamiseta||'SIN TALLA'}","${p.Modalidad||''}"`));
+  dlCSV(lines.join('\n'),'tallas_camisetas.csv');
+}
+
+// ─── CONTABILIDAD ───────────────────────────────────────
+const CAT_GASTOS={alojamiento:'🏨 Alojamiento',comidas:'🍽 Comidas',suministros:'📦 Suministros',otros:'📌 Otros'};
+
+function renderContabilidad(){
+  const totalGastos=DB.gastos.reduce((a,g)=>a+Number(g.importe||0),0);
+  const totalCobros=DB.cobros.reduce((a,c)=>a+Number(c.importe||0),0);
+  const totalInscripciones=DB.pagos.reduce((a,p)=>a+Number(p.importe||0),0);
+  const totalIngresos=totalInscripciones+totalCobros;
+  const saldo=totalIngresos-totalGastos;
+
+  // Resumen por categoría de gastos
+  const porCat={};
+  DB.gastos.forEach(g=>{ porCat[g.categoria]=(porCat[g.categoria]||0)+Number(g.importe||0); });
+
+  document.getElementById('cont-resumen-cards').innerHTML=[
+    {ico:'💵',l:'Ingresos (inscripciones)',n:totalInscripciones.toFixed(2)+'€',cls:'green'},
+    {ico:'🎁',l:'Otros cobros (merch…)',n:totalCobros.toFixed(2)+'€',cls:'green'},
+    {ico:'💸',l:'Total gastos',n:totalGastos.toFixed(2)+'€',cls:'red'},
+    {ico:saldo>=0?'✅':'⚠️',l:'Saldo neto',n:(saldo>=0?'+':'')+saldo.toFixed(2)+'€',cls:saldo>=0?'green':'amber'},
+  ].map(s=>`<div class="stat ${s.cls}"><div class="stat-ico">${s.ico}</div><div class="stat-body"><div class="stat-n">${s.n}</div><div class="stat-l">${s.l}</div></div></div>`).join('');
+
+  // Tabla gastos
+  document.getElementById('tb-gastos').innerHTML=[...DB.gastos].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')).map(g=>`<tr>
+    <td style="font-size:12px;white-space:nowrap">${fmtD(g.fecha)}</td>
+    <td><span class="chip chip-blue">${CAT_GASTOS[g.categoria]||g.categoria}</span></td>
+    <td style="font-size:13px">${g.concepto}</td>
+    <td><strong style="color:var(--red)">${Number(g.importe||0).toFixed(2)}€</strong></td>
+    <td><button class="btn btn-xs btn-danger" onclick="eliminarGasto('${g.id}')">✕</button></td>
+  </tr>`).join('')||'<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--ink3)">Sin gastos registrados.</td></tr>';
+
+  // Tabla cobros
+  document.getElementById('tb-cobros').innerHTML=[...DB.cobros].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')).map(c=>`<tr>
+    <td style="font-size:12px;white-space:nowrap">${fmtD(c.fecha)}</td>
+    <td style="font-size:13px">${c.concepto}</td>
+    <td><strong style="color:var(--green)">${Number(c.importe||0).toFixed(2)}€</strong></td>
+    <td><button class="btn btn-xs btn-danger" onclick="eliminarCobro('${c.id}')">✕</button></td>
+  </tr>`).join('')||'<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--ink3)">Sin cobros registrados.</td></tr>';
+}
+
+function abrirModalGasto(){
+  document.getElementById('gs-id').value='';
+  document.getElementById('gs-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('gs-cat').value='alojamiento';
+  document.getElementById('gs-concepto').value='';
+  document.getElementById('gs-imp').value='';
+  document.getElementById('gs-notas').value='';
+  document.getElementById('mo-gasto').classList.add('open');
+}
+async function guardarGasto(){
+  const imp=document.getElementById('gs-imp').value;
+  const concepto=document.getElementById('gs-concepto').value;
+  if(!imp||!concepto){ toast('Concepto e importe obligatorios','err'); return; }
+  const id=document.getElementById('gs-id').value||uid('GS_');
+  const g={id,ID:id,fecha:document.getElementById('gs-fecha').value,categoria:document.getElementById('gs-cat').value,concepto,importe:Number(imp),notas:document.getElementById('gs-notas').value,ts:new Date().toISOString()};
+  const idx=DB.gastos.findIndex(x=>x.id===id);
+  if(idx>=0) DB.gastos[idx]=g; else DB.gastos.push(g);
+  log('SAVE_GASTO',`${g.categoria}: ${g.concepto} ${g.importe}€`);
+  await saveRemote(); closeModal('mo-gasto'); renderContabilidad(); toast('Gasto guardado','ok');
+}
+async function eliminarGasto(id){
+  if(!confirm('¿Eliminar este gasto?')) return;
+  DB.gastos=DB.gastos.filter(x=>x.id!==id);
+  await saveRemote(); renderContabilidad();
+}
+
+function abrirModalCobro(){
+  document.getElementById('cb-id').value='';
+  document.getElementById('cb-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('cb-concepto').value='';
+  document.getElementById('cb-imp').value='';
+  document.getElementById('cb-notas').value='';
+  document.getElementById('mo-cobro').classList.add('open');
+}
+async function guardarCobro(){
+  const imp=document.getElementById('cb-imp').value;
+  const concepto=document.getElementById('cb-concepto').value;
+  if(!imp||!concepto){ toast('Concepto e importe obligatorios','err'); return; }
+  const id=document.getElementById('cb-id').value||uid('CB_');
+  const c={id,ID:id,fecha:document.getElementById('cb-fecha').value,concepto,importe:Number(imp),notas:document.getElementById('cb-notas').value,ts:new Date().toISOString()};
+  const idx=DB.cobros.findIndex(x=>x.id===id);
+  if(idx>=0) DB.cobros[idx]=c; else DB.cobros.push(c);
+  log('SAVE_COBRO',`${c.concepto} ${c.importe}€`);
+  await saveRemote(); closeModal('mo-cobro'); renderContabilidad(); toast('Cobro guardado','ok');
+}
+async function eliminarCobro(id){
+  if(!confirm('¿Eliminar este cobro?')) return;
+  DB.cobros=DB.cobros.filter(x=>x.id!==id);
+  await saveRemote(); renderContabilidad();
+}
+
+function exportContabilidad(tipo){
+  if(tipo==='gastos'){
+    const lines=['"Fecha","Categoría","Concepto","Importe (€)","Notas"'];
+    [...DB.gastos].sort((a,b)=>a.fecha?.localeCompare(b.fecha||'')).forEach(g=>
+      lines.push(`"${fmtD(g.fecha)}","${CAT_GASTOS[g.categoria]||g.categoria}","${g.concepto}","${Number(g.importe||0).toFixed(2)}","${g.notas||''}"`));
+    const total=DB.gastos.reduce((a,g)=>a+Number(g.importe||0),0);
+    lines.push(`"","","TOTAL","${total.toFixed(2)}",""`);
+    dlCSV(lines.join('\n'),'gastos.csv');
+  } else {
+    const lines=['"Fecha","Concepto","Importe (€)","Notas"'];
+    [...DB.cobros].sort((a,b)=>a.fecha?.localeCompare(b.fecha||'')).forEach(c=>
+      lines.push(`"${fmtD(c.fecha)}","${c.concepto}","${Number(c.importe||0).toFixed(2)}","${c.notas||''}"`));
+    const total=DB.cobros.reduce((a,c)=>a+Number(c.importe||0),0);
+    lines.push(`"","TOTAL","${total.toFixed(2)}",""`);
+    dlCSV(lines.join('\n'),'cobros.csv');
+  }
+}
+
+// ─── INFO COMIDA (admin edita, inscrito ve) ─────────────
+function editarInfoComida(cid, label){
+  const info=DB.comidas_info[cid]||{};
+  document.getElementById('ci-id').value=cid;
+  document.getElementById('mo-comida-info-title').textContent='Info: '+label;
+  document.getElementById('ci-lugar').value=info.lugar||'';
+  document.getElementById('ci-hora').value=info.hora||'';
+  document.getElementById('ci-notas').value=info.notas||'';
+  document.getElementById('mo-comida-info').classList.add('open');
+}
+async function guardarInfoComida(){
+  const cid=document.getElementById('ci-id').value;
+  DB.comidas_info[cid]={lugar:document.getElementById('ci-lugar').value,hora:document.getElementById('ci-hora').value,notas:document.getElementById('ci-notas').value};
+  log('INFO_COMIDA',cid);
+  await saveRemote(); closeModal('mo-comida-info'); renderComidasAdmin(); toast('Info guardada','ok');
 }
 
 // ─── PAGO RÁPIDO (solo admin) ──────────────────────────
@@ -1725,7 +2025,7 @@ function logout(){ lsSet('role',null); lsSet('persona_id',null); lsSet('session_
 // ─── INIT ──────────────────────────────────────────────
 (async()=>{
   const savedRole=lsGet('role'), savedTs=lsGet('session_ts',0);
-  if(savedRole&&(Date.now()-savedTs)<8*3600*1000){
+  if(savedRole && savedTs > Date.now()){  // sesión permanente hasta logout
     await loadRemote();
     if(savedRole==='admin'){ ROLE='admin'; bootApp(); return; }
     const savedId=lsGet('persona_id');
