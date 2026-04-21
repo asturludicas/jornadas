@@ -11,9 +11,9 @@ const CFG = {
   ADMIN_PASS:      'DanielyAlex',
   JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
   JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
-  EVENTO:          'Jornadas Asturlúdicas',
+  EVENTO:          'Jornadas Astur Lúdicas',
   // Contraseña universal para inscritos
-  INSCRITO_PASS:   'invitado',
+  INSCRITO_PASS:   'jornadas2025',
 
   // Servicios de comida en orden. todos=automático según modalidad, optin=el inscrito se apunta
   COMIDAS: [
@@ -368,50 +368,56 @@ tbody tr:hover td{background:var(--paper)}
 .export-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 
 /* ─── CALENDARIO ──────────────────────────────────────── */
-.cal-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.cal-dias{display:flex;gap:0;min-width:600px}
-.cal-dia{flex:1;border-right:1px solid var(--border);min-width:0}
-.cal-dia:last-child{border-right:none}
-.cal-dia-hd{
-  padding:10px 12px;background:var(--surface);
-  border-bottom:2px solid var(--accent);
-  position:sticky;top:var(--top-h);z-index:5;
-}
-.cal-dia-nombre{font-weight:700;font-size:13px}
-.cal-dia-fecha{font-size:11px;color:var(--ink3)}
-.cal-franja{border-bottom:1px solid var(--border)}
-.cal-franja-hd{
-  padding:8px 12px;background:var(--paper);
-  font-size:11px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.05em;color:var(--ink3);
-  display:flex;align-items:center;justify-content:space-between;
-  border-bottom:1px solid var(--border);
-}
-.cal-partidas{padding:8px;display:flex;flex-direction:column;gap:6px;min-height:60px}
-.partida-card{
+/* Vista por día: columna scrollable, filas = horas */
+.cal-outer{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.cal-dias{display:flex;gap:8px;min-width:0}
+.cal-dia{
+  flex:0 0 85vw;max-width:340px;
   background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--r);padding:10px 12px;
-  border-left:3px solid var(--accent);
-  transition:box-shadow .15s;cursor:pointer;
+  border-radius:var(--r);overflow:hidden;
 }
-.partida-card:hover{box-shadow:var(--sh)}
-.partida-card.mia{border-left-color:var(--green)}
-.partida-card.llena{border-left-color:var(--red);opacity:.75}
-.partida-juego{font-weight:700;font-size:13px;line-height:1.2;margin-bottom:4px}
-.partida-meta{font-size:11px;color:var(--ink3);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.partida-jugadores{display:flex;flex-wrap:wrap;gap:4px}
-.pj{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
-.pj-ocupado{background:var(--accent-l);color:var(--accent)}
-.pj-libre{background:var(--paper);color:var(--ink3);border:1px dashed var(--border2)}
-.pj-yo{background:var(--green-l);color:var(--green)}
-.btn-nueva-partida{
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  width:100%;padding:10px;border-radius:var(--rs);
-  border:1.5px dashed var(--border2);background:none;
-  font-size:12px;color:var(--ink3);cursor:pointer;
-  transition:.12s;margin-top:4px;
+@media(min-width:900px){.cal-dia{flex:1;max-width:none}}
+.cal-dia-hd{
+  padding:12px 14px;background:var(--accent);color:#fff;
+  position:sticky;top:0;z-index:5;
+  display:flex;align-items:center;justify-content:space-between;
 }
-.btn-nueva-partida:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-l)}
+.cal-dia-nombre{font-weight:700;font-size:15px}
+.cal-dia-count{font-size:12px;opacity:.8}
+.cal-hora-row{border-bottom:1px solid var(--border);display:flex;min-height:52px}
+.cal-hora-row:last-child{border-bottom:none}
+.cal-hora-label{
+  width:46px;flex-shrink:0;padding:8px 6px;
+  font-size:11px;font-weight:700;color:var(--ink3);
+  background:var(--paper);border-right:1px solid var(--border);
+  display:flex;align-items:flex-start;justify-content:center;
+  padding-top:10px;
+}
+.cal-hora-partidas{
+  flex:1;min-width:0;padding:5px 6px;
+  display:flex;flex-direction:column;gap:4px;
+  cursor:pointer;
+}
+.cal-hora-partidas:hover{background:var(--paper)}
+.cal-hora-empty{font-size:11px;color:var(--border2);padding:12px 0;text-align:center}
+
+/* Tarjeta de partida — color de fondo completo */
+.partida-card{
+  border-radius:8px;padding:9px 11px;
+  cursor:pointer;transition:opacity .15s, transform .1s;
+  color:#fff;
+  /* estados: abierta, mia, llena */
+}
+.partida-card:active{transform:scale(.98)}
+.partida-card.abierta{background:var(--accent)}
+.partida-card.mia{background:var(--green)}
+.partida-card.llena{background:#6b7280;opacity:.8}
+.partida-juego{font-weight:700;font-size:13px;line-height:1.2;margin-bottom:3px}
+.partida-meta{font-size:11px;opacity:.85;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.partida-jugadores{display:flex;flex-wrap:wrap;gap:3px}
+.pj{padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(255,255,255,.25);color:#fff}
+.pj-libre{background:rgba(255,255,255,.12);color:rgba(255,255,255,.6);border:1px dashed rgba(255,255,255,.4)}
+.pj-yo{background:rgba(255,255,255,.4);color:#fff;font-weight:700}
 
 /* ─── DASHBOARD MÓVIL MEJORADO ────────────────────────── */
 .menu-acciones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
@@ -751,7 +757,7 @@ tbody tr:hover td{background:var(--paper)}
           </div>
           <button class="btn btn-primary btn-sm" onclick="abrirNuevaPartida(null,null)">+ Nueva partida</button>
         </div>
-        <div class="cal-wrap">
+        <div class="cal-outer">
           <div class="cal-dias" id="cal-dias"></div>
         </div>
       </div>
@@ -982,16 +988,48 @@ tbody tr:hover td{background:var(--paper)}
         <div class="fg">
           <label>Franja horaria *</label>
           <select id="pt-franja-sel">
-            <option value="jue_m">Jueves mañana</option>
-            <option value="jue_t">Jueves tarde</option>
-            <option value="jue_n">Jueves noche</option>
-            <option value="vie_m">Viernes mañana</option>
-            <option value="vie_t">Viernes tarde</option>
-            <option value="vie_n">Viernes noche</option>
-            <option value="sab_m">Sábado mañana</option>
-            <option value="sab_t">Sábado tarde</option>
-            <option value="sab_n">Sábado noche</option>
-            <option value="dom_m">Domingo mañana</option>
+            <optgroup label="Jueves">
+              <option value="jue_10">Jueves 10:00</option>
+              <option value="jue_11">Jueves 11:00</option>
+              <option value="jue_12">Jueves 12:00</option>
+              <option value="jue_13">Jueves 13:00</option>
+              <option value="jue_16">Jueves 16:00</option>
+              <option value="jue_17">Jueves 17:00</option>
+              <option value="jue_18">Jueves 18:00</option>
+              <option value="jue_19">Jueves 19:00</option>
+              <option value="jue_20">Jueves 20:00</option>
+              <option value="jue_21">Jueves 21:00</option>
+            </optgroup>
+            <optgroup label="Viernes">
+              <option value="vie_10">Viernes 10:00</option>
+              <option value="vie_11">Viernes 11:00</option>
+              <option value="vie_12">Viernes 12:00</option>
+              <option value="vie_13">Viernes 13:00</option>
+              <option value="vie_16">Viernes 16:00</option>
+              <option value="vie_17">Viernes 17:00</option>
+              <option value="vie_18">Viernes 18:00</option>
+              <option value="vie_19">Viernes 19:00</option>
+              <option value="vie_20">Viernes 20:00</option>
+              <option value="vie_21">Viernes 21:00</option>
+            </optgroup>
+            <optgroup label="Sábado">
+              <option value="sab_10">Sábado 10:00</option>
+              <option value="sab_11">Sábado 11:00</option>
+              <option value="sab_12">Sábado 12:00</option>
+              <option value="sab_13">Sábado 13:00</option>
+              <option value="sab_16">Sábado 16:00</option>
+              <option value="sab_17">Sábado 17:00</option>
+              <option value="sab_18">Sábado 18:00</option>
+              <option value="sab_19">Sábado 19:00</option>
+              <option value="sab_20">Sábado 20:00</option>
+              <option value="sab_21">Sábado 21:00</option>
+            </optgroup>
+            <optgroup label="Domingo">
+              <option value="dom_10">Domingo 10:00</option>
+              <option value="dom_11">Domingo 11:00</option>
+              <option value="dom_12">Domingo 12:00</option>
+              <option value="dom_13">Domingo 13:00</option>
+            </optgroup>
           </select>
         </div>
         <div class="fg">
@@ -1975,16 +2013,40 @@ async function toggleComidaOptin(cid, val){
 // ─── CALENDARIO DE PARTIDAS ────────────────────────────
 
 const FRANJAS = [
-  { id:'jue_m', dia:'Jueves',   label:'Mañana',  diaid:'jue' },
-  { id:'jue_t', dia:'Jueves',   label:'Tarde',   diaid:'jue' },
-  { id:'jue_n', dia:'Jueves',   label:'Noche',   diaid:'jue' },
-  { id:'vie_m', dia:'Viernes',  label:'Mañana',  diaid:'vie' },
-  { id:'vie_t', dia:'Viernes',  label:'Tarde',   diaid:'vie' },
-  { id:'vie_n', dia:'Viernes',  label:'Noche',   diaid:'vie' },
-  { id:'sab_m', dia:'Sábado',   label:'Mañana',  diaid:'sab' },
-  { id:'sab_t', dia:'Sábado',   label:'Tarde',   diaid:'sab' },
-  { id:'sab_n', dia:'Sábado',   label:'Noche',   diaid:'sab' },
-  { id:'dom_m', dia:'Domingo',  label:'Mañana',  diaid:'dom' },
+  { id:'jue_10', dia:'Jueves',  label:'10:00', diaid:'jue' },
+  { id:'jue_11', dia:'Jueves',  label:'11:00', diaid:'jue' },
+  { id:'jue_12', dia:'Jueves',  label:'12:00', diaid:'jue' },
+  { id:'jue_13', dia:'Jueves',  label:'13:00', diaid:'jue' },
+  { id:'jue_16', dia:'Jueves',  label:'16:00', diaid:'jue' },
+  { id:'jue_17', dia:'Jueves',  label:'17:00', diaid:'jue' },
+  { id:'jue_18', dia:'Jueves',  label:'18:00', diaid:'jue' },
+  { id:'jue_19', dia:'Jueves',  label:'19:00', diaid:'jue' },
+  { id:'jue_20', dia:'Jueves',  label:'20:00', diaid:'jue' },
+  { id:'jue_21', dia:'Jueves',  label:'21:00', diaid:'jue' },
+  { id:'vie_10', dia:'Viernes', label:'10:00', diaid:'vie' },
+  { id:'vie_11', dia:'Viernes', label:'11:00', diaid:'vie' },
+  { id:'vie_12', dia:'Viernes', label:'12:00', diaid:'vie' },
+  { id:'vie_13', dia:'Viernes', label:'13:00', diaid:'vie' },
+  { id:'vie_16', dia:'Viernes', label:'16:00', diaid:'vie' },
+  { id:'vie_17', dia:'Viernes', label:'17:00', diaid:'vie' },
+  { id:'vie_18', dia:'Viernes', label:'18:00', diaid:'vie' },
+  { id:'vie_19', dia:'Viernes', label:'19:00', diaid:'vie' },
+  { id:'vie_20', dia:'Viernes', label:'20:00', diaid:'vie' },
+  { id:'vie_21', dia:'Viernes', label:'21:00', diaid:'vie' },
+  { id:'sab_10', dia:'Sábado',  label:'10:00', diaid:'sab' },
+  { id:'sab_11', dia:'Sábado',  label:'11:00', diaid:'sab' },
+  { id:'sab_12', dia:'Sábado',  label:'12:00', diaid:'sab' },
+  { id:'sab_13', dia:'Sábado',  label:'13:00', diaid:'sab' },
+  { id:'sab_16', dia:'Sábado',  label:'16:00', diaid:'sab' },
+  { id:'sab_17', dia:'Sábado',  label:'17:00', diaid:'sab' },
+  { id:'sab_18', dia:'Sábado',  label:'18:00', diaid:'sab' },
+  { id:'sab_19', dia:'Sábado',  label:'19:00', diaid:'sab' },
+  { id:'sab_20', dia:'Sábado',  label:'20:00', diaid:'sab' },
+  { id:'sab_21', dia:'Sábado',  label:'21:00', diaid:'sab' },
+  { id:'dom_10', dia:'Domingo', label:'10:00', diaid:'dom' },
+  { id:'dom_11', dia:'Domingo', label:'11:00', diaid:'dom' },
+  { id:'dom_12', dia:'Domingo', label:'12:00', diaid:'dom' },
+  { id:'dom_13', dia:'Domingo', label:'13:00', diaid:'dom' },
 ];
 const DIAS = ['jue','vie','sab','dom'];
 const DIA_LABEL = {jue:'Jueves', vie:'Viernes', sab:'Sábado', dom:'Domingo'};
@@ -1999,53 +2061,57 @@ function miId(){
 }
 
 function renderCalendario(){
-  const el=document.getElementById('cal-dias');
   const pid=miId();
+  // Horas únicas por día (ordenadas)
+  const horasDia={};
+  DIAS.forEach(d=>{ horasDia[d]=[...new Set(FRANJAS.filter(f=>f.diaid===d).map(f=>f.label))].sort(); });
 
-  el.innerHTML=DIAS.map(diaid=>{
-    const franjasDia=FRANJAS.filter(f=>f.diaid===diaid);
-    const franjasHTML=franjasDia.map(f=>{
-      const partidas=DB.partidas.filter(p=>p.franja===f.id);
-      const partidasHTML=partidas.map(p=>renderPartidaCard(p,pid)).join('');
-      return `<div class="cal-franja">
-        <div class="cal-franja-hd">
-          <span>${f.label}</span>
-          <button class="btn btn-xs" onclick="abrirNuevaPartida('${f.id}',null)" title="Nueva partida en esta franja">+</button>
-        </div>
-        <div class="cal-partidas" id="partidas-${f.id}">
+  document.getElementById('cal-dias').innerHTML=DIAS.map(diaid=>{
+    const partDia=DB.partidas.filter(p=>{ const f=FRANJAS.find(x=>x.id===p.franja); return f&&f.diaid===diaid; });
+    const horasHTML=horasDia[diaid].map(hora=>{
+      const franjaId=FRANJAS.find(f=>f.diaid===diaid&&f.label===hora)?.id||'';
+      const partHora=DB.partidas.filter(p=>p.franja===franjaId);
+      const partidasHTML=partHora.map(p=>renderPartidaCard(p,pid)).join('');
+      return `<div class="cal-hora-row">
+        <div class="cal-hora-label">${hora}</div>
+        <div class="cal-hora-partidas" onclick="abrirNuevaPartida('${franjaId}',null)" title="Añadir partida a las ${hora}">
           ${partidasHTML}
-          ${partidas.length===0?`<div style="font-size:11px;color:var(--ink3);text-align:center;padding:8px">Sin partidas</div>`:''}
+          ${partHora.length===0?`<div class="cal-hora-empty">+ partida</div>`:''}
         </div>
       </div>`;
     }).join('');
-
     return `<div class="cal-dia">
       <div class="cal-dia-hd">
         <div class="cal-dia-nombre">${DIA_LABEL[diaid]}</div>
-        <div class="cal-dia-fecha" style="font-size:10px">${DB.partidas.filter(p=>FRANJAS.find(f=>f.id===p.franja&&f.diaid===diaid)).length} partidas</div>
+        <div class="cal-dia-count">${partDia.length} partida${partDia.length!==1?'s':''}</div>
       </div>
-      ${franjasHTML}
+      ${horasHTML}
     </div>`;
   }).join('');
 }
 
 function renderPartidaCard(p, pid){
-  const llena=p.jugadores.length>=Number(p.maxJugadores||4);
-  const esMia=p.jugadores.some(j=>j.id===pid)||p.creadorId===pid;
-  const cls=esMia?'mia':llena?'llena':'';
-  const expl=p.explicacion==='si'?'📖 Con explicación':p.explicacion==='aprende'?'🎓 Ideal aprender':'';
-  const plazasHTML=Array.from({length:Number(p.maxJugadores||4)},(_,i)=>{
-    const j=p.jugadores[i];
-    if(!j) return `<span class="pj pj-libre">Libre</span>`;
+  // El creador ocupa siempre la primera plaza
+  const todosJugadores=[{id:p.creadorId,nick:p.creadorNick,esCreador:true},...(p.jugadores||[])];
+  const totalOcupados=todosJugadores.length;
+  const maxJ=Number(p.maxJugadores||4);
+  const llena=totalOcupados>=maxJ;
+  const esMio=todosJugadores.some(j=>j.id===pid);
+  const cls=esMio?'mia':llena?'llena':'abierta';
+  const expl=p.explicacion==='si'?'📖':p.explicacion==='aprende'?'🎓':'';
+  // Plazas: creador + jugadores + libres
+  const plazasHTML=Array.from({length:maxJ},(_,i)=>{
+    const j=todosJugadores[i];
+    if(!j) return `<span class="pj pj-libre">·</span>`;
     if(j.id===pid) return `<span class="pj pj-yo">✓ ${j.nick}</span>`;
-    return `<span class="pj pj-ocupado">${j.nick}</span>`;
+    return `<span class="pj">${j.nick}${j.esCreador?' ★':''}</span>`;
   }).join('');
-  return `<div class="partida-card ${cls}" onclick="verPartida('${p.id}')">
+  return `<div class="partida-card ${cls}" onclick="event.stopPropagation();verPartida('${p.id}')">
     <div class="partida-juego">${p.juego}</div>
     <div class="partida-meta">
       <span>⏱ ${p.duracion||'?'}</span>
-      <span>👥 ${p.jugadores.length}/${p.maxJugadores}</span>
-      ${expl?`<span>${expl}</span>`:''}
+      <span>👥 ${totalOcupados}/${maxJ}</span>
+      ${expl}
     </div>
     <div class="partida-jugadores">${plazasHTML}</div>
   </div>`;
@@ -2054,8 +2120,9 @@ function renderPartidaCard(p, pid){
 function verPartida(pid_partida){
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
   const pid=miId(), nick=miNick();
-  const estoyDentro=p.jugadores.some(j=>j.id===pid)||p.creadorId===pid;
-  const llena=p.jugadores.length>=Number(p.maxJugadores||4);
+  const todosJug=[{id:p.creadorId,nick:p.creadorNick,esCreador:true},...(p.jugadores||[])];
+  const estoyDentro=todosJug.some(j=>j.id===pid);
+  const llena=todosJug.length>=Number(p.maxJugadores||4);
   const soyCreadory=p.creadorId===pid||ROLE==='admin';
   const franjaLabel=FRANJAS.find(f=>f.id===p.franja);
   const expl=p.explicacion==='si'?'📖 Con explicación':p.explicacion==='aprende'?'🎓 Ideal para aprender':'Sin explicación necesaria';
@@ -2063,7 +2130,7 @@ function verPartida(pid_partida){
   // Detectar conflicto de franja
   const conflicto = !estoyDentro && pid!=='ADMIN' && DB.partidas.some(x=>
     x.id!==p.id && x.franja===p.franja &&
-    (x.jugadores.some(j=>j.id===pid)||x.creadorId===pid)
+    ([{id:x.creadorId},...(x.jugadores||[])].some(j=>j.id===pid))
   );
 
   document.getElementById('det-juego').textContent=p.juego;
@@ -2086,13 +2153,14 @@ function verPartida(pid_partida){
           <span style="font-size:13px;font-weight:600">${p.creadorNick||'?'}</span>
           <span class="chip chip-green" style="margin-left:auto">Creador</span>
         </div>
-        ${p.jugadores.map(j=>`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--paper);border-radius:var(--rs)">
-          <span class="gdot" style="background:var(--accent)"></span>
-          <span style="font-size:13px">${j.nick}</span>
-          ${j.id===pid?`<span class="chip chip-blue" style="margin-left:auto">Tú</span>`:''}
-          ${soyCreadory?`<button class="btn btn-xs btn-danger" style="margin-left:auto" onclick="quitarJugador('${p.id}','${j.id}')">✕</button>`:''}
+        ${todosJug.map(j=>`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--paper);border-radius:var(--rs)">
+          <span class="gdot" style="background:${j.esCreador?'var(--green)':'var(--accent)'}"></span>
+          <span style="font-size:13px;font-weight:${j.esCreador?'700':'400'}">${j.nick}</span>
+          ${j.esCreador?`<span class="chip chip-green" style="margin-left:auto">Creador ★</span>`:''}
+          ${j.id===pid&&!j.esCreador?`<span class="chip chip-blue" style="margin-left:auto">Tú</span>`:''}
+          ${soyCreadory&&!j.esCreador?`<button class="btn btn-xs btn-danger" style="margin-left:auto" onclick="quitarJugador('${p.id}','${j.id}')">✕</button>`:''}
         </div>`).join('')}
-        ${Array.from({length:Math.max(0,Number(p.maxJugadores||4)-p.jugadores.length-1)},()=>
+        ${Array.from({length:Math.max(0,Number(p.maxJugadores||4)-todosJug.length)},()=>
           `<div style="padding:8px;border:1px dashed var(--border2);border-radius:var(--rs);font-size:12px;color:var(--ink3);text-align:center">Plaza libre</div>`
         ).join('')}
       </div>
@@ -2150,41 +2218,56 @@ function editarPartida(pid_partida){
   openModal('mo-partida');
 }
 
+let _guardandoPartida=false;
 async function guardarPartida(){
+  if(_guardandoPartida) return; // evitar doble guardado
   const juego=document.getElementById('pt-juego').value.trim();
   if(!juego){ toast('El nombre del juego es obligatorio','err'); return; }
-  const idExist=document.getElementById('pt-id').value;
-  const id=idExist||uid('PT_');
-  const nick=miNick(), cid=miId();
-  let p;
-  if(idExist){
-    p=DB.partidas.find(x=>x.id===idExist)||{};
-    p.juego=juego;
-    p.franja=document.getElementById('pt-franja-sel').value;
-    p.maxJugadores=Number(document.getElementById('pt-max').value)||4;
-    p.duracion=document.getElementById('pt-duracion').value;
-    p.explicacion=document.getElementById('pt-expl').value;
-    p.notas=document.getElementById('pt-notas').value;
-  } else {
-    p={id,ID:id,juego,franja:document.getElementById('pt-franja-sel').value,
-       maxJugadores:Number(document.getElementById('pt-max').value)||4,
-       duracion:document.getElementById('pt-duracion').value,
-       explicacion:document.getElementById('pt-expl').value,
-       notas:document.getElementById('pt-notas').value,
-       creadorId:cid, creadorNick:nick,
-       jugadores:[], ts:new Date().toISOString()};
-    DB.partidas.push(p);
+  const btn=document.querySelector('#mo-partida .mo-ft .btn-primary');
+  const txtOrig=btn.textContent;
+  btn.disabled=true; btn.textContent='Guardando…'; _guardandoPartida=true;
+  try{
+    const idExist=document.getElementById('pt-id').value;
+    const id=idExist||uid('PT_');
+    const nick=miNick(), cid=miId();
+    let p;
+    if(idExist){
+      p=DB.partidas.find(x=>x.id===idExist)||{};
+      p.juego=juego;
+      p.franja=document.getElementById('pt-franja-sel').value;
+      p.maxJugadores=Number(document.getElementById('pt-max').value)||4;
+      p.duracion=document.getElementById('pt-duracion').value;
+      p.explicacion=document.getElementById('pt-expl').value;
+      p.notas=document.getElementById('pt-notas').value;
+    } else {
+      p={id,ID:id,juego,franja:document.getElementById('pt-franja-sel').value,
+         maxJugadores:Number(document.getElementById('pt-max').value)||4,
+         duracion:document.getElementById('pt-duracion').value,
+         explicacion:document.getElementById('pt-expl').value,
+         notas:document.getElementById('pt-notas').value,
+         creadorId:cid, creadorNick:nick,
+         jugadores:[], ts:new Date().toISOString()};
+      DB.partidas.push(p);
+    }
+    log('PARTIDA',`${juego} (${p.franja})`);
+    await saveRemote();
+    closeModal('mo-partida'); renderCalendario(); toast('Partida guardada ✓','ok');
+  } finally {
+    btn.disabled=false; btn.textContent=txtOrig; _guardandoPartida=false;
   }
-  log('PARTIDA',`${juego} (${p.franja})`);
-  await saveRemote(); closeModal('mo-partida'); renderCalendario(); toast('Partida guardada','ok');
 }
 
+let _uniendose=false;
 async function unirsePartida(pid_partida, forzar){
+  if(_uniendose) return;
+  _uniendose=true;
+  setTimeout(()=>_uniendose=false, 3000);
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
   const pid=miId(), nick=miNick();
   if(pid==='ADMIN'){ toast('Los admins no se unen a partidas desde aquí','err'); return; }
-  if(p.jugadores.some(j=>j.id===pid)){ toast('Ya estás en esta partida'); return; }
-  if(p.jugadores.length>=Number(p.maxJugadores||4)){ toast('Partida completa','err'); return; }
+  const todosYa=[{id:p.creadorId},...(p.jugadores||[])];
+  if(todosYa.some(j=>j.id===pid)){ toast('Ya estás en esta partida'); return; }
+  if(todosYa.length>=Number(p.maxJugadores||4)){ toast('Partida completa','err'); return; }
   p.jugadores.push({id:pid,nick});
   log('UNIRSE',`${nick} → ${p.juego}`);
   await saveRemote(); closeModal('mo-partida-det'); renderCalendario(); toast(`Apuntado a ${p.juego}`,'ok');
