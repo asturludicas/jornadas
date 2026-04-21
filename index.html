@@ -403,21 +403,44 @@ tbody tr:hover td{background:var(--paper)}
 
 /* Tarjeta de partida — color de fondo completo */
 .partida-card{
-  border-radius:8px;padding:9px 11px;
-  cursor:pointer;transition:opacity .15s, transform .1s;
-  color:#fff;
-  /* estados: abierta, mia, llena */
+  border-radius:10px;padding:10px 12px;
+  cursor:pointer;transition:transform .12s, box-shadow .12s;
+  color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.18);
 }
-.partida-card:active{transform:scale(.98)}
-.partida-card.abierta{background:var(--accent)}
-.partida-card.mia{background:var(--green)}
-.partida-card.llena{background:#6b7280;opacity:.8}
-.partida-juego{font-weight:700;font-size:13px;line-height:1.2;margin-bottom:3px}
+.partida-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.22)}
+.partida-card:active{transform:scale(.97)}
+.partida-card.abierta{background:linear-gradient(135deg,#2563eb,#1d4ed8)}
+.partida-card.mia{background:linear-gradient(135deg,#16a34a,#15803d)}
+.partida-card.llena{background:linear-gradient(135deg,#6b7280,#4b5563);opacity:.75}
+.partida-card.torneo{background:linear-gradient(135deg,#d97706,#b45309)!important;border:2px solid #fbbf24}
+.partida-card.torneo.mia{background:linear-gradient(135deg,#059669,#047857)!important;border:2px solid #34d399}
+.partida-card.torneo.llena{background:linear-gradient(135deg,#78350f,#92400e)!important}
+.partida-juego{font-weight:700;font-size:13px;line-height:1.2;margin-bottom:3px;display:flex;align-items:center;gap:5px}
 .partida-meta{font-size:11px;opacity:.85;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.partida-nota{font-size:11px;font-style:italic;opacity:.9;margin-bottom:5px;line-height:1.3}
 .partida-jugadores{display:flex;flex-wrap:wrap;gap:3px}
-.pj{padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(255,255,255,.25);color:#fff}
-.pj-libre{background:rgba(255,255,255,.12);color:rgba(255,255,255,.6);border:1px dashed rgba(255,255,255,.4)}
-.pj-yo{background:rgba(255,255,255,.4);color:#fff;font-weight:700}
+.pj{padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(255,255,255,.22);color:#fff}
+.pj-libre{background:rgba(255,255,255,.1);color:rgba(255,255,255,.55);border:1px dashed rgba(255,255,255,.35)}
+.pj-yo{background:rgba(255,255,255,.38);color:#fff;font-weight:700}
+/* Hora row mejorado */
+.cal-hora-row{border-bottom:1px solid var(--border);display:flex;min-height:48px;transition:background .1s}
+.cal-hora-row:hover{background:rgba(37,99,235,.03)}
+.cal-hora-row:last-child{border-bottom:none}
+/* Día header mejorado */
+.cal-dia{
+  flex:0 0 88vw;max-width:360px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;overflow:hidden;box-shadow:var(--sh);
+}
+@media(min-width:900px){.cal-dia{flex:1;max-width:none}}
+.cal-dia-hd{
+  padding:14px 16px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-d));
+  color:#fff;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.cal-dia-nombre{font-weight:700;font-size:16px;letter-spacing:-.3px}
+.cal-dia-count{font-size:12px;opacity:.8;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px}
 
 /* ─── DASHBOARD MÓVIL MEJORADO ────────────────────────── */
 .menu-acciones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
@@ -1035,12 +1058,11 @@ tbody tr:hover td{background:var(--paper)}
         <div class="fg">
           <label>Duración aproximada</label>
           <select id="pt-duracion">
-            <option value="30 min">30 min</option>
-            <option value="1 hora">1 hora</option>
-            <option value="1.5 horas">1.5 horas</option>
-            <option value="2 horas" selected>2 horas</option>
-            <option value="3 horas">3 horas</option>
-            <option value="4+ horas">4+ horas</option>
+            <option value="1h">1 hora</option>
+            <option value="2h" selected>2 horas</option>
+            <option value="2.5h">2,5 horas</option>
+            <option value="3h">3 horas</option>
+            <option value="4h+">4 horas o más</option>
           </select>
         </div>
       </div>
@@ -1058,7 +1080,19 @@ tbody tr:hover td{background:var(--paper)}
           </select>
         </div>
       </div>
-      <div class="fg"><label>Notas adicionales</label><textarea id="pt-notas" rows="2" placeholder="Mesa preferida, nivel de experiencia requerido…"></textarea></div>
+      <div class="form-grid">
+        <div class="fg">
+          <label>Tipo de partida</label>
+          <select id="pt-tipo">
+            <option value="normal">🎲 Partida normal</option>
+            <option value="torneo">🏆 Torneo</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Mensaje para los jugadores</label>
+          <input type="text" id="pt-notas" placeholder="Ej: campaña 3 partes, solo expertos…">
+        </div>
+      </div>
     </div>
     <div class="mo-ft">
       <button class="btn" onclick="closeModal('mo-partida')">Cancelar</button>
@@ -2090,29 +2124,47 @@ function renderCalendario(){
   }).join('');
 }
 
+function durMin(dur){
+  // Convierte duración a minutos para calcular solapamiento
+  const map={'1h':60,'2h':120,'2.5h':150,'3h':180,'4h+':240,
+             '1 hora':60,'2 horas':120,'1.5 horas':90,'3 horas':180,'4+ horas':240};
+  return map[dur]||120;
+}
+function franjaHora(franjaId){
+  // Devuelve hora en minutos desde medianoche
+  const f=FRANJAS.find(x=>x.id===franjaId); if(!f) return 0;
+  const h=parseInt(f.label.split(':')[0],10); return h*60;
+}
+function sesolapan(p1, p2){
+  // ¿Se solapan temporalmente dos partidas del mismo día?
+  const f1=FRANJAS.find(f=>f.id===p1.franja), f2=FRANJAS.find(f=>f.id===p2.franja);
+  if(!f1||!f2||f1.diaid!==f2.diaid) return false;
+  const ini1=franjaHora(p1.franja), fin1=ini1+durMin(p1.duracion||'2h');
+  const ini2=franjaHora(p2.franja), fin2=ini2+durMin(p2.duracion||'2h');
+  return ini1<fin2 && ini2<fin1;
+}
+
 function renderPartidaCard(p, pid){
-  // El creador ocupa siempre la primera plaza
   const todosJugadores=[{id:p.creadorId,nick:p.creadorNick,esCreador:true},...(p.jugadores||[])];
   const totalOcupados=todosJugadores.length;
   const maxJ=Number(p.maxJugadores||4);
   const llena=totalOcupados>=maxJ;
   const esMio=todosJugadores.some(j=>j.id===pid);
-  const cls=esMio?'mia':llena?'llena':'abierta';
-  const expl=p.explicacion==='si'?'📖':p.explicacion==='aprende'?'🎓':'';
-  // Plazas: creador + jugadores + libres
+  const esTorneo=p.tipo==='torneo';
+  const cls=(esMio?'mia':llena?'llena':'abierta')+(esTorneo?' torneo':'');
   const plazasHTML=Array.from({length:maxJ},(_,i)=>{
     const j=todosJugadores[i];
-    if(!j) return `<span class="pj pj-libre">·</span>`;
+    if(!j) return `<span class="pj pj-libre">libre</span>`;
     if(j.id===pid) return `<span class="pj pj-yo">✓ ${j.nick}</span>`;
     return `<span class="pj">${j.nick}${j.esCreador?' ★':''}</span>`;
   }).join('');
   return `<div class="partida-card ${cls}" onclick="event.stopPropagation();verPartida('${p.id}')">
-    <div class="partida-juego">${p.juego}</div>
+    <div class="partida-juego">${esTorneo?'🏆 ':''}${p.juego}</div>
     <div class="partida-meta">
-      <span>⏱ ${p.duracion||'?'}</span>
+      <span>⏱ ${p.duracion||'2h'}</span>
       <span>👥 ${totalOcupados}/${maxJ}</span>
-      ${expl}
     </div>
+    ${p.notas?`<div class="partida-nota">"${p.notas}"</div>`:''}
     <div class="partida-jugadores">${plazasHTML}</div>
   </div>`;
 }
@@ -2129,7 +2181,7 @@ function verPartida(pid_partida){
 
   // Detectar conflicto de franja
   const conflicto = !estoyDentro && pid!=='ADMIN' && DB.partidas.some(x=>
-    x.id!==p.id && x.franja===p.franja &&
+    x.id!==p.id && sesolapan(p,x) &&
     ([{id:x.creadorId},...(x.jugadores||[])].some(j=>j.id===pid))
   );
 
@@ -2197,6 +2249,7 @@ function abrirNuevaPartida(franjaId, _){
   document.getElementById('pt-duracion').value='2 horas';
   document.getElementById('pt-expl').value='no';
   document.getElementById('pt-notas').value='';
+  document.getElementById('pt-tipo').value='normal';
   if(franjaId) document.getElementById('pt-franja-sel').value=franjaId;
   document.getElementById('mo-partida-title').textContent='Nueva partida';
   document.querySelector('#mo-partida .mo-ft .btn-primary').textContent='Crear partida';
@@ -2212,6 +2265,7 @@ function editarPartida(pid_partida){
   document.getElementById('pt-duracion').value=p.duracion||'2 horas';
   document.getElementById('pt-expl').value=p.explicacion||'no';
   document.getElementById('pt-notas').value=p.notas||'';
+  document.getElementById('pt-tipo').value=p.tipo||'normal';
   document.getElementById('mo-partida-title').textContent='Editar partida';
   document.querySelector('#mo-partida .mo-ft .btn-primary').textContent='Guardar cambios';
   closeModal('mo-partida-det');
@@ -2245,7 +2299,8 @@ async function guardarPartida(){
          duracion:document.getElementById('pt-duracion').value,
          explicacion:document.getElementById('pt-expl').value,
          notas:document.getElementById('pt-notas').value,
-         creadorId:cid, creadorNick:nick,
+         tipo:document.getElementById('pt-tipo').value||'normal',
+       creadorId:cid, creadorNick:nick,
          jugadores:[], ts:new Date().toISOString()};
       DB.partidas.push(p);
     }
@@ -2305,12 +2360,29 @@ function renderTallas(){
   conTalla.forEach(p=>{ const t=p.TallaCamiseta; cnt[t]=(cnt[t]||0)+1; });
   // Resumen visual
   const tallasOrdenadas=orden.filter(t=>t&&cnt[t]);
+  const total=conTalla.length+sinTalla.length;
   document.getElementById('tallas-resumen').innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px;margin-bottom:16px">
-      ${tallasOrdenadas.map(t=>`<div class="stat"><div class="stat-ico" style="background:var(--purple-l);font-size:16px;font-weight:700;color:var(--purple)">${t}</div><div class="stat-body"><div class="stat-n" style="color:var(--purple)">${cnt[t]}</div><div class="stat-l">unidades</div></div></div>`).join('')}
-      ${sinTalla.length?`<div class="stat red"><div class="stat-ico">❓</div><div class="stat-body"><div class="stat-n">${sinTalla.length}</div><div class="stat-l">sin talla</div></div></div>`:''}
+    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px;align-items:flex-end">
+      ${tallasOrdenadas.map(t=>{
+        const pct=Math.round(cnt[t]/total*100);
+        return `<div style="text-align:center;min-width:64px">
+          <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">${t}</div>
+          <div style="background:var(--purple);border-radius:8px;width:64px;height:${Math.max(24,pct*2)}px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px">
+            <span style="font-size:20px;font-weight:800;color:#fff;line-height:1">${cnt[t]}</span>
+          </div>
+        </div>`;
+      }).join('')}
+      ${sinTalla.length?`<div style="text-align:center;min-width:64px">
+        <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">Sin talla</div>
+        <div style="background:var(--red-l);border:2px dashed var(--red);border-radius:8px;width:64px;height:48px;display:flex;align-items:center;justify-content:center">
+          <span style="font-size:20px;font-weight:800;color:var(--red)">${sinTalla.length}</span>
+        </div>
+      </div>`:''}
     </div>
-    <p style="font-size:12px;color:var(--ink3)">Total con talla: ${conTalla.length} · Sin talla asignada: ${sinTalla.length}</p>`;
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      ${tallasOrdenadas.map(t=>`<span class="chip chip-purple" style="font-size:13px;padding:5px 12px">${t}: <strong>${cnt[t]}</strong></span>`).join('')}
+    </div>
+    <p style="font-size:12px;color:var(--ink3)">Total: ${total} personas · Con talla: ${conTalla.length} · Sin talla: ${sinTalla.length}</p>`;
   // Tabla
   const sorted=[...DB.personas].sort((a,b)=>{
     const ia=orden.indexOf(a.TallaCamiseta||''), ib=orden.indexOf(b.TallaCamiseta||'');
@@ -2504,6 +2576,21 @@ function logout(){ lsSet('role',null); lsSet('persona_id',null); lsSet('session_
 // ─── INIT ──────────────────────────────────────────────
 (async()=>{
   const savedRole=lsGet('role'), savedTs=lsGet('session_ts',0);
+  // Crear persona demo para asturludicas@gmail.com si no existe
+  await loadRemote();
+  const demoEmail='asturludicas@gmail.com';
+  if(!DB.personas.find(x=>String(x.Email||'').toLowerCase()===demoEmail)){
+    DB.personas.push({
+      ID:'P_DEMO_ADMIN', id:'P_DEMO_ADMIN',
+      Nombre:'Astur', Apellidos:'Lúdicas', NombreCompleto:'Astur Lúdicas',
+      Nick:'asturludicas', Email:demoEmail,
+      Modalidad:'Demo', TallaCamiseta:'L', GrupoID:'',
+      EsTitular:'SI', Alojamiento:'NO', ImporteTotal:0,
+      Codigo:'', Activo:'TRUE', Observaciones:'Cuenta demo para pruebas'
+    });
+    await saveRemote();
+  }
+
   if(savedRole && savedTs > Date.now()){  // sesión permanente hasta logout
     await loadRemote();
     if(savedRole==='admin'){ ROLE='admin'; bootApp(); return; }
