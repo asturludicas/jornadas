@@ -19,12 +19,12 @@
 const CFG = {
   // Administradores: cada uno con su email y su contraseña
   ADMINS: [
-    { email: 'asturludicas@gmail.com', pass: 'DanielyAlex' },
-    { email: 'alexdpv90@gmail.com',  pass: 'DanielyAlex'   },
+    { email: 'asturludicas@gmail.com', pass: 'DanielyAlex!' },
+    { email: 'admin2@asturludicas.es',  pass: 'AdminAlex2025!'   },
   ],
   JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
   JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
-  EVENTO:          'Jornadas AsturLúdicas',
+  EVENTO:          'Jornadas Astur Lúdicas',
   // Contraseña universal para inscritos (distinta de la de admins)
   INSCRITO_PASS:   'invitado',
 
@@ -1299,21 +1299,58 @@ async function loginInscrito(){
   const email=document.getElementById('l-email').value.trim().toLowerCase();
   const cod=document.getElementById('l-cod').value.trim();
   if(!email||!cod){ showErr('err-i','Introduce email y contraseña.'); return; }
-  // SEGURIDAD: emails de admin no pueden entrar por este formulario
   if(CFG.ADMINS.some(a=>a.email===email)){
     showErr('err-i','Este email debe acceder por el panel de administrador.'); return;
   }
-  await loadRemote();
-  const p=DB.personas.find(x=>String(x.Email||'').trim().toLowerCase()===email && x.Activo!=='FALSE');
-  if(!p){ showErr('err-i','Email no encontrado. Contacta con la organización.'); return; }
-  // Acepta la contraseña universal de inscritos O el código individual
-  const codOk = cod===CFG.INSCRITO_PASS || cod.toUpperCase()===(String(p.Codigo||'').trim().toUpperCase());
-  if(!codOk){ showErr('err-i','Contraseña incorrecta.'); return; }
-  ROLE='inscrito'; ME=p;
-  lsSet('role','inscrito'); lsSet('persona_id',p.ID||p.id||''); lsSet('persona_email',email);
-  lsSet('session_ts', Date.now() + 365*24*3600*1000);
-  log('LOGIN',email);
-  bootApp();
+  // Mostrar que está cargando
+  const btn=document.querySelector('#lp-inscrito .btn-primary');
+  const orig=btn.textContent; btn.textContent='Verificando…'; btn.disabled=true;
+  try {
+    // Forzar carga fresca del servidor (no del caché local)
+    const remote = await jbGet();
+    if(remote && remote._jornadas && remote._jornadas.personas){
+      DB.personas = remote._jornadas.personas;
+      // Actualizar también el resto
+      if(remote._jornadas.grupos)      DB.grupos      = remote._jornadas.grupos;
+      if(remote._jornadas.pagos)       DB.pagos       = remote._jornadas.pagos;
+      if(remote._jornadas.modulos)     DB.modulos     = remote._jornadas.modulos;
+      if(remote._jornadas.config)      DB.config      = remote._jornadas.config;
+      if(remote._jornadas.asignaciones)DB.asignaciones= remote._jornadas.asignaciones;
+      if(remote._jornadas.solicitudes) DB.solicitudes = remote._jornadas.solicitudes;
+      if(remote._jornadas.comidas_optin)DB.comidas_optin=remote._jornadas.comidas_optin;
+      if(remote._jornadas.comidas_info) DB.comidas_info =remote._jornadas.comidas_info;
+      if(remote._jornadas.partidas)    DB.partidas    = remote._jornadas.partidas;
+      if(remote._jornadas.habitaciones)DB.habitaciones= remote._jornadas.habitaciones;
+      lsSet('jdb', DB);
+    }
+    // Buscar la persona — intentar con Email y también con email (minúsculas)
+    const p = DB.personas.find(x => {
+      const em = String(x.Email||x.email||'').trim().toLowerCase();
+      return em === email && x.Activo !== 'FALSE';
+    });
+    if(!p){
+      // Debug: mostrar cuántas personas hay y si el email está
+      const total = DB.personas.length;
+      showErr('err-i', total===0
+        ? 'No se pudieron cargar los datos. Comprueba tu conexión.'
+        : `Email no encontrado entre ${total} inscritos. Verifica que sea el email exacto con el que te registraste.`);
+      return;
+    }
+    // Contraseña: universal O código individual
+    const codOk = cod === CFG.INSCRITO_PASS
+               || cod.toUpperCase() === String(p.Codigo||p.codigo||'').trim().toUpperCase();
+    if(!codOk){
+      showErr('err-i', 'Contraseña incorrecta. La contraseña es: ' + CFG.INSCRITO_PASS);
+      return;
+    }
+    ROLE='inscrito'; ME=p;
+    lsSet('role','inscrito'); lsSet('persona_id',p.ID||p.id||''); lsSet('persona_email',email);
+    lsSet('session_ts', Date.now() + 365*24*3600*1000);
+    log('LOGIN',email);
+    bootApp();
+  } finally {
+    btn.textContent=orig; btn.disabled=false;
+  }
 }
 function showErr(id,msg){ const e=document.getElementById(id); e.textContent=msg; e.style.display='block'; }
 
@@ -2810,7 +2847,6 @@ function logout(){ lsSet('role',null); lsSet('persona_id',null); lsSet('session_
   await loadRemote();
 
   if(savedRole && savedTs > Date.now()){  // sesión permanente hasta logout
-    await loadRemote();
     if(savedRole==='admin'){
       const savedAdminEmail=lsGet('admin_email','');
       // Verificar que el email guardado sigue siendo admin válido
