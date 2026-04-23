@@ -1378,6 +1378,8 @@ async function loginInscrito(){
       ImporteTotal: 0, Activo: 'TRUE', Observaciones: '',
       _anonimo: true
     };
+    // Limpiar cualquier sesión admin previa antes de entrar como inscrito
+    lsSet('admin_email', null);
     ROLE='inscrito';
     lsSet('role','inscrito');
     lsSet('persona_id', ME.ID||ME.id||'');
@@ -1721,6 +1723,17 @@ function selAlojTab(id,btn){
   renderHabs();
 }
 
+function personasParaTab(tab){
+  // Devuelve solo personas que corresponden al tab de alojamiento
+  return DB.personas.filter(p=>{
+    if(tab==='todas') return p.Alojamiento==='SI'||noches(p)!=='sin-alojamiento';
+    const n=noches(p);
+    if(tab==='jueves-domingo') return n==='jueves-domingo';
+    if(tab==='viernes-domingo') return n==='viernes-domingo';
+    return p.Alojamiento==='SI'||n!=='sin-alojamiento';
+  });
+}
+
 function renderHabs(){
   const habs=DB.habitaciones.filter(h=>{
     if(alojTab==='todas') return true;
@@ -1751,7 +1764,7 @@ function renderHabs(){
     // Plazas libres como líneas vacías
     const libresHTML = Array.from({length:libre},()=>`<div style="padding:5px 8px;border:1px dashed var(--border2);border-radius:var(--rs);font-size:11px;color:var(--ink3);margin-top:3px;text-align:center">Plaza libre</div>`).join('');
     // Selector solo si hay plazas libres
-    const conAloj=DB.personas.filter(p=>p.Alojamiento==='SI'||noches(p)!=='sin-alojamiento');
+    const conAloj=personasParaTab(alojTab);
     const sinAsignar=conAloj.filter(p=>!DB.asignaciones[p.ID||p.id||'']);
     const selectorHTML = libre>0 ? `
       <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
@@ -2139,18 +2152,16 @@ function renderMiAloj(){
   const gestiono=gid?DB.personas.filter(x=>(x.GrupoID||'')===gid):[p];
 
   // Habitaciones accesibles
-  const modPersona=ME?String(ME.Modalidad||'').toLowerCase():'';
   const esAnonimo2=ME?._anonimo;
   const habs=DB.habitaciones.filter(h=>{
-    // Filtro por noches
     const hn=h.noches||'ambas';
-    let paseNoches=true;
-    if(n==='viernes-domingo') paseNoches=(hn==='viernes'||hn==='ambas');
-    else if(n==='sin-alojamiento') paseNoches=true; // anónimos ven todo
-    // Filtro por modalidad
-    const habMods=String(h.Modalidades||h.modalidades||'TODAS').toLowerCase();
-    const paseMod=habMods==='todas'||habMods===''||esAnonimo2||habMods.includes(modPersona)||modPersona==='';
-    return paseNoches && paseMod;
+    // Filtro estricto por noches según modalidad del inscrito
+    // Jueves→Dom: puede usar habs de ambas o jueves-domingo
+    // Viernes→Dom: solo habs viernes o ambas
+    // Sin aloj / anónimo: ve todas (solo informativo)
+    if(n==='jueves-domingo') return hn==='ambas'||hn==='jueves-domingo';
+    if(n==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo'||hn==='ambas';
+    return true; // sin-alojamiento o anónimo: ve todo sin poder asignar
   });
 
   document.getElementById('inscrito-hab-grid').innerHTML=habs.map(h=>{
@@ -2168,13 +2179,13 @@ function renderMiAloj(){
       <div style="font-weight:600;font-size:13px">${h.hotel||h.Hotel||''} ${h.num||h.NumeroHabitacion||''}</div>
       <div style="font-size:11px;color:var(--ink3);margin-top:2px">${h.tipo||h.Tipo||''} · ${libre} libre${libre!==1?'s':''}</div>
       <div class="plazas">${plazas}</div>
-      ${libre>0||ocup.some(o=>gestiono.some(g=>(g.ID||g.id||'')===(o.ID||o.id||'')))?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
+      ${(libre>0||ocup.some(o=>gestiono.some(g=>(g.ID||g.id||'')===(o.ID||o.id||''))))&&n!=='sin-alojamiento'&&!esAnonimo2?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
         ${gestiono.map(gp=>{
           const gpid=gp.ID||gp.id||'';
           const estaAqui=ocup.some(o=>(o.ID||o.id||'')===gpid);
           const puedeEntrar=libre>0||estaAqui;
           return `<button class="btn btn-xs ${estaAqui?'btn-success':'btn-primary'}" ${!puedeEntrar?'disabled':''} onclick="asignarHabInscrito('${hid}','${gpid}','${gp.Nombre||''}')">
-            ${estaAqui?'✓':'+'}  ${gp.Nombre||''}
+            ${estaAqui?'✓ Ya estoy':'+'}  ${gp.Nombre||''}
           </button>`;
         }).join('')}
       </div>`:''}</div>`;
@@ -3096,7 +3107,7 @@ async function reloadData(){
   else{ const pid=ME?.ID||ME?.id||''; const updated=DB.personas.find(x=>(x.ID||x.id||'')===pid); if(updated) ME=updated; renderPortal(); }
   toast('Datos actualizados','ok');
 }
-function logout(){ lsSet('role',null); lsSet('persona_id',null); lsSet('session_ts',0); lsSet('admin_email',null); ROLE=null; ME=null; location.reload(); }
+function logout(){ ['role','persona_id','session_ts','admin_email','persona_email','jdb'].forEach(k=>lsSet(k,null)); ROLE=null; ME=null; location.reload(); }
 
 // ─── INIT ──────────────────────────────────────────────
 (async()=>{
@@ -3123,12 +3134,15 @@ function logout(){ lsSet('role',null); lsSet('persona_id',null); lsSet('session_
   if(savedRole && savedTs > Date.now()){  // sesión permanente hasta logout
     if(savedRole==='admin'){
       const savedAdminEmail=lsGet('admin_email','');
-      // Verificar que el email guardado sigue siendo admin válido
-      if(CFG.ADMINS.some(a=>a.email===savedAdminEmail)){
+      // Verificar ESTRICTAMENTE que el email es admin válido
+      const esAdminValido = savedAdminEmail &&
+        CFG.ADMINS.some(a=>a.email===savedAdminEmail);
+      if(esAdminValido){
         ROLE='admin'; bootApp(); return;
       }
-      // Si no es válido, limpiar sesión
+      // Email no válido → limpiar TODO y mostrar login
       lsSet('role',null); lsSet('session_ts',0);
+      lsSet('admin_email',null); lsSet('persona_id',null);
     }
     const savedId=lsGet('persona_id');
     const p=DB.personas.find(x=>(x.ID||x.id||'')===savedId);
