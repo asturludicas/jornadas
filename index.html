@@ -1339,9 +1339,9 @@ async function loginInscrito(){
   if(CFG.ADMINS.some(a=>a.email===email)){
     showErr('err-i','Este email debe acceder por el panel de administrador.'); return;
   }
-  // La contraseña tiene que ser la universal
+  // Verificación de contraseña — tiene que ser la contraseña universal
   if(cod !== CFG.INSCRITO_PASS){
-    showErr('err-i','Contraseña incorrecta.'); return;
+    showErr('err-i',`Contraseña incorrecta. Usa la contraseña que te facilitó la organización.`); return;
   }
   const btn=document.querySelector('#lp-inscrito .btn-primary');
   const orig=btn.textContent; btn.textContent='Cargando…'; btn.disabled=true;
@@ -1405,8 +1405,12 @@ function bootApp(){
     buildNav('admin');
     nav('dashboard');
   } else {
+    // Verificación final: si ME es un admin, no permitir acceso como inscrito
+    if(ME && CFG.ADMINS.some(a=>a.email===String(ME.Email||'').toLowerCase())){
+      logout(); return;
+    }
     document.getElementById('sb-sub').textContent='Área personal';
-    document.getElementById('sb-user').textContent=ME.Email||'';
+    document.getElementById('sb-user').textContent=ME.Nick ? '@'+ME.Nick : ME.Email||'';
     document.getElementById('btn-logout-top').style.display='flex';
     buildNav('inscrito');
     nav('mi-ficha');
@@ -1739,7 +1743,7 @@ function renderHabs(){
     if(alojTab==='todas') return true;
     const hn=h.noches||h.Noches||'ambas';
     if(alojTab==='jueves-domingo') return hn==='ambas'||hn==='jueves-domingo';
-    if(alojTab==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo'||hn==='ambas';
+    if(alojTab==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo'; // 'ambas' = Jue+Vie, solo para tab Jueves
     return true;
   });
 
@@ -2160,7 +2164,7 @@ function renderMiAloj(){
     // Viernes→Dom: solo habs viernes o ambas
     // Sin aloj / anónimo: ve todas (solo informativo)
     if(n==='jueves-domingo') return hn==='ambas'||hn==='jueves-domingo';
-    if(n==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo'||hn==='ambas';
+    if(n==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo';
     return true; // sin-alojamiento o anónimo: ve todo sin poder asignar
   });
 
@@ -3112,9 +3116,11 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
 // ─── INIT ──────────────────────────────────────────────
 (async()=>{
   const savedRole=lsGet('role'), savedTs=lsGet('session_ts',0);
+
+  // Cargar datos remotos siempre
   await loadRemote();
 
-  // Cuenta invitado genérica — siempre disponible
+  // Asegurar cuenta invitado genérica en el JSONBin
   const INVITADO_EMAIL = 'invitado@asturludicas.es';
   if(!DB.personas.find(x=>String(x.Email||'').toLowerCase()===INVITADO_EMAIL)){
     DB.personas.push({
@@ -3122,33 +3128,35 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
       Nombre:'Invitado', Apellidos:'Jornadas',
       NombreCompleto:'Invitado Jornadas',
       Nick:'invitado', Email:INVITADO_EMAIL,
-      Modalidad:'Jueves (270€)', TallaCamiseta:'',
+      Modalidad:'Jueves (270€)', TallaCamiseta:'L',
       GrupoID:'', EsTitular:'SI', Alojamiento:'SI',
       ImporteTotal:0, Codigo:'', Activo:'TRUE',
-      Observaciones:'Cuenta genérica de pruebas',
-      _invitado: true
+      Observaciones:'Cuenta genérica de acceso a la app'
     });
     await saveRemote();
   }
 
-  if(savedRole && savedTs > Date.now()){  // sesión permanente hasta logout
+  // Restaurar sesión solo si es válida Y no ha expirado
+  if(savedRole && savedTs > Date.now()){
     if(savedRole==='admin'){
-      const savedAdminEmail=lsGet('admin_email','');
-      // Verificar ESTRICTAMENTE que el email es admin válido
-      const esAdminValido = savedAdminEmail &&
-        CFG.ADMINS.some(a=>a.email===savedAdminEmail);
-      if(esAdminValido){
-        ROLE='admin'; bootApp(); return;
+      const savedAdminEmail = lsGet('admin_email','');
+      const esAdmin = savedAdminEmail && CFG.ADMINS.some(a=>a.email===savedAdminEmail);
+      if(esAdmin){ ROLE='admin'; bootApp(); return; }
+      // Sesión admin inválida → borrar todo
+      ['role','session_ts','admin_email','persona_id','persona_email'].forEach(k=>lsSet(k,null));
+    } else if(savedRole==='inscrito'){
+      const savedId = lsGet('persona_id','');
+      // Verificar que el ID guardado NO es un admin disfrazado
+      const esAdmin = CFG.ADMINS.some(a=>a.email===lsGet('persona_email',''));
+      if(!esAdmin && savedId){
+        const p = DB.personas.find(x=>(x.ID||x.id||'')===savedId);
+        if(p){ ROLE='inscrito'; ME=p; bootApp(); return; }
       }
-      // Email no válido → limpiar TODO y mostrar login
-      lsSet('role',null); lsSet('session_ts',0);
-      lsSet('admin_email',null); lsSet('persona_id',null);
+      // Sesión inscrito inválida → limpiar
+      ['role','session_ts','persona_id','persona_email'].forEach(k=>lsSet(k,null));
     }
-    const savedId=lsGet('persona_id');
-    const p=DB.personas.find(x=>(x.ID||x.id||'')===savedId);
-    if(p){ ROLE='inscrito'; ME=p; bootApp(); return; }
   }
-  loadRemote().catch(()=>{});
+  // Mostrar pantalla de login
 })();
 </script>
 
