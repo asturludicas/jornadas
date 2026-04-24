@@ -24,9 +24,13 @@ const CFG = {
   ],
   JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
   JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
-  EVENTO:          'Jornadas Astur Lúdicas',
+  EVENTO:          'Jornadas Asturlúdicas',
   // Contraseña universal para inscritos (distinta de la de admins)
-  INSCRITO_PASS:   'jornadas2025',
+  INSCRITO_PASS:   'jornadas2026',
+  // ACCESO_ABIERTO:
+  //   true  → cualquier email entra (útil para pruebas)
+  //   false → solo emails que estén en la lista de inscritos
+  ACCESO_ABIERTO:  false,
 
   // Servicios de comida en orden. todos=automático según modalidad, optin=el inscrito se apunta
   COMIDAS: [
@@ -109,11 +113,18 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 
 /* Topbar */
 .topbar{
-  height:var(--top-h);background:var(--surface);
+  height:var(--top-h);
+  background:var(--surface);
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:10px;
   padding:0 12px;position:sticky;top:0;z-index:40;
   max-width:100vw;overflow:hidden;
+}
+#page-title{
+  font-weight:700;font-size:16px;letter-spacing:-.3px;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
 }
 .topbar-back{
   width:34px;height:34px;border-radius:50%;
@@ -148,7 +159,7 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
   font-size:10px;font-weight:500;padding:4px 0;
   position:relative;
 }
-.bn-item.active{color:var(--accent)}
+.bn-item.active{color:var(--accent)}.bn-item.active .bn-ico{transform:translateY(-2px)}.bn-item .bn-ico{transition:transform .15s}
 .bn-ico{font-size:20px;line-height:1}
 .bn-dot{
   position:absolute;top:6px;right:calc(50% - 14px);
@@ -174,7 +185,7 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
   transition:background .1s,color .1s;position:relative;
 }
 .si:hover{background:var(--paper);color:var(--ink)}
-.si.active{background:var(--accent-l);color:var(--accent)}
+.si.active{background:linear-gradient(90deg,var(--accent-l),transparent);color:var(--accent);font-weight:700;border-left:3px solid var(--accent)}
 .si-ico{font-size:15px;width:18px;text-align:center;flex-shrink:0}
 .si-badge{
   margin-left:auto;background:var(--red);color:#fff;
@@ -190,18 +201,37 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
 /* ─── CARDS ───────────────────────────────────────────── */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin-bottom:14px;min-width:0;overflow:hidden}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.07);padding:16px;margin-bottom:14px;min-width:0;overflow:hidden}
 .card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
 .card-title{font-size:14px;font-weight:600}
 
 /* ─── STATS ───────────────────────────────────────────── */
-.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;width:100%}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px;width:100%}
 @media(min-width:500px){.stats{grid-template-columns:repeat(3,1fr);gap:12px}}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 10px;display:flex;align-items:center;gap:10px;box-shadow:var(--sh);min-width:0;overflow:hidden}
-.stat-ico{font-size:20px;flex-shrink:0;width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--accent-l)}
+.stat{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:14px 12px;
+  display:flex;align-items:center;gap:12px;
+  box-shadow:0 2px 10px rgba(0,0,0,.07);
+  min-width:0;overflow:hidden;position:relative;
+}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;background:var(--accent);opacity:.3}
+.stat.green::before{background:var(--green)}
+.stat.red::before{background:var(--red)}
+.stat.amber::before{background:var(--amber)}
+.stat.purple::before{background:var(--purple)}
+.stat-ico{font-size:22px;flex-shrink:0;width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--accent-l)}
+.stat.green .stat-ico{background:var(--green-l)}
+.stat.red .stat-ico{background:var(--red-l)}
+.stat.amber .stat-ico{background:var(--amber-l)}
+.stat.purple .stat-ico{background:var(--purple-l)}
 .stat-body{flex:1;min-width:0;overflow:hidden}
-.stat-n{font-size:22px;font-weight:700;color:var(--accent);letter-spacing:-0.5px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat-l{font-size:11px;color:var(--ink3);margin-top:2px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat-n{font-size:24px;font-weight:800;color:var(--accent);letter-spacing:-1px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat.green .stat-n{color:var(--green)}
+.stat.red .stat-n{color:var(--red)}
+.stat.amber .stat-n{color:var(--amber)}
+.stat.purple .stat-n{color:var(--purple)}
+.stat-l{font-size:11px;color:var(--ink3);margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stat.green .stat-ico{background:var(--green-l)}.stat.green .stat-n{color:var(--green)}
 .stat.amber .stat-ico{background:var(--amber-l)}.stat.amber .stat-n{color:var(--amber)}
 .stat.red .stat-ico{background:var(--red-l)}.stat.red .stat-n{color:var(--red)}
@@ -460,21 +490,59 @@ tbody tr:hover td{background:var(--paper)}
 /* ─── DASHBOARD MÓVIL MEJORADO ────────────────────────── */
 .menu-acciones{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;width:100%}
 @media(min-width:500px){.menu-acciones{grid-template-columns:repeat(4,1fr)}}
+.menu-seccion{margin-bottom:14px}
+.menu-seccion-label{
+  font-size:10px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--ink3);margin-bottom:8px;
+  display:flex;align-items:center;gap:6px;
+}
+.menu-seccion-label::after{content:'';flex:1;height:1px;background:var(--border)}
+.ma-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ma-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.ma-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .ma-btn{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:5px;padding:14px 8px;
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--r);box-shadow:var(--sh);
-  cursor:pointer;transition:.15s;text-align:center;
-  font-size:11px;font-weight:600;color:var(--ink2);min-width:0;
+  gap:7px;padding:16px 10px;
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.08);
+  cursor:pointer;transition:all .15s;text-align:center;
+  font-size:12px;font-weight:700;color:var(--ink2);min-width:0;
+  line-height:1.2;
 }
-.ma-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-l)}
-.ma-btn .ma-ico{font-size:24px;line-height:1}
-.ma-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-.ma-btn.primary:hover{background:var(--accent-d)}
-.ma-btn.green{background:var(--green);color:#fff;border-color:var(--green)}
-.ma-btn.red-soft{background:var(--red-l);color:var(--red);border-color:var(--red-l)}
-.ma-btn.amber-soft{background:var(--amber-l);color:var(--amber);border-color:var(--amber-l)}
+.ma-btn:active{transform:scale(.96)}
+.ma-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-l);box-shadow:0 4px 14px rgba(37,99,235,.15)}
+.ma-btn .ma-ico{font-size:26px;line-height:1}
+/* Variantes de color */
+.ma-btn.primary{
+  background:linear-gradient(135deg,var(--accent),#1d4ed8);
+  color:#fff;border-color:transparent;
+  box-shadow:0 4px 14px rgba(37,99,235,.35);
+}
+.ma-btn.primary:hover{background:linear-gradient(135deg,#1d4ed8,#1e3a8a);box-shadow:0 6px 20px rgba(37,99,235,.45)}
+.ma-btn.green{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(22,163,74,.3)}
+.ma-btn.green:hover{background:linear-gradient(135deg,#15803d,#166534)}
+.ma-btn.amber-soft{background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(217,119,6,.3)}
+.ma-btn.amber-soft:hover{background:linear-gradient(135deg,#b45309,#92400e)}
+.ma-btn.red-soft{background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(220,38,38,.3)}
+.ma-btn.red-soft:hover{background:linear-gradient(135deg,#b91c1c,#991b1b)}
+
+/* ─── NOTIFICACIONES IN-APP ───────────────────────────── */
+.notif-banner{
+  position:fixed;bottom:calc(var(--nav-h) + 12px);left:50%;transform:translateX(-50%);
+  width:calc(100% - 24px);max-width:480px;
+  background:var(--accent);color:#fff;
+  border-radius:var(--r);padding:14px 16px;
+  box-shadow:0 4px 20px rgba(0,0,0,.3);
+  z-index:200;animation:slideUp .25s ease;
+}
+.notif-banner.cerrar{animation:slideDown .2s ease forwards}
+@keyframes slideUp{from{transform:translateX(-50%) translateY(20px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+@keyframes slideDown{to{transform:translateX(-50%) translateY(20px);opacity:0}}
+.notif-banner-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.notif-banner-title{font-weight:700;font-size:14px}
+.notif-banner-close{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.notif-banner-body{font-size:13px;line-height:1.5;opacity:.92}
+.notif-counter{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:2px 6px;min-width:18px;text-align:center}
 </style>
 </head>
 <body>
@@ -660,10 +728,11 @@ tbody tr:hover td{background:var(--paper)}
               <label>Segmento</label>
               <select id="msg-seg" onchange="toggleSegVal()">
                 <option value="">Todos los inscritos</option>
-                <option value="MODALIDAD">Por modalidad</option>
-                <option value="ALOJ_JUE">Con alojamiento (jueves→dom)</option>
-                <option value="ALOJ_VIE">Con alojamiento (viernes→dom)</option>
+                <option value="CON_ALOJ">Con alojamiento (todos)</option>
+                <option value="ALOJ_JUE">Alojamiento jueves→domingo</option>
+                <option value="ALOJ_VIE">Alojamiento viernes→domingo</option>
                 <option value="SIN_ALOJ">Sin alojamiento</option>
+                <option value="MODALIDAD">Por modalidad concreta</option>
                 <option value="PERSONA">Persona concreta (email)</option>
               </select>
             </div>
@@ -687,22 +756,30 @@ tbody tr:hover td{background:var(--paper)}
       </div>
 
       <!-- Importar -->
-      <div id="page-importar" class="page">
+           <div id="page-importar" class="page">
         <div class="card">
-          <div class="card-hd"><span class="card-title">Importar CSV</span></div>
-          <p style="font-size:13px;color:var(--ink2);margin-bottom:14px">Exporta tu Google Sheet o las respuestas del Forms como CSV y súbela aquí.</p>
-          <div class="fg"><label>Archivo CSV</label><input type="file" id="csv-file" accept=".csv,.txt" onchange="leerCSV(this)"></div>
-          <div id="csv-mapeo" style="display:none">
-            <h3 style="margin-bottom:10px;font-size:14px">Mapear columnas CSV → campos</h3>
-            <div class="form-grid" id="mapeo-campos"></div>
-            <div style="display:flex;gap:8px;margin-top:12px">
-              <button class="btn btn-primary" onclick="ejecutarImport()">Importar</button>
+          <div class="card-hd">
+            <span class="card-title">📥 Importar desde Google Forms / CSV</span>
+          </div>
+          <div style="background:var(--accent-l);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--accent)">
+            <strong>Flujo recomendado:</strong> Google Forms → Google Sheets → Archivo → Descargar como CSV → Subir aquí.<br>
+            <span style="color:var(--ink2)">Detecta duplicados por email. Nunca pisa pagos, códigos ni notas internas. Los acompañantes se crean automáticamente en su grupo.</span>
+          </div>
+          <div class="fg">
+            <label>Archivo CSV (exportado desde Google Sheets)</label>
+            <input type="file" id="csv-file" accept=".csv,.txt" onchange="leerCSV(this)">
+          </div>
+          <div id="csv-mapeo" style="display:none;margin-top:12px">
+            <div id="mapeo-campos"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+              <button class="btn btn-primary" onclick="ejecutarImport()">⬆ Importar personas</button>
               <button class="btn" onclick="cancelarImport()">Cancelar</button>
             </div>
           </div>
-          <div id="csv-res" style="display:none;margin-top:14px"></div>
+          <div id="csv-res" style="display:none;margin-top:10px"></div>
         </div>
       </div>
+
 
       <!-- Config -->
       <div id="page-config" class="page">
@@ -1198,6 +1275,7 @@ tbody tr:hover td{background:var(--paper)}
   </div>
 </div>
 
+<div id="notif-container"></div>
 <div id="toast"></div>
 
 <!-- ══════════════ JAVASCRIPT ══════════════ -->
@@ -1213,6 +1291,7 @@ const DB = {
   cobros:[],         // [{id,fecha,concepto,importe,notas}]
   partidas:[],       // [{id,franja,juego,duracion,maxJugadores,explicacion,creadorId,creadorNick,jugadores:[{id,nick}],ts}]
   suministros_stock:{}, // {nombre_articulo: cantidad_stock}
+  mensajes_leidos:{}, // {personaId: [msgId, ...]}
   sum_consumos:{},   // post-evento: real consumido
   sum_sobrantes:{},  // post-evento: lo que sobró
   sum_historial:[],  // historial de ediciones guardadas
@@ -1244,9 +1323,21 @@ function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 // ─── SYNC ──────────────────────────────────────────────
 async function loadRemote(){
   const r=await jbGet();
-  if(r&&r._jornadas){ Object.assign(DB,r._jornadas); lsSet('jdb',DB); return true; }
-  const l=lsGet('jdb'); if(l){ Object.assign(DB,l); return true; }
-  return false;
+  if(r&&r._jornadas){ Object.assign(DB,r._jornadas); lsSet('jdb',DB); }
+  else { const l=lsGet('jdb'); if(l) Object.assign(DB,l); }
+  // Restaurar setting de acceso desde DB.config (si fue cambiado desde la app)
+  if(DB.config && DB.config.acceso_abierto !== undefined){
+    CFG.ACCESO_ABIERTO = DB.config.acceso_abierto;
+  }
+  // Re-inyectar invitado en memoria (nunca persiste en JSONBin)
+  DB.personas=DB.personas.filter(p=>!p._esInvitado);
+  DB.personas.push({
+    ID:'P_INVITADO',id:'P_INVITADO',Nombre:'Invitado',Apellidos:'',
+    NombreCompleto:'Invitado',Nick:'invitado',Email:'invitado@asturludicas.es',
+    Modalidad:'Jueves (270€)',TallaCamiseta:'',GrupoID:'',EsTitular:'SI',
+    Alojamiento:'SI',ImporteTotal:0,Codigo:'',Activo:'TRUE',_esInvitado:true
+  });
+  return true;
 }
 async function saveRemote(){
   lsSet('jdb',DB);
@@ -1408,6 +1499,7 @@ function bootApp(){
     buildNav('inscrito');
     nav('mi-ficha');
     renderPortal();
+    setTimeout(mostrarNotificaciones, 800); // pequeño delay para que cargue la UI
   }
   updateBadge();
 }
@@ -1498,11 +1590,11 @@ function renderDashboard(){
   const totalPag=DB.pagos.reduce((a,p)=>a+Number(p.importe||0),0);
   const totalPend=DB.personas.reduce((a,p)=>a+Math.max(0,Number(p.ImporteTotal||0)-pagadoPor(p.ID||'')),0);
   const pend=DB.solicitudes.filter(s=>s.estado==='PENDIENTE').length;
-  const conAloj=DB.personas.filter(p=>noches(p)!=='sin-alojamiento').length;
+  const conAloj=DB.personas.filter(p=>!p._esInvitado&&noches(p)!=='sin-alojamiento').length;
   const domOptin=Object.keys(DB.comidas_optin['comida_dom']||{}).length || (DB.comidas_optin['comida_dom']||[]).length;
 
   document.getElementById('stats-grid').innerHTML=[
-    {n:DB.personas.length, ico:'👥', l:'Personas inscritas', cls:''},
+    {n:DB.personas.filter(p=>!p._esInvitado).length, ico:'👥', l:'Personas inscritas', cls:''},
     {n:conAloj, ico:'🏨', l:'Con alojamiento', cls:'purple'},
     {n:totalPag.toFixed(0)+'€', ico:'✅', l:'Total pagado', cls:'green'},
     {n:totalPend.toFixed(0)+'€', ico:'⏳', l:'Pendiente de cobro', cls:'amber'},
@@ -1512,38 +1604,62 @@ function renderDashboard(){
 
   const adminMailDisp=lsGet('admin_email','');
   document.getElementById('dash-quicklinks').innerHTML=`
-    <div style="margin-bottom:8px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px">Evento</div>
-      <div class="menu-acciones">
-        <button class="ma-btn primary" onclick="nav('calendario')"><span class="ma-ico">🎲</span>Calendario</button>
-        <button class="ma-btn" onclick="nav('personas')"><span class="ma-ico">👥</span>Personas</button>
-        <button class="ma-btn" onclick="nav('alojamiento')"><span class="ma-ico">🏨</span>Alojamiento</button>
-        <button class="ma-btn" onclick="nav('comidas')"><span class="ma-ico">🍽</span>Comidas</button>
+    <div class="menu-seccion">
+      <div class="menu-seccion-label">Evento</div>
+      <div class="ma-grid-2">
+        <button class="ma-btn primary" onclick="nav('calendario')">
+          <span class="ma-ico">🎲</span>Calendario
+        </button>
+        <button class="ma-btn" onclick="nav('personas')">
+          <span class="ma-ico">👥</span>Personas
+        </button>
+        <button class="ma-btn" onclick="nav('alojamiento')">
+          <span class="ma-ico">🏨</span>Alojamiento
+        </button>
+        <button class="ma-btn" onclick="nav('comidas')">
+          <span class="ma-ico">🍽</span>Comidas
+        </button>
       </div>
     </div>
-    <div style="margin-bottom:8px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px">Economía</div>
-      <div class="menu-acciones" style="grid-template-columns:repeat(3,1fr);gap:8px">
-        <button class="ma-btn green" onclick="openModal('mo-pago')"><span class="ma-ico">💰</span>Cobrar inscripción</button>
-        <button class="ma-btn amber-soft" onclick="openModal('mo-gasto')"><span class="ma-ico">💸</span>Registrar gasto</button>
-        <button class="ma-btn red-soft" onclick="openModal('mo-cobro')"><span class="ma-ico">🎁</span>Registrar cobro</button>
+    <div class="menu-seccion">
+      <div class="menu-seccion-label">Economía</div>
+      <div class="ma-grid-3">
+        <button class="ma-btn green" onclick="openModal('mo-pago')">
+          <span class="ma-ico">💰</span>Cobrar inscripción
+        </button>
+        <button class="ma-btn amber-soft" onclick="openModal('mo-gasto')">
+          <span class="ma-ico">💸</span>Registrar gasto
+        </button>
+        <button class="ma-btn red-soft" onclick="openModal('mo-cobro')">
+          <span class="ma-ico">🎁</span>Registrar cobro
+        </button>
       </div>
     </div>
-    <div style="margin-bottom:14px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px">Gestión</div>
-      <div class="menu-acciones" style="grid-template-columns:repeat(4,1fr);gap:8px">
-        <button class="ma-btn" onclick="nav('solicitudes')"><span class="ma-ico">📝</span>Solicitudes</button>
-        <button class="ma-btn" onclick="nav('contabilidad')"><span class="ma-ico">📊</span>Contabilidad</button>
-        <button class="ma-btn" onclick="nav('tallas')"><span class="ma-ico">👕</span>Tallas</button>
-        <button class="ma-btn" onclick="nav('suministros')"><span class="ma-ico">📦</span>Suministros</button>
+    <div class="menu-seccion">
+      <div class="menu-seccion-label">Gestión</div>
+      <div class="ma-grid-2">
+        <button class="ma-btn" onclick="nav('solicitudes')">
+          <span class="ma-ico">📝</span>Solicitudes
+        </button>
+        <button class="ma-btn" onclick="nav('contabilidad')">
+          <span class="ma-ico">📊</span>Contabilidad
+        </button>
+        <button class="ma-btn" onclick="nav('tallas')">
+          <span class="ma-ico">👕</span>Tallas camiseta
+        </button>
+        <button class="ma-btn" onclick="nav('suministros')">
+          <span class="ma-ico">📦</span>Suministros
+        </button>
       </div>
     </div>`;
-  // Sesión: separada, al final, discreta
   document.getElementById('dash-sesion').innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;
-      background:var(--paper);border:1px solid var(--border);border-radius:var(--rs);margin-top:4px">
-      <span style="font-size:11px;color:var(--ink3)">Sesión activa: <strong style="color:var(--ink2)">${adminMailDisp}</strong></span>
-      <button class="btn btn-sm btn-danger" style="padding:4px 10px;font-size:11px" onclick="logout()">Salir</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
+      background:var(--paper);border:1px solid var(--border);border-radius:12px;margin-top:4px">
+      <div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3)">Sesión activa</div>
+        <div style="font-size:12px;font-weight:600;color:var(--ink2);margin-top:1px">${adminMailDisp}</div>
+      </div>
+      <button class="btn btn-sm btn-danger" style="padding:5px 12px;font-size:12px;border-radius:20px" onclick="logout()">↩ Salir</button>
     </div>`;
 
   const sols=DB.solicitudes.filter(s=>s.estado==='PENDIENTE').slice(0,3);
@@ -1571,7 +1687,7 @@ function renderPersonas(){
       .forEach(m=>{ const o=new Option(m,m); mpMod.add(o); });
   }
 
-  let lista=DB.personas.filter(p=>{
+  let lista=DB.personas.filter(p=>!p._esInvitado).filter(p=>{
     const txt=`${p.Nombre||''} ${p.Apellidos||''} ${p.Nick||''} ${p.Email||''} ${p.NombreCompleto||''}`.toLowerCase();
     return(!buscar||txt.includes(buscar.toLowerCase()))
         &&(!fMod||p.Modalidad===fMod)
@@ -2008,50 +2124,448 @@ window.openModal=function(id){
 };
 
 // ─── MENSAJES ──────────────────────────────────────────
-function toggleSegVal(){ const t=(document.getElementById('msg-seg')||{}).value; document.getElementById('msg-seg-wrap').style.display=(t&&!['ALOJ_JUE','ALOJ_VIE','SIN_ALOJ'].includes(t))?'block':'none'; }
+function toggleSegVal(){ const t=(document.getElementById('msg-seg')||{}).value; document.getElementById('msg-seg-wrap').style.display=(t&&['MODALIDAD','PERSONA'].includes(t))?'block':'none'; }
 function prevMsg(){ const a=document.getElementById('msg-asunto').value,b=document.getElementById('msg-cuerpo').value; const p=document.getElementById('msg-prev'); p.textContent=`Asunto: ${a}\n\n${b}`; p.style.display='block'; }
 async function enviarMsg(){
   const seg=document.getElementById('msg-seg').value, segV=document.getElementById('msg-seg-val').value;
   const asunto=document.getElementById('msg-asunto').value, cuerpo=document.getElementById('msg-cuerpo').value;
   if(!asunto||!cuerpo){ toast('Asunto y cuerpo obligatorios','err'); return; }
-  let dest=DB.personas;
-  if(seg==='MODALIDAD') dest=dest.filter(p=>p.Modalidad===segV);
+  let dest=DB.personas.filter(p=>!p._esInvitado);
+  if(seg==='CON_ALOJ') dest=dest.filter(p=>noches(p)!=='sin-alojamiento');
+  else if(seg==='MODALIDAD') dest=dest.filter(p=>p.Modalidad===segV);
   else if(seg==='ALOJ_JUE') dest=dest.filter(p=>noches(p)==='jueves-domingo');
   else if(seg==='ALOJ_VIE') dest=dest.filter(p=>noches(p)==='viernes-domingo');
   else if(seg==='SIN_ALOJ') dest=dest.filter(p=>noches(p)==='sin-alojamiento');
   else if(seg==='PERSONA') dest=dest.filter(p=>p.Email===segV||(p.ID||p.id||'')===segV);
-  const msg={id:uid('MSG_'),asunto,cuerpo,seg,segV,destinatarios:dest.map(p=>p.Email).filter(Boolean),ts:new Date().toISOString()};
+  // Emails únicos (un solo email por grupo familiar)
+  const emailsUnicos=[...new Set(dest.map(p=>p.Email).filter(Boolean))];
+  const msg={id:uid('MSG_'),asunto,cuerpo,seg,segV,destinatarios:emailsUnicos,ts:new Date().toISOString()};
   DB.mensajes.unshift(msg);
-  log('MENSAJE',`${msg.destinatarios.length} dest.`);
+  log('MENSAJE',`${emailsUnicos.length} dest.`);
   await saveRemote();
-  document.getElementById('msg-hist').innerHTML=DB.mensajes.map(m=>`<div style="padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:13px">${m.asunto}</div><div style="font-size:11px;color:var(--ink3)">${fmtD(m.ts)} · ${m.destinatarios?.length||0} destinatarios</div></div>`).join('');
-  alert(`Mensaje guardado.\n\nDestinatarios (${msg.destinatarios.length}):\n${msg.destinatarios.join('\n')}\n\nCopia estos emails en tu cliente de correo para enviarlos.`);
-  toast(`Guardado (${msg.destinatarios.length} dest.)`,'ok');
+  // Actualizar historial
+  document.getElementById('msg-hist').innerHTML=DB.mensajes.map(m=>`
+    <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div style="font-weight:600;font-size:13px">${m.asunto}</div>
+        <button class="btn btn-xs" onclick="generarMailto('${m.id}')">📧 Abrir en correo</button>
+      </div>
+      <div style="font-size:11px;color:var(--ink3);margin-top:2px">${fmtD(m.ts)} · ${m.destinatarios?.length||0} emails únicos</div>
+    </div>`).join('');
+  // Mostrar resultado con botón mailto
+  const resEl=document.getElementById('msg-resultado');
+  resEl.style.display='block';
+  resEl.innerHTML=`
+    <div style="background:var(--green-l);border:1px solid var(--green);border-radius:var(--rs);padding:14px">
+      <div style="font-weight:700;color:var(--green);margin-bottom:8px">✓ Mensaje guardado — aparecerá en la app de todos los inscritos</div>
+      <div style="font-size:13px;color:var(--ink2)">
+        Los inscritos verán el banner la próxima vez que abran la app.
+      </div>
+    </div>`;
+  toast(`Mensaje guardado · ${emailsUnicos.length} destinatarios`,'ok');
 }
 
-// ─── IMPORTAR ──────────────────────────────────────────
-const CAMPOS=['NombreCompleto','Nombre','Apellidos','Nick','Email','Telefono','Ciudad','TallaCamiseta','Modalidad','EsTitular','GrupoID','Alergenos','Observaciones','ImporteTotal','Codigo'];
-let csvRaw='';
-function leerCSV(inp){ const f=inp.files[0]; if(!f) return; const r=new FileReader(); r.onload=e=>{ csvRaw=e.target.result; const h=csvRaw.split('\n')[0].split(',').map(x=>x.trim().replace(/^"|"$/g,'')); mostrarMapeo(h); }; r.readAsText(f,'UTF-8'); }
-function mostrarMapeo(headers){ document.getElementById('csv-mapeo').style.display='block'; document.getElementById('mapeo-campos').innerHTML=CAMPOS.map(c=>`<div class="fg"><label>${c}</label><select data-campo="${c}"><option value="">(no importar)</option>${headers.map(h=>`<option value="${h}" ${h.toLowerCase().includes(c.toLowerCase())||c.toLowerCase().includes(h.toLowerCase())?'selected':''}>${h}</option>`).join('')}</select></div>`).join(''); }
-function parseLine(l){ const r=[]; let c='',q=false; for(const ch of l){ if(ch==='"') q=!q; else if(ch===','&&!q){ r.push(c.trim()); c=''; } else c+=ch; } r.push(c.trim()); return r.map(v=>v.replace(/^"|"$/g,'')); }
-async function ejecutarImport(){
-  const mapeo={}; document.querySelectorAll('#mapeo-campos select').forEach(s=>{ if(s.value) mapeo[s.dataset.campo]=s.value; });
-  if(!mapeo.Email){ toast('Campo Email obligatorio','err'); return; }
+function generarMailto(msgId){
+  const m=DB.mensajes.find(x=>x.id===msgId); if(!m) return;
+  const bcc=encodeURIComponent((m.destinatarios||[]).join(','));
+  const subject=encodeURIComponent(m.asunto||'');
+  const body=encodeURIComponent(m.cuerpo||'');
+  // Abrir mailto con BCC (funciona en Gmail, Mail, Outlook)
+  const mailto=`mailto:?bcc=${bcc}&subject=${subject}&body=${body}`;
+  if(mailto.length>2000){
+    // URL demasiado larga para algunos clientes — copiar emails al portapapeles
+    const txt=(m.destinatarios||[]).join(', ');
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(txt).then(()=>toast('Emails copiados al portapapeles — pégalos en BCC de tu correo','ok'));
+    } else {
+      prompt('Copia estos emails (BCC):', txt);
+    }
+  } else {
+    window.open(mailto,'_blank');
+  }
+}
+
+// ─── IMPORTAR CSV (Google Forms compatible) ────────────
+let csvRaw='', csvHeaders=[], _importPreview=[];
+
+// Columnas clave que buscamos en Google Forms
+const FORMS_MAP = {
+  email:        ['email','correo','e-mail','dirección de correo'],
+  nombre:       ['nombre completo','nombre','name','full name'],
+  nick:         ['nick','apodo','alias'],
+  telefono:     ['teléfono','telefono','phone','móvil','movil'],
+  ciudad:       ['ciudad','city','localidad','población'],
+  modalidad:    ['modalidad','opción','paquete','tarifa'],
+  talla:        ['talla','talla camiseta','t-shirt','size'],
+  alergenos:    ['alergia','alergias','alérgenos','intolerancia','dieta'],
+  observaciones:['observacion','observaciones','comentario','notas','otros'],
+  acomp1_nombre:['nombre acompañante 1','acompañante 1 nombre','nombre acomp'],
+  acomp1_mod:   ['modalidad acompañante 1','modalidad acomp 1','acomp 1 modalidad'],
+  acomp2_nombre:['nombre acompañante 2','acompañante 2 nombre'],
+  acomp2_mod:   ['modalidad acompañante 2','modalidad acomp 2'],
+  acomp3_nombre:['nombre acompañante 3','acompañante 3 nombre'],
+  acomp3_mod:   ['modalidad acompañante 3','modalidad acomp 3'],
+};
+
+function parseLine(l){
+  const r=[]; let c='',q=false;
+  for(const ch of l){
+    if(ch==='"') q=!q;
+    else if(ch===','&&!q){ r.push(c.trim()); c=''; }
+    else c+=ch;
+  }
+  r.push(c.trim());
+  return r.map(v=>v.replace(/^"|"$/g,'').trim());
+}
+
+function detectarColumna(headers, claves){
+  for(const h of headers){
+    const hl=h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    for(const c of claves){
+      const cl=c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(hl.includes(cl)||cl.includes(hl)) return h;
+    }
+  }
+  return null;
+}
+
+function leerCSV(inp){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{
+    csvRaw=e.target.result;
+    // Detectar separador (coma o punto y coma)
+    const firstLine=csvRaw.split('\n')[0];
+    const sep=firstLine.includes(';')&&!firstLine.includes(',')?';':',';
+    if(sep===';') csvRaw=csvRaw.split('\n').map(l=>l.replace(/;/g,',')).join('\n');
+    csvHeaders=parseLine(csvRaw.split('\n')[0]);
+    mostrarMapeoForms(csvHeaders);
+  };
+  r.readAsText(f,'UTF-8');
+}
+
+function mostrarMapeoForms(headers){
+  // Auto-detectar columnas
+  const auto={};
+  Object.entries(FORMS_MAP).forEach(([k,claves])=>{
+    auto[k]=detectarColumna(headers,claves)||'';
+  });
+
+  const sel=(campo,label,required=false)=>`
+    <div class="fg" style="margin-bottom:8px">
+      <label style="font-size:12px;font-weight:600">${label}${required?' *':''}</label>
+      <select data-campo="${campo}" style="font-size:12px">
+        <option value="">(no importar)</option>
+        ${headers.map(h=>`<option value="${h}" ${auto[campo]===h?'selected':''}>${h}</option>`).join('')}
+      </select>
+    </div>`;
+
+  document.getElementById('csv-mapeo').style.display='block';
+  document.getElementById('mapeo-campos').innerHTML=`
+    <div style="background:var(--accent-l);border-radius:var(--rs);padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--accent)">
+      <strong>📋 Columnas detectadas automáticamente.</strong> Revisa y ajusta si es necesario.<br>
+      Los acompañantes se crearán automáticamente en el mismo grupo que el titular.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;letter-spacing:.05em">Datos del titular</div>
+        ${sel('email','Email del titular',true)}
+        ${sel('nombre','Nombre completo',true)}
+        ${sel('nick','Nick / Apodo')}
+        ${sel('telefono','Teléfono')}
+        ${sel('ciudad','Ciudad')}
+        ${sel('modalidad','Modalidad / Tarifa')}
+        ${sel('talla','Talla camiseta')}
+        ${sel('alergenos','Alergias / Intolerancias')}
+        ${sel('observaciones','Observaciones')}
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;letter-spacing:.05em">Acompañantes (opcional)</div>
+        ${sel('acomp1_nombre','Nombre acompañante 1')}
+        ${sel('acomp1_mod','Modalidad acompañante 1')}
+        ${sel('acomp2_nombre','Nombre acompañante 2')}
+        ${sel('acomp2_mod','Modalidad acompañante 2')}
+        ${sel('acomp3_nombre','Nombre acompañante 3')}
+        ${sel('acomp3_mod','Modalidad acompañante 3')}
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="previsualizarImport()" style="margin-top:8px">👁 Previsualizar (${csvRaw.trim().split('\n').length-1} filas)</button>
+    <div id="import-preview" style="margin-top:10px"></div>`;
+}
+
+function getMapeo(){
+  const m={};
+  document.querySelectorAll('#mapeo-campos select[data-campo]').forEach(s=>{
+    if(s.value) m[s.dataset.campo]=s.value;
+  });
+  return m;
+}
+
+function previsualizarImport(){
+  const m=getMapeo();
+  if(!m.email){ toast('Elige la columna de Email','err'); return; }
+  const {personas, stats}=procesarCSV(m, true);
+  const prev=document.getElementById('import-preview');
+  prev.innerHTML=`
+    <div style="background:var(--paper);border:1px solid var(--border);border-radius:var(--rs);padding:12px;font-size:12px">
+      <strong>Vista previa (primeras 5 filas procesadas):</strong>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+        ${personas.slice(0,10).map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--surface);border-radius:4px">
+          <span style="color:${p._nuevo?'var(--green)':'var(--accent)'}">●</span>
+          <span style="font-weight:600">${p.NombreCompleto||p.Nombre||'?'}</span>
+          <span style="color:var(--ink3);font-size:11px">${p.Email||'sin email'}</span>
+          <span style="color:var(--ink3);font-size:11px">${p.Modalidad||''}</span>
+          ${p.GrupoID?`<span class="chip chip-blue" style="font-size:10px">Grupo ${p.GrupoID}</span>`:''}
+          <span class="chip ${p._nuevo?'chip-green':'chip-amber'}" style="font-size:10px">${p._nuevo?'NUEVA':'ACTUALIZAR'}</span>
+        </div>`).join('')}
+      </div>
+      <div style="margin-top:8px;color:var(--ink3)">
+        Total personas: <strong>${personas.length}</strong> · 
+        Nuevas: <strong style="color:var(--green)">${stats.nuevas}</strong> · 
+        Actualizar: <strong style="color:var(--amber)">${stats.actualizar}</strong> · 
+        Grupos: <strong>${stats.grupos}</strong>
+      </div>
+    </div>`;
+}
+
+function procesarCSV(mapeo, soloPreview=false){
   const lines=csvRaw.trim().split('\n').filter(l=>l.trim());
   const headers=parseLine(lines[0]);
-  let crea=0,act=0,errs=[];
-  lines.slice(1).forEach((line,i)=>{ try{ const row=parseLine(line); const raw={}; headers.forEach((h,j)=>raw[h]=row[j]||''); const p={}; Object.entries(mapeo).forEach(([k,v])=>p[k]=raw[v]||''); if(!p.Email){ errs.push(`F${i+2}: sin email`); return; } const email=p.Email.trim().toLowerCase(); const idx=DB.personas.findIndex(x=>String(x.Email||'').trim().toLowerCase()===email); const id=idx>=0?(DB.personas[idx].ID||DB.personas[idx].id||uid('P_')):uid('P_'); const np={ID:id,id,Activo:'TRUE',...p,NombreCompleto:p.NombreCompleto||`${p.Nombre||''} ${p.Apellidos||''}`.trim()}; if(idx>=0){ DB.personas[idx]={...DB.personas[idx],...np}; act++; } else{ DB.personas.push(np); crea++; } }catch(e){ errs.push(`F${i+2}: ${e.message}`); } });
-  log('IMPORTAR',`+${crea} ~${act}`); await saveRemote();
-  const res=document.getElementById('csv-res'); res.style.display='block';
-  res.innerHTML=`<div style="background:var(--green-l);border:1px solid var(--green);border-radius:var(--rs);padding:12px"><strong style="color:var(--green)">✓ Completado</strong> · Nuevas: ${crea} · Actualizadas: ${act}${errs.length?`<div style="color:var(--red);font-size:12px;margin-top:6px">${errs.join(', ')}</div>`:''}</div>`;
-  renderPersonas(); toast(`${crea+act} personas importadas`,'ok');
+  const personas=[];
+  let nuevas=0, actualizar=0, grupos=0;
+
+  // Calcular el próximo número de grupo libre
+  const gruposExistentes=DB.grupos.map(g=>parseInt((g.id||'').replace('G_',''))||0);
+  let nextGrupo=Math.max(0,...gruposExistentes)+1;
+
+  // Calcular próximo ID de persona
+  const idsExistentes=DB.personas.map(p=>parseInt((p.ID||'').replace('P_',''))||0);
+  let nextId=Math.max(0,...idsExistentes)+1;
+
+  const getVal=(row, col)=>{
+    if(!col) return '';
+    const idx=headers.indexOf(col);
+    return idx>=0?(row[idx]||'').trim():'';
+  };
+
+  lines.slice(1).forEach((line,i)=>{
+    const row=parseLine(line);
+    const email=getVal(row,mapeo.email).toLowerCase();
+    if(!email) return;
+
+    // Ignorar emails de admin
+    if(CFG.ADMINS.some(a=>a.email===email)) return;
+
+    const nombreCompleto=getVal(row,mapeo.nombre);
+    const nick=getVal(row,mapeo.nick);
+    const partes=nombreCompleto.split(' ');
+    const nombre=partes[0]||nombreCompleto;
+    const apellidos=partes.slice(1).join(' ');
+
+    // ¿Ya existe?
+    const existeIdx=DB.personas.findIndex(x=>String(x.Email||'').trim().toLowerCase()===email);
+    const existe=existeIdx>=0;
+    const idTitular=existe?(DB.personas[existeIdx].ID||DB.personas[existeIdx].id||'P_'+nextId):('P_'+nextId);
+    if(!existe) nextId++;
+
+    const modalidad=getVal(row,mapeo.modalidad);
+    const importeBase=calcularImporte(modalidad);
+
+    // Construir titular
+    const titular={
+      ID:idTitular, id:idTitular,
+      Nombre:nombre, Apellidos:apellidos,
+      NombreCompleto:nombreCompleto||`${nombre} ${apellidos}`.trim(),
+      Nick:nick||nombre,
+      Email:email,
+      Telefono:getVal(row,mapeo.telefono),
+      Ciudad:getVal(row,mapeo.ciudad),
+      Modalidad:modalidad,
+      TallaCamiseta:getVal(row,mapeo.talla),
+      Alergenos:getVal(row,mapeo.alergenos),
+      Observaciones:getVal(row,mapeo.observaciones),
+      EsTitular:'SI',
+      Alojamiento:modalidad.toLowerCase().includes('sin hospedaje')||modalidad.toLowerCase().includes('sin aloj')?'NO':'SI',
+      ImporteTotal:importeBase,
+      Activo:'TRUE',
+      FechaInscripcion:new Date().toISOString().split('T')[0],
+      _nuevo:!existe,
+    };
+
+    // Detectar acompañantes
+    const acomps=[];
+    for(let n=1;n<=3;n++){
+      const anom=getVal(row,mapeo[`acomp${n}_nombre`]);
+      if(!anom) break;
+      const amod=getVal(row,mapeo[`acomp${n}_mod`])||modalidad;
+      acomps.push({nombre:anom, modalidad:amod});
+    }
+
+    // Si hay acompañantes, crear grupo
+    if(acomps.length>0){
+      const gidExistente=existe?DB.personas[existeIdx].GrupoID:'';
+      const gid=gidExistente||`G_${String(nextGrupo).padStart(3,'0')}`;
+      if(!gidExistente) nextGrupo++;
+      titular.GrupoID=gid;
+      grupos++;
+
+      acomps.forEach((ac,ai)=>{
+        const acomp={
+          ID:'P_'+nextId, id:'P_'+nextId,
+          Nombre:ac.nombre.split(' ')[0]||ac.nombre,
+          Apellidos:ac.nombre.split(' ').slice(1).join(' '),
+          NombreCompleto:ac.nombre,
+          Nick:ac.nombre.split(' ')[0],
+          Email:email, // mismo email que el titular
+          Modalidad:ac.modalidad,
+          TallaCamiseta:'',
+          Alergenos:'', Observaciones:'',
+          EsTitular:'NO',
+          GrupoID:gid,
+          Alojamiento:ac.modalidad.toLowerCase().includes('sin hospedaje')?'NO':'SI',
+          ImporteTotal:calcularImporte(ac.modalidad),
+          Activo:'TRUE',
+          FechaInscripcion:new Date().toISOString().split('T')[0],
+          _nuevo:true,
+        };
+        nextId++;
+        personas.push(acomp);
+        nuevas++;
+      });
+    }
+
+    personas.push(titular);
+    if(existe) actualizar++; else nuevas++;
+  });
+
+  return {personas, stats:{nuevas, actualizar, grupos}};
 }
-function cancelarImport(){ document.getElementById('csv-mapeo').style.display='none'; document.getElementById('csv-res').style.display='none'; document.getElementById('csv-file').value=''; }
+
+function calcularImporte(modalidad){
+  if(!modalidad) return 0;
+  const m=modalidad.toLowerCase();
+  // Buscar el número en la modalidad (ej: "Jueves (270€)" → 270)
+  const match=modalidad.match(/(\d+)€?/);
+  if(match) return parseInt(match[1]);
+  return 0;
+}
+
+async function ejecutarImport(){
+  const m=getMapeo();
+  if(!m.email){ toast('Elige la columna de Email','err'); return; }
+
+  const btn=document.querySelector('#csv-mapeo .btn-primary');
+  if(btn){ btn.disabled=true; btn.textContent='Importando…'; }
+
+  try{
+    const {personas, stats}=procesarCSV(m);
+    let crea=0, act=0;
+
+    personas.forEach(p=>{
+      const email=String(p.Email||'').toLowerCase();
+      const nombre=p.NombreCompleto||p.Nombre||'';
+      const idx=DB.personas.findIndex(x=>{
+        const em=String(x.Email||'').toLowerCase();
+        const nm=x.NombreCompleto||x.Nombre||'';
+        // Para acompañantes: mismo email Y mismo nombre
+        if(p.EsTitular==='NO') return em===email && nm.toLowerCase()===nombre.toLowerCase();
+        // Para titular: solo email
+        return em===email && x.EsTitular==='SI';
+      });
+
+      const {_nuevo, ...pLimpio}=p; // quitar campo interno
+      if(idx>=0){
+        // Actualizar sin pisar: solo campos vacíos en el existente
+        const existente=DB.personas[idx];
+        const campos=['Nombre','Apellidos','NombreCompleto','Nick','Telefono','Ciudad',
+                      'Modalidad','TallaCamiseta','Alergenos','Observaciones','ImporteTotal',
+                      'Alojamiento','EsTitular','GrupoID'];
+        campos.forEach(k=>{ if(pLimpio[k] && !existente[k]) existente[k]=pLimpio[k]; });
+        // Modalidad e ImporteTotal siempre actualizamos si están en el CSV
+        if(pLimpio.Modalidad) existente.Modalidad=pLimpio.Modalidad;
+        if(pLimpio.ImporteTotal) existente.ImporteTotal=pLimpio.ImporteTotal;
+        act++;
+      } else {
+        DB.personas.push(pLimpio);
+        crea++;
+      }
+    });
+
+    // Crear/actualizar grupos
+    personas.filter(p=>p.GrupoID&&p.EsTitular==='SI').forEach(p=>{
+      const gid=p.GrupoID;
+      if(!DB.grupos.find(g=>(g.id||g.ID||'')===gid)){
+        DB.grupos.push({
+          id:gid, ID:gid,
+          titular:p.NombreCompleto||p.Nombre||'',
+          TitularNombre:p.NombreCompleto||p.Nombre||'',
+          color:'azul', pagoTipo:'individual', obs:''
+        });
+      }
+    });
+
+    log('IMPORTAR_FORMS',`+${crea} ~${act} grupos:${stats.grupos}`);
+    await saveRemote();
+
+    const res=document.getElementById('csv-res');
+    res.style.display='block';
+    res.innerHTML=`<div style="background:var(--green-l);border:1px solid var(--green);border-radius:var(--rs);padding:14px">
+      <div style="font-weight:700;color:var(--green);font-size:14px;margin-bottom:6px">✓ Importación completada</div>
+      <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap">
+        <span>👤 Personas nuevas: <strong>${crea}</strong></span>
+        <span>🔄 Actualizadas: <strong>${act}</strong></span>
+        <span>👥 Grupos creados: <strong>${stats.grupos}</strong></span>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--ink3)">
+        Los datos existentes (pagos, notas internas, códigos) no han sido modificados.
+      </div>
+    </div>`;
+    renderPersonas(); toast(`${crea} nuevas · ${act} actualizadas`,'ok');
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent='Importar'; }
+  }
+}
+
+function cancelarImport(){
+  document.getElementById('csv-mapeo').style.display='none';
+  document.getElementById('csv-res').style.display='none';
+  document.getElementById('csv-file').value='';
+  _importPreview=[];
+}
 
 // ─── CONFIG ────────────────────────────────────────────
-function renderConfig(){ document.getElementById('cfg-nombre').value=DB.config.nombre||''; document.getElementById('cfg-fechas').value=DB.config.fechas||''; document.getElementById('cfg-aviso').value=DB.config.aviso||''; }
-async function saveConfig(){ DB.config.nombre=document.getElementById('cfg-nombre').value; DB.config.fechas=document.getElementById('cfg-fechas').value; DB.config.aviso=document.getElementById('cfg-aviso').value; document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO; await saveRemote(); }
+function renderConfig(){
+  document.getElementById('cfg-nombre').value=DB.config.nombre||'';
+  document.getElementById('cfg-fechas').value=DB.config.fechas||'';
+  document.getElementById('cfg-aviso').value=DB.config.aviso||'';
+  // Toggle acceso
+  const togAcceso=document.getElementById('tog-acceso');
+  const lblAcceso=document.getElementById('lbl-acceso');
+  if(togAcceso){ togAcceso.checked=CFG.ACCESO_ABIERTO; }
+  if(lblAcceso){ actualizarLblAcceso(CFG.ACCESO_ABIERTO); }
+}
+function actualizarLblAcceso(abierto){
+  const lbl=document.getElementById('lbl-acceso');
+  if(!lbl) return;
+  lbl.textContent=abierto?'ABIERTO (cualquier email entra)':'CERRADO (solo inscritos)';
+  lbl.style.color=abierto?'var(--amber)':'var(--green)';
+}
+function toggleAcceso(val){
+  CFG.ACCESO_ABIERTO=val;
+  actualizarLblAcceso(val);
+  // Guardar en config para que persista
+  DB.config.acceso_abierto=val;
+  saveRemote();
+  toast(val?'⚠ Acceso abierto — cualquier email puede entrar':'✅ Acceso cerrado — solo inscritos','ok');
+}
+async function saveConfig(){
+  DB.config.nombre=document.getElementById('cfg-nombre').value;
+  DB.config.fechas=document.getElementById('cfg-fechas').value;
+  DB.config.aviso=document.getElementById('cfg-aviso').value;
+  document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
+  await saveRemote();
+  toast('Configuración guardada','ok');
+}
 
 // ─── LOGS ──────────────────────────────────────────────
 function log(a,d=''){ DB.logs.unshift({ts:new Date().toISOString(),accion:a,usuario:ROLE==='admin'?'Admin':ME?.Email||'?',detalle:d}); if(DB.logs.length>200) DB.logs=DB.logs.slice(0,200); }
@@ -2886,8 +3400,8 @@ function exportPostEventoCSV(nombre, asist){
 // ─── TALLAS ────────────────────────────────────────────
 function renderTallas(){
   const orden=['XS','S','M','L','XL','XXL','XXXL',''];
-  const conTalla=DB.personas.filter(p=>p.TallaCamiseta);
-  const sinTalla=DB.personas.filter(p=>!p.TallaCamiseta);
+  const conTalla=DB.personas.filter(p=>!p._esInvitado&&p.TallaCamiseta);
+  const sinTalla=DB.personas.filter(p=>!p._esInvitado&&!p.TallaCamiseta);
   // Contar por talla
   const cnt={};
   conTalla.forEach(p=>{ const t=p.TallaCamiseta; cnt[t]=(cnt[t]||0)+1; });
@@ -3065,6 +3579,116 @@ async function guardarInfoComida(){
   await saveRemote(); closeModal('mo-comida-info'); renderComidasAdmin(); toast('Info guardada','ok');
 }
 
+
+// ─── NOTIFICACIONES IN-APP ─────────────────────────────
+function getMensajesNoLeidos(){
+  if(!ME||ROLE!=='inscrito') return [];
+  const pid=ME.ID||ME.id||'';
+  const leidos=(DB.mensajes_leidos||{})[pid]||[];
+  // Mensajes dirigidos a esta persona (por modalidad, alojamiento o todos)
+  return (DB.mensajes||[]).filter(m=>{
+    if(leidos.includes(m.id)) return false;
+    if(!m.seg||m.seg==='TODOS') return true;
+    if(m.seg==='CON_ALOJ') return noches(ME)!=='sin-alojamiento';
+    if(m.seg==='MODALIDAD') return ME.Modalidad===m.segV;
+    if(m.seg==='ALOJ_JUE') return noches(ME)==='jueves-domingo';
+    if(m.seg==='ALOJ_VIE') return noches(ME)==='viernes-domingo';
+    if(m.seg==='SIN_ALOJ') return noches(ME)==='sin-alojamiento';
+    if(m.seg==='PERSONA') return ME.Email===m.segV||(ME.ID||ME.id||'')===m.segV;
+    return true;
+  });
+}
+
+function mostrarNotificaciones(){
+  const msgs=getMensajesNoLeidos();
+  if(!msgs.length) return;
+  // Mostrar el más reciente
+  mostrarBanner(msgs[0], msgs.length);
+}
+
+let _bannerTimer=null;
+function mostrarBanner(msg, total){
+  const cont=document.getElementById('notif-container');
+  if(!cont) return;
+  const extras=total>1?`<div style="margin-top:6px;font-size:11px;opacity:.75">+${total-1} mensaje${total-1>1?'s':''} más</div>`:'';
+  cont.innerHTML=`
+    <div class="notif-banner" id="notif-activo">
+      <div class="notif-banner-hd">
+        <span class="notif-banner-title">📢 ${msg.asunto||'Mensaje de la organización'}</span>
+        <button class="notif-banner-close" onclick="cerrarBanner('${msg.id}')">✕</button>
+      </div>
+      <div class="notif-banner-body">${(msg.cuerpo||'').replace(/
+/g,'<br>')}</div>
+      ${extras}
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.3)" 
+          onclick="marcarLeido('${msg.id}')">✓ Entendido</button>
+        ${total>1?`<button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.2)" 
+          onclick="verTodosMensajes()">Ver todos (${total})</button>`:''}
+      </div>
+    </div>`;
+  // Auto-cerrar a los 12 segundos sin marcar leído
+  if(_bannerTimer) clearTimeout(_bannerTimer);
+  _bannerTimer=setTimeout(()=>cerrarBanner(null), 12000);
+}
+
+function cerrarBanner(msgId){
+  const b=document.getElementById('notif-activo');
+  if(b){ b.classList.add('cerrar'); setTimeout(()=>{ const c=document.getElementById('notif-container'); if(c) c.innerHTML=''; },200); }
+  if(_bannerTimer){ clearTimeout(_bannerTimer); _bannerTimer=null; }
+}
+
+async function marcarLeido(msgId){
+  cerrarBanner(msgId);
+  const pid=ME?.ID||ME?.id||'';
+  if(!pid||!msgId) return;
+  if(!DB.mensajes_leidos) DB.mensajes_leidos={};
+  if(!DB.mensajes_leidos[pid]) DB.mensajes_leidos[pid]=[];
+  if(!DB.mensajes_leidos[pid].includes(msgId)) DB.mensajes_leidos[pid].push(msgId);
+  await saveRemote();
+  // Si hay más mensajes, mostrar el siguiente
+  const restantes=getMensajesNoLeidos();
+  if(restantes.length) setTimeout(()=>mostrarBanner(restantes[0],restantes.length), 400);
+}
+
+function verTodosMensajes(){
+  cerrarBanner(null);
+  const msgs=getMensajesNoLeidos();
+  if(!msgs.length) return;
+  // Mostrar todos en un modal/overlay simple
+  const cont=document.getElementById('notif-container');
+  cont.innerHTML=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;display:flex;align-items:flex-end;padding:12px">
+      <div style="background:var(--surface);border-radius:var(--r) var(--r) 0 0;width:100%;max-height:80vh;overflow-y:auto;padding:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <strong style="font-size:15px">Mensajes (${msgs.length})</strong>
+          <button class="btn btn-sm" onclick="document.getElementById('notif-container').innerHTML=''">Cerrar</button>
+        </div>
+        ${msgs.map(m=>`
+          <div style="border:1px solid var(--border);border-radius:var(--rs);padding:12px;margin-bottom:10px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:6px">📢 ${m.asunto||'Mensaje'}</div>
+            <div style="font-size:13px;color:var(--ink2);line-height:1.5">${(m.cuerpo||'').replace(/
+/g,'<br>')}</div>
+            <div style="margin-top:8px;font-size:11px;color:var(--ink3)">${fmtD(m.ts)}</div>
+            <button class="btn btn-xs btn-primary" style="margin-top:8px" onclick="marcarLeido('${m.id}')">✓ Marcar como leído</button>
+          </div>`).join('')}
+        <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="marcarTodosLeidos()">✓ Marcar todos como leídos</button>
+      </div>
+    </div>`;
+}
+
+async function marcarTodosLeidos(){
+  const msgs=getMensajesNoLeidos();
+  const pid=ME?.ID||ME?.id||'';
+  if(!pid) return;
+  if(!DB.mensajes_leidos) DB.mensajes_leidos={};
+  if(!DB.mensajes_leidos[pid]) DB.mensajes_leidos[pid]=[];
+  msgs.forEach(m=>{ if(!DB.mensajes_leidos[pid].includes(m.id)) DB.mensajes_leidos[pid].push(m.id); });
+  await saveRemote();
+  document.getElementById('notif-container').innerHTML='';
+  toast('Todos los mensajes leídos','ok');
+}
+
 // ─── PAGO RÁPIDO (solo admin) ──────────────────────────
 async function togglePagadoAdmin(pid, checked){
   if(ROLE!=='admin'){ toast('Solo administradores','err'); return; }
@@ -3091,7 +3715,7 @@ async function togglePagadoAdmin(pid, checked){
 function exportCSVPersonas(){
   const keys=['ID','NombreCompleto','Nick','Email','Telefono','Ciudad','TallaCamiseta','Modalidad','EsTitular','GrupoID','ImporteTotal','Codigo','Alergenos','Observaciones'];
   const lines=[keys.join(',')];
-  DB.personas.forEach(p=>lines.push(keys.map(k=>`"${String(p[k]||'').replace(/"/g,'""')}"`).join(',')));
+  DB.personas.filter(p=>!p._esInvitado).forEach(p=>lines.push(keys.map(k=>`"${String(p[k]||'').replace(/"/g,'""')}"`).join(',')));
   dlCSV(lines.join('\n'),'personas.csv');
 }
 function dlCSV(content, filename){ const b=new Blob([content],{type:'text/csv;charset=utf-8;'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=filename; a.click(); }
@@ -3113,21 +3737,27 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
   // Cargar datos remotos siempre
   await loadRemote();
 
-  // Asegurar cuenta invitado genérica en el JSONBin
+  // Cuenta invitado: SOLO en memoria, nunca en JSONBin
+  // Así no aparece en la lista de personas ni altera el conteo
   const INVITADO_EMAIL = 'invitado@asturludicas.es';
-  if(!DB.personas.find(x=>String(x.Email||'').toLowerCase()===INVITADO_EMAIL)){
-    DB.personas.push({
-      ID:'P_INVITADO', id:'P_INVITADO',
-      Nombre:'Invitado', Apellidos:'Jornadas',
-      NombreCompleto:'Invitado Jornadas',
-      Nick:'invitado', Email:INVITADO_EMAIL,
-      Modalidad:'Jueves (270€)', TallaCamiseta:'L',
-      GrupoID:'', EsTitular:'SI', Alojamiento:'SI',
-      ImporteTotal:0, Codigo:'', Activo:'TRUE',
-      Observaciones:'Cuenta genérica de acceso a la app'
-    });
-    await saveRemote();
+  const INVITADO_PERSONA = {
+    ID:'P_INVITADO', id:'P_INVITADO',
+    Nombre:'Invitado', Apellidos:'',
+    NombreCompleto:'Invitado', Nick:'invitado',
+    Email:INVITADO_EMAIL,
+    Modalidad:'Jueves (270€)', TallaCamiseta:'',
+    GrupoID:'', EsTitular:'SI', Alojamiento:'SI',
+    ImporteTotal:0, Codigo:'', Activo:'TRUE',
+    _esInvitado: true  // marca para excluirlo de listas y conteos
+  };
+  // Limpiar P_INVITADO y P_DEMO_ADMIN si quedaron guardados antes
+  const tenia_basura = DB.personas.some(x=>x.ID==='P_INVITADO'||x.ID==='P_DEMO_ADMIN');
+  if(tenia_basura){
+    DB.personas = DB.personas.filter(x=>x.ID!=='P_INVITADO'&&x.ID!=='P_DEMO_ADMIN');
+    await saveRemote(); // limpiar del JSONBin
   }
+  // Inyectar invitado solo en memoria para que loginInscrito lo encuentre
+  DB.personas.push(INVITADO_PERSONA);
 
   // Restaurar sesión solo si es válida Y no ha expirado
   if(savedRole && savedTs > Date.now()){
@@ -3139,9 +3769,10 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
       ['role','session_ts','admin_email','persona_id','persona_email'].forEach(k=>lsSet(k,null));
     } else if(savedRole==='inscrito'){
       const savedId = lsGet('persona_id','');
-      // Verificar que el ID guardado NO es un admin disfrazado
-      const esAdmin = CFG.ADMINS.some(a=>a.email===lsGet('persona_email',''));
+      const savedEmail = lsGet('persona_email','');
+      const esAdmin = CFG.ADMINS.some(a=>a.email===savedEmail);
       if(!esAdmin && savedId){
+        // P_INVITADO viene de memoria, no de JSONBin
         const p = DB.personas.find(x=>(x.ID||x.id||'')===savedId);
         if(p){ ROLE='inscrito'; ME=p; bootApp(); return; }
       }
