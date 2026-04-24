@@ -26,7 +26,7 @@ const CFG = {
   JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
   EVENTO:          'Jornadas Astur Lúdicas',
   // Contraseña universal para inscritos (distinta de la de admins)
-  INSCRITO_PASS:   'invitado',
+  INSCRITO_PASS:   'jornadas2025',
 
   // Servicios de comida en orden. todos=automático según modalidad, optin=el inscrito se apunta
   COMIDAS: [
@@ -491,7 +491,7 @@ tbody tr:hover td{background:var(--paper)}
     </div>
     <div id="lp-inscrito" class="lp active">
       <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="tu@email.com" autocomplete="email"></div>
-      <div class="fg"><label>Contraseña</label><input type="password" id="l-cod" placeholder="••••••••"></div>
+      <div class="fg"><label>Contraseña</label><input type="password" id="l-cod" placeholder="••••••••" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
       <button class="btn btn-primary" style="width:100%" onclick="loginInscrito()">Entrar →</button>
       <div class="err" id="err-i"></div>
     </div>
@@ -1333,62 +1333,55 @@ async function loginAdmin(){
   bootApp();
 }
 async function loginInscrito(){
-  const email=document.getElementById('l-email').value.trim().toLowerCase();
-  const cod=document.getElementById('l-cod').value.trim();
-  if(!email||!cod){ showErr('err-i','Introduce email y contraseña.'); return; }
-  if(CFG.ADMINS.some(a=>a.email===email)){
-    showErr('err-i','Este email debe acceder por el panel de administrador.'); return;
+  const emailRaw = document.getElementById('l-email').value;
+  const codRaw   = document.getElementById('l-cod').value;
+  const email = emailRaw.trim().toLowerCase();
+  const cod   = codRaw.trim();
+
+  if(!email || !cod){
+    showErr('err-i','Introduce email y contraseña.'); return;
   }
-  // Verificación de contraseña — tiene que ser la contraseña universal
-  if(cod !== CFG.INSCRITO_PASS){
-    showErr('err-i',`Contraseña incorrecta. Usa la contraseña que te facilitó la organización.`); return;
+  // Bloquear emails de administrador
+  if(CFG.ADMINS.some(a => a.email === email)){
+    showErr('err-i','Este email es de administrador. Usa el panel de admin.'); return;
   }
-  const btn=document.querySelector('#lp-inscrito .btn-primary');
-  const orig=btn.textContent; btn.textContent='Cargando…'; btn.disabled=true;
+  // Comprobar contraseña — comparación normalizada
+  const passOk = cod === CFG.INSCRITO_PASS
+              || cod.toLowerCase() === CFG.INSCRITO_PASS.toLowerCase();
+  if(!passOk){
+    showErr('err-i', 'Contraseña incorrecta. La contraseña es: ' + CFG.INSCRITO_PASS);
+    return;
+  }
+
+  const btn = document.querySelector('#lp-inscrito .btn-primary');
+  const orig = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Cargando…'; }
+
   try {
-    // Cargar datos frescos
-    const remote = await jbGet();
-    if(remote && remote._jornadas){
-      const d = remote._jornadas;
-      if(d.personas)     DB.personas     = d.personas;
-      if(d.grupos)       DB.grupos       = d.grupos;
-      if(d.pagos)        DB.pagos        = d.pagos;
-      if(d.modulos)      DB.modulos      = d.modulos;
-      if(d.config)       DB.config       = d.config;
-      if(d.asignaciones) DB.asignaciones = d.asignaciones;
-      if(d.solicitudes)  DB.solicitudes  = d.solicitudes;
-      if(d.comidas_optin)DB.comidas_optin= d.comidas_optin;
-      if(d.comidas_info) DB.comidas_info = d.comidas_info;
-      if(d.partidas)     DB.partidas     = d.partidas;
-      if(d.habitaciones) DB.habitaciones = d.habitaciones;
-      lsSet('jdb', DB);
-    }
-    // Buscar perfil por email (puede no estar → inscrito anónimo)
+    await loadRemote(); // carga fresca garantizada
     const p = DB.personas.find(x =>
       String(x.Email||x.email||'').trim().toLowerCase() === email && x.Activo !== 'FALSE'
     );
-    // Si no está en la lista, crear perfil temporal anónimo
     ME = p || {
-      ID: 'ANON_'+email, id: 'ANON_'+email,
-      Nombre: email.split('@')[0], Apellidos: '',
-      NombreCompleto: email.split('@')[0],
-      Nick: email.split('@')[0],
-      Email: email, Modalidad: '', TallaCamiseta: '',
-      GrupoID: '', EsTitular: 'SI', Alojamiento: 'NO',
-      ImporteTotal: 0, Activo: 'TRUE', Observaciones: '',
+      ID:'ANON_'+Date.now(), id:'ANON_'+Date.now(),
+      Nombre: email.split('@')[0], NombreCompleto: email.split('@')[0],
+      Nick: email.split('@')[0], Email: email,
+      Modalidad:'', Alojamiento:'NO', ImporteTotal:0,
+      EsTitular:'SI', GrupoID:'', Activo:'TRUE',
       _anonimo: true
     };
-    // Limpiar cualquier sesión admin previa antes de entrar como inscrito
-    lsSet('admin_email', null);
-    ROLE='inscrito';
+    ['admin_email'].forEach(k=>lsSet(k,null));
+    ROLE = 'inscrito';
     lsSet('role','inscrito');
     lsSet('persona_id', ME.ID||ME.id||'');
     lsSet('persona_email', email);
     lsSet('session_ts', Date.now() + 365*24*3600*1000);
-    log('LOGIN', email + (p ? '' : ' [anónimo]'));
+    log('LOGIN', email+(p?'':' [anónimo]'));
     bootApp();
+  } catch(err){
+    showErr('err-i', 'Error de conexión. Comprueba tu internet e inténtalo de nuevo.');
   } finally {
-    btn.textContent=orig; btn.disabled=false;
+    if(btn){ btn.disabled = false; btn.textContent = orig; }
   }
 }
 function showErr(id,msg){ const e=document.getElementById(id); e.textContent=msg; e.style.display='block'; }
