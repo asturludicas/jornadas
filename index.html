@@ -1343,6 +1343,7 @@ const HIST=[]; // pila de navegación
 // ─── JSONBIN ───────────────────────────────────────────
 const JB=`https://api.jsonbin.io/v3/b/${CFG.JSONBIN_BIN_ID}`;
 const JH={'Content-Type':'application/json','X-Master-Key':CFG.JSONBIN_API_KEY};
+const FB=()=>CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET;
 
 async function jbGet(){
   // Firebase primero (más rápido)
@@ -3576,7 +3577,7 @@ async function checkFirebaseStatus(){
   }
   try{
     el.innerHTML='Verificando…';
-    const r=await fetch(CFG.FIREBASE_URL+'/.json?shallow=true&auth='+CFG.FIREBASE_SECRET);
+    const r=await fetch(CFG.FIREBASE_URL+'/.json?shallow=true&auth='+CFG.FIREBASE_SECRET); // check
     if(r.ok){
       el.innerHTML='<span style="color:var(--green)">✅ Firebase conectado y funcionando</span>';
     } else {
