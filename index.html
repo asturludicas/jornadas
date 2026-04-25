@@ -22,6 +22,11 @@ const CFG = {
     { email: 'asturludicas@gmail.com', pass: 'DanielyAlex26' },
     { email: 'admin2@asturludicas.es',  pass: 'DanielyAlex26'   },
   ],
+  // ── Firebase Realtime Database ──────────────────────────
+  FIREBASE_URL:    'https://asturludicas-2016-default-rtdb.europe-west1.firebasedatabase.app',
+  FIREBASE_SECRET: 'LDCqU3RPA97rRC6QraKwdaiL3BEREZlbUSM2jams',
+
+  // JSONBin (mantenido como fallback de lectura inicial para migrar datos)
   JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
   JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
   EVENTO:          'Jornadas Astur Lúdicas',
@@ -1308,12 +1313,79 @@ const JB=`https://api.jsonbin.io/v3/b/${CFG.JSONBIN_BIN_ID}`;
 const JH={'Content-Type':'application/json','X-Master-Key':CFG.JSONBIN_API_KEY};
 
 async function jbGet(){
+  // Firebase primero (más rápido)
+  if(!CFG.FIREBASE_URL.startsWith('PON_')){
+    try{
+      const r=await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET);
+      if(!r.ok) return null;
+      const d=await r.json();
+      return d?{_jornadas:d}:null;
+    }catch(e){ console.error('Firebase GET:',e); }
+  }
+  // Fallback JSONBin
   if(CFG.JSONBIN_BIN_ID.startsWith('PON_')) return null;
-  try{ const r=await fetch(JB+'/latest',{headers:JH}); if(!r.ok) return null; const d=await r.json(); return d.record||d; }catch{ return null; }
+  try{
+    const r=await fetch(JB+'/latest',{headers:JH});
+    if(!r.ok) return null;
+    const d=await r.json();
+    return d.record||d;
+  }catch{ return null; }
 }
 async function jbSet(data){
+  const payload=data._jornadas||data;
+  // Firebase primero
+  if(!CFG.FIREBASE_URL.startsWith('PON_')){
+    try{
+      const r=await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(r.ok) return true;
+    }catch(e){ console.error('Firebase PUT:',e); }
+  }
+  // Fallback JSONBin
   if(CFG.JSONBIN_BIN_ID.startsWith('PON_')){ lsSet('jdb',data); return true; }
-  try{ const r=await fetch(JB,{method:'PUT',headers:JH,body:JSON.stringify(data)}); return r.ok; }catch{ return false; }
+  try{
+    const r=await fetch(JB,{method:'PUT',headers:JH,body:JSON.stringify(data)});
+    return r.ok;
+  }catch{ return false; }
+}
+
+// ─── TIEMPO REAL: Firebase SSE ─────────────────────────
+let _fbListener=null;
+function iniciarListenerFirebase(){
+  if(CFG.FIREBASE_URL.startsWith('PON_')) return;
+  if(_fbListener){ try{_fbListener.close();}catch(e){} }
+  const url=CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET;
+  try{
+    _fbListener=new EventSource(url);
+    _fbListener.addEventListener('put',e=>{
+      try{
+        const msg=JSON.parse(e.data);
+        if(!msg.data||_saving) return;
+        const n=msg.data;
+        ['personas','partidas','habitaciones','asignaciones','solicitudes',
+         'pagos','gastos','cobros','mensajes','mensajes_leidos',
+         'comidas_optin','comidas_info','suministros_stock'].forEach(k=>{
+          if(n[k]!==undefined) DB[k]=n[k];
+        });
+        // Re-inyectar invitado en memoria
+        DB.personas=(DB.personas||[]).filter(p=>!p._esInvitado);
+        DB.personas.push({ID:'P_INVITADO',id:'P_INVITADO',Nombre:'Invitado',
+          Apellidos:'',NombreCompleto:'Invitado',Nick:'invitado',
+          Email:'invitado@asturludicas.es',Modalidad:'Jueves (270€)',
+          TallaCamiseta:'',GrupoID:'',EsTitular:'SI',Alojamiento:'SI',
+          ImporteTotal:0,Codigo:'',Activo:'TRUE',_esInvitado:true});
+        lsSet('jdb',DB);
+        // Re-render silencioso de la página actual
+        const pg=HIST[HIST.length-1];
+        if(pg) try{ nav(pg,false); }catch(err){}
+      }catch(err){ console.warn('SSE parse:',err); }
+    });
+    _fbListener.onerror=()=>{ setTimeout(iniciarListenerFirebase,5000); };
+    console.log('🔥 Firebase Realtime activo');
+  }catch(e){ console.warn('SSE no disponible:',e); }
 }
 
 // ─── LOCALSTORAGE ──────────────────────────────────────
@@ -1339,9 +1411,35 @@ async function loadRemote(){
   });
   return true;
 }
+// ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
+let _saving=false, _saveQueue=false;
+
+// Guardado optimista: actualiza UI al instante, sync en background
+function saveOptimista(renderFn){
+  const pFilt=DB.personas.filter(p=>!p._esInvitado);
+  lsSet('jdb',{...DB,personas:pFilt});
+  if(renderFn) try{ renderFn(); }catch(e){}
+  saveRemote().catch(()=>{});
+}
+
 async function saveRemote(){
-  lsSet('jdb',DB);
-  await jbSet({_jornadas:{...DB}});
+  if(_saving){ _saveQueue=true; return; }
+  _saving=true;
+  // Deshabilitar botones de acción mientras guarda
+  const btns=[];
+  document.querySelectorAll('button.btn-primary,button.btn-danger,button.btn-success').forEach(b=>{
+    if(!b.disabled&&!b.dataset.nospin){ b.disabled=true; btns.push(b); }
+  });
+  try{
+    const pFilt=DB.personas.filter(p=>!p._esInvitado);
+    const dbG={...DB,personas:pFilt};
+    lsSet('jdb',dbG);
+    await jbSet({_jornadas:dbG});
+  } finally {
+    _saving=false;
+    btns.forEach(b=>{ b.disabled=false; });
+    if(_saveQueue){ _saveQueue=false; setTimeout(saveRemote,300); }
+  }
 }
 
 // ─── HELPERS ───────────────────────────────────────────
@@ -1496,6 +1594,7 @@ function bootApp(){
     document.getElementById('sb-sub').textContent='Administrador';
     const adminEmail=lsGet('admin_email','administrador');
     document.getElementById('sb-user').textContent=adminEmail;
+    iniciarListenerFirebase();
     buildNav('admin');
     nav('dashboard');
   } else {
@@ -1506,6 +1605,7 @@ function bootApp(){
     document.getElementById('sb-sub').textContent='Área personal';
     document.getElementById('sb-user').textContent=ME.Nick ? '@'+ME.Nick : ME.Email||'';
     document.getElementById('btn-logout-top').style.display='flex';
+    iniciarListenerFirebase();
     buildNav('inscrito');
     nav('mi-ficha');
     renderPortal();
@@ -2105,6 +2205,7 @@ function abrirModalPago(){
   openModal('mo-pago');
 }
 async function guardarPago(){
+  if(_saving){ toast('Procesando…'); return; }
   const id=document.getElementById('pg-id').value||uid('PAG_');
   const imp=document.getElementById('pg-imp').value;
   if(!imp){ toast('Importe obligatorio','err'); return; }
@@ -2661,6 +2762,7 @@ function renderPortal(){
 function toggleForm(id){ const f=document.getElementById(id); f.style.display=f.style.display==='none'?'block':'none'; }
 
 async function enviarSol(tipo,campoId,formId){
+  if(_saving){ toast('Procesando, espera un momento…'); return; }
   const valor=document.getElementById(campoId).value.trim();
   if(!valor){ toast('Escribe algo antes de enviar','err'); return; }
   const p=ME, pid=p.ID||p.id||'';
@@ -3070,7 +3172,7 @@ function editarPartida(pid_partida){
 
 let _guardandoPartida=false;
 async function guardarPartida(){
-  if(_guardandoPartida) return; // evitar doble guardado
+  if(_guardandoPartida||_saving) return;
   const juego=document.getElementById('pt-juego').value.trim();
   if(!juego){ toast('El nombre del juego es obligatorio','err'); return; }
   const btn=document.querySelector('#mo-partida .mo-ft .btn-primary');
@@ -3110,9 +3212,9 @@ async function guardarPartida(){
 
 let _uniendose=false;
 async function unirsePartida(pid_partida, forzar){
-  if(_uniendose) return;
+  if(_uniendose||_saving){ toast('Procesando, espera…'); return; }
   _uniendose=true;
-  setTimeout(()=>_uniendose=false, 3000);
+  setTimeout(()=>{ _uniendose=false; }, 4000);
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
   const pid=miId(), nick=miNick();
   if(pid==='ADMIN'){ toast('Los admins no se unen a partidas desde aquí','err'); return; }
@@ -3121,7 +3223,8 @@ async function unirsePartida(pid_partida, forzar){
   if(todosYa.length>=Number(p.maxJugadores||4)){ toast('Partida completa','err'); return; }
   p.jugadores.push({id:pid,nick});
   log('UNIRSE',`${nick} → ${p.juego}`);
-  await saveRemote(); closeModal('mo-partida-det'); renderCalendario(); toast(`Apuntado a ${p.juego}`,'ok');
+  closeModal('mo-partida-det'); toast(`Apuntado a ${p.juego} ✓`,'ok');
+  saveOptimista(renderCalendario);
 }
 
 async function salirPartida(pid_partida){
@@ -3129,7 +3232,8 @@ async function salirPartida(pid_partida){
   const pid=miId();
   p.jugadores=p.jugadores.filter(j=>j.id!==pid);
   log('SALIR_PARTIDA',`${miNick()} ← ${p.juego}`);
-  await saveRemote(); closeModal('mo-partida-det'); renderCalendario(); toast('Saliste de la partida');
+  closeModal('mo-partida-det'); toast('Saliste de la partida');
+  saveOptimista(renderCalendario);
 }
 
 async function quitarJugador(pid_partida, jugadorId){
@@ -3429,6 +3533,59 @@ function exportPostEventoCSV(nombre, asist){
   dlCSV(lines.join('\n'), `post_evento_${nombre.replace(/[^a-z0-9]/gi,'_')}.csv`);
 }
 
+
+// ─── MIGRACIÓN JSONBin → Firebase ──────────────────────
+async function checkFirebaseStatus(){
+  const el=document.getElementById('fb-status');
+  if(!el) return;
+  if(CFG.FIREBASE_URL.startsWith('PON_')){
+    el.innerHTML='<span style="color:var(--amber)">⚠ Firebase no configurado — edita CFG.FIREBASE_URL y CFG.FIREBASE_SECRET</span>';
+    return;
+  }
+  try{
+    el.innerHTML='Verificando…';
+    const r=await fetch(CFG.FIREBASE_URL+'/.json?shallow=true&auth='+CFG.FIREBASE_SECRET);
+    if(r.ok){
+      el.innerHTML='<span style="color:var(--green)">✅ Firebase conectado y funcionando</span>';
+    } else {
+      el.innerHTML=`<span style="color:var(--red)">❌ Error ${r.status} — revisa la URL y el secret</span>`;
+    }
+  }catch(e){
+    el.innerHTML=`<span style="color:var(--red)">❌ Sin conexión: ${e.message}</span>`;
+  }
+}
+
+async function migrarAFirebase(){
+  if(CFG.FIREBASE_URL.startsWith('PON_')){
+    toast('Configura Firebase primero (URL y Secret en CFG)','err'); return;
+  }
+  if(!confirm('¿Migrar todos los datos actuales de JSONBin a Firebase? Hazlo solo una vez.')) return;
+  const el=document.getElementById('fb-status');
+  if(el) el.innerHTML='Migrando datos…';
+  try{
+    // Leer JSONBin
+    const r=await fetch(`https://api.jsonbin.io/v3/b/${CFG.JSONBIN_BIN_ID}/latest`,
+      {headers:{'Content-Type':'application/json','X-Master-Key':CFG.JSONBIN_API_KEY}});
+    if(!r.ok){ toast('No se pudo leer JSONBin','err'); return; }
+    const data=await r.json();
+    const jornadas=(data.record||data)._jornadas || (data.record||data);
+    // Escribir en Firebase
+    const fw=await fetch(FB(),{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(jornadas)
+    });
+    if(fw.ok){
+      if(el) el.innerHTML='<span style="color:var(--green)">✅ Migración completada. Recarga la app.</span>';
+      toast('Datos migrados a Firebase ✓','ok');
+    } else {
+      if(el) el.innerHTML='<span style="color:var(--red)">❌ Error al escribir en Firebase</span>';
+    }
+  }catch(e){
+    toast('Error: '+e.message,'err');
+  }
+}
+
 // ─── TALLAS ────────────────────────────────────────────
 function renderTallas(){
   const orden=['XS','S','M','L','XL','XXL','XXXL',''];
@@ -3538,6 +3695,7 @@ function abrirModalGasto(){
   document.getElementById('mo-gasto').classList.add('open');
 }
 async function guardarGasto(){
+  if(_saving){ toast('Procesando…'); return; }
   const imp=document.getElementById('gs-imp').value;
   const concepto=document.getElementById('gs-concepto').value;
   if(!imp||!concepto){ toast('Concepto e importe obligatorios','err'); return; }
@@ -3563,6 +3721,7 @@ function abrirModalCobro(){
   document.getElementById('mo-cobro').classList.add('open');
 }
 async function guardarCobro(){
+  if(_saving){ toast('Procesando…'); return; }
   const imp=document.getElementById('cb-imp').value;
   const concepto=document.getElementById('cb-concepto').value;
   if(!imp||!concepto){ toast('Concepto e importe obligatorios','err'); return; }
