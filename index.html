@@ -3977,17 +3977,11 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
 </script>
 
 <script>
+// Service Worker: desregistrar cualquier SW anterior para forzar actualización
 if('serviceWorker' in navigator){
-  const swCode=`
-const CACHE='jornadas-v1';
-self.addEventListener('install',e=>{self.skipWaiting();});
-self.addEventListener('activate',e=>{self.clients.claim();});
-self.addEventListener('fetch',e=>{
-  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));
-});`;
-  const blob=new Blob([swCode],{type:'application/javascript'});
-  navigator.serviceWorker.register(URL.createObjectURL(blob))
-    .then(()=>console.log('SW OK')).catch(e=>console.log('SW err',e));
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(r=>r.unregister());
+  });
 }
 </script>
 
