@@ -991,8 +991,9 @@ tbody tr:hover td{background:var(--paper)}
             <div id="port-alerg" style="background:var(--paper);border-radius:var(--rs);padding:9px;font-size:13px;margin-bottom:6px"></div>
             <button class="btn btn-sm" onclick="toggleForm('falerg')">✏ Solicitar cambio</button>
             <div id="falerg" style="display:none;margin-top:10px">
+              <div id="alerg-miembros"></div>
               <div class="fg"><label>Nuevo valor</label><textarea id="val-alerg" rows="2"></textarea></div>
-              <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="enviarSol('ALERGENOS','val-alerg','falerg')">Enviar solicitud</button><button class="btn btn-sm" onclick="toggleForm('falerg')">Cancelar</button></div>
+              <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="enviarSolGrupo('ALERGENOS','val-alerg','falerg')">Enviar solicitud</button><button class="btn btn-sm" onclick="toggleForm('falerg')">Cancelar</button></div>
               <p class="fg-hint" style="margin-top:4px">La organización revisará el cambio antes de aplicarlo.</p>
             </div>
             <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
@@ -1000,8 +1001,9 @@ tbody tr:hover td{background:var(--paper)}
             <div id="port-obs" style="background:var(--paper);border-radius:var(--rs);padding:9px;font-size:13px;margin-bottom:6px"></div>
             <button class="btn btn-sm" onclick="toggleForm('fobs')">✏ Enviar nota</button>
             <div id="fobs" style="display:none;margin-top:10px">
+              <div id="obs-miembros"></div>
               <div class="fg"><label>Mensaje</label><textarea id="val-obs" rows="3"></textarea></div>
-              <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="enviarSol('OBSERVACIONES','val-obs','fobs')">Enviar</button><button class="btn btn-sm" onclick="toggleForm('fobs')">Cancelar</button></div>
+              <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="enviarSolGrupo('OBSERVACIONES','val-obs','fobs')">Enviar</button><button class="btn btn-sm" onclick="toggleForm('fobs')">Cancelar</button></div>
             </div>
           </div>
           <div class="card" id="card-acomp" style="display:none">
@@ -2032,22 +2034,49 @@ function renderHabs(){
       </div>` : '';
     // Color borde según estado
     const borderColor = libre===0 ? 'var(--red)' : ocup.length>0 ? 'var(--amber)' : 'var(--border)';
-    return `<div class="hc" style="border-color:${borderColor}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-        <div>
-          <div style="font-weight:700;font-size:14px">${h.hotel||h.Hotel||''} <span style="color:var(--accent)">${h.num||h.NumeroHabitacion||''}</span></div>
-          <div style="font-size:11px;color:var(--ink3);margin-top:1px">${h.tipo||h.Tipo||''} · ${h.noches==='viernes'?'Vie→Dom':'Jue+Vie→Dom'}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:18px;font-weight:800;color:${libre===0?'var(--red)':libre===cap?'var(--green)':'var(--amber)'}">${ocup.length}/${cap}</div>
-          <div style="font-size:10px;color:var(--ink3)">${libre} libre${libre!==1?'s':''}</div>
-        </div>
+    // Chips de ocupantes inline
+    const ocupChips = ocup.map(p=>{
+      const pn=p.Nick?'@'+p.Nick:(p.Nombre||'?');
+      return `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--accent-l);
+        color:var(--accent);border-radius:20px;padding:3px 8px;font-size:12px;font-weight:600">
+        ${pn}
+        <button onclick="adminAsignarHab('${hid}','${p.ID||p.id||''}','${pn}')"
+          style="border:none;background:none;color:var(--red);cursor:pointer;font-size:13px;padding:0;line-height:1">✕</button>
+      </span>`;
+    }).join('');
+    const libresChips = Array.from({length:libre},()=>
+      `<span style="display:inline-flex;background:var(--paper);border:1px dashed var(--border2);
+        color:var(--ink3);border-radius:20px;padding:3px 10px;font-size:11px">libre</span>`
+    ).join('');
+
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+        background:var(--surface);border:1.5px solid ${borderColor};border-radius:12px;
+        margin-bottom:8px;flex-wrap:wrap">
+      <!-- Nombre y tipo -->
+      <div style="flex:0 0 auto;min-width:90px">
+        <div style="font-weight:700;font-size:13px">${h.hotel||h.Hotel||''} <span style="color:var(--accent)">${h.num||h.NumeroHabitacion||''}</span></div>
+        <div style="font-size:10px;color:var(--ink3)">${h.tipo||h.Tipo||''} · ${h.noches==='viernes'?'Vie→Dom':'Jue→Dom'}</div>
       </div>
-      <div>${ocupantesHTML}${libresHTML}</div>
-      ${selectorHTML}
-      <div style="display:flex;gap:6px;margin-top:4px;padding-top:6px;border-top:1px solid var(--border)">
-        <button class="btn btn-xs" onclick="editarHab('${hid}')">✏ Editar</button>
-        <button class="btn btn-xs btn-danger" onclick="eliminarHab('${hid}')">🗑 Borrar</button>
+      <!-- Contador -->
+      <div style="flex:0 0 auto;font-size:16px;font-weight:800;
+        color:${libre===0?'var(--red)':libre===cap?'var(--green)':'var(--amber)'}">
+        ${ocup.length}/${cap}
+      </div>
+      <!-- Ocupantes + libres -->
+      <div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0">
+        ${ocupChips}${libresChips}
+        ${libre>0?`
+        <select id="sel-hab-${hid}" style="font-size:11px;padding:3px 6px;border:1px solid var(--border2);
+          border-radius:20px;background:var(--paper);color:var(--ink);max-width:160px">
+          <option value="">+ Asignar…</option>
+          ${sinAsignar.map(p=>`<option value="${p.ID||p.id||''}">${p.Nick?'@'+p.Nick+' ':''} ${(p.NombreCompleto||p.Nombre||'').substring(0,18)}</option>`).join('')}
+        </select>
+        <button class="btn btn-xs btn-primary" onclick="(()=>{const s=document.getElementById('sel-hab-${hid}');if(!s.value)return;const per=DB.personas.find(x=>(x.ID||x.id||'')==s.value);if(per)adminAsignarHab('${hid}',s.value,per.Nick||per.Nombre||'?')})()">✓</button>`:''}
+      </div>
+      <!-- Acciones -->
+      <div style="flex:0 0 auto;display:flex;gap:4px">
+        <button class="btn btn-xs" onclick="editarHab('${hid}')">✏</button>
+        <button class="btn btn-xs btn-danger" onclick="eliminarHab('${hid}')">✕</button>
       </div>
     </div>`;
   }).join('')||'<p style="font-size:13px;color:var(--ink3);grid-column:1/-1">Sin habitaciones para este filtro.</p>';
@@ -2777,8 +2806,20 @@ function renderPortal(){
     }).join(''); }
   else ca.style.display='none';
 
-  // Pagos
-  const tot=Number(p.ImporteTotal||0),pag=pagadoPor(pid),pend=Math.max(0,tot-pag);
+  // Pagos — acumular todo el grupo si es titular
+  let miembrosGrupo = [p];
+  if(p.GrupoID){
+    miembrosGrupo = DB.personas.filter(x=>x.GrupoID===p.GrupoID||(x.ID||x.id||'')===pid);
+  }
+  const tot = miembrosGrupo.reduce((a,m)=>a+Number(m.ImporteTotal||0),0);
+  const pag = miembrosGrupo.reduce((a,m)=>a+pagadoPor(m.ID||m.id||''),0);
+  const pend=Math.max(0,tot-pag);
+  if(miembrosGrupo.length>1){
+    // Mostrar desglose por miembro
+    const desglose = miembrosGrupo.map(m=>`${m.Nick||m.Nombre||'?'}: ${Number(m.ImporteTotal||0).toFixed(0)}€`).join(' · ');
+    const desEl=document.getElementById('p-desglose');
+    if(desEl){ desEl.textContent=desglose; desEl.style.display='block'; }
+  }
   document.getElementById('p-total').textContent=tot.toFixed(2)+'€';
   document.getElementById('p-pag').textContent=pag.toFixed(2)+'€';
   document.getElementById('p-pend').textContent=pend.toFixed(2)+'€';
@@ -3154,10 +3195,25 @@ function verPartida(pid_partida){
   const ft=document.getElementById('det-ft');
   let btns='';
   if(!estoyDentro && !llena && pid!=='ADMIN'){
-    if(conflicto){
-      btns+=`<button class="btn btn-danger" onclick="unirsePartida('${p.id}',true)">Unirme igualmente</button>`;
+    // Si hay grupo, mostrar selector de miembro
+    const miembrosDisp = ME?.GrupoID
+      ? [ME,...DB.personas.filter(x=>x.GrupoID===ME.GrupoID&&(x.ID||x.id||'')!==pid)]
+          .filter(m=>!todosJug.some(j=>j.id===(m.ID||m.id||'')))
+      : null;
+    if(miembrosDisp && miembrosDisp.length>1){
+      const optsM=miembrosDisp.map(m=>`<option value="${m.ID||m.id||''}">${m.Nick?'@'+m.Nick:m.Nombre||'?'}</option>`).join('');
+      btns+=`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <select id="sel-miembro-partida" style="flex:1;padding:6px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--paper);color:var(--ink);font-size:13px">
+          ${optsM}
+        </select>
+        <button class="btn btn-primary" onclick="unirsePartidaMiembro('${p.id}',${conflicto})">Apuntar</button>
+      </div>`;
     } else {
-      btns+=`<button class="btn btn-primary" onclick="unirsePartida('${p.id}',false)">Unirme a la partida</button>`;
+      if(conflicto){
+        btns+=`<button class="btn btn-danger" onclick="unirsePartida('${p.id}',true)">Unirme igualmente</button>`;
+      } else {
+        btns+=`<button class="btn btn-primary" onclick="unirsePartida('${p.id}',false)">Unirme a la partida</button>`;
+      }
     }
   }
   if(estoyDentro && p.creadorId!==pid){
@@ -3619,6 +3675,81 @@ async function migrarAFirebase(){
   }
 }
 
+
+// ─── PORTAL GRUPO: selector de miembro ─────────────────
+function rellenarSelectorMiembro(containerId, campoId){
+  const cont=document.getElementById(containerId);
+  if(!cont||!ME) return;
+  // Si no hay grupo, preseleccionar a ME
+  if(!ME.GrupoID){ cont.innerHTML=''; return; }
+  const miembros=[ME,...DB.personas.filter(x=>
+    x.GrupoID===ME.GrupoID && (x.ID||x.id||'')!==(ME.ID||ME.id||'')
+  )];
+  if(miembros.length<=1){ cont.innerHTML=''; return; }
+  cont.innerHTML=`
+    <div style="margin-bottom:8px">
+      <label style="font-size:12px;font-weight:600;color:var(--ink3)">¿Para quién?</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+        ${miembros.map((m,i)=>`
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
+            padding:5px 10px;border-radius:20px;border:1.5px solid var(--border2);font-size:12px;
+            background:${i===0?'var(--accent-l)':'var(--paper)'}">
+            <input type="radio" name="miembro-sel" value="${m.ID||m.id||''}"
+              ${i===0?'checked':''} style="display:none"
+              onchange="document.getElementById('${campoId}').value='${(m.Alergenos||m.Observaciones||'').replace(/'/g,"'")}'">
+            ${m.Nick?'@'+m.Nick:m.Nombre||'?'}
+          </label>`).join('')}
+      </div>
+    </div>`;
+  // Precargar valor del primero
+  const inp=document.getElementById(campoId);
+  if(inp) inp.value=ME.Alergenos||'';
+}
+
+async function enviarSolGrupo(tipo, campoId, formId){
+  if(_saving){ toast('Procesando…'); return; }
+  const valor=document.getElementById(campoId)?.value.trim();
+  if(!valor){ toast('Escribe algo antes de enviar','err'); return; }
+  // Determinar para qué miembro
+  const selMiembro=document.querySelector('input[name="miembro-sel"]:checked');
+  const targetId=selMiembro?selMiembro.value:(ME?.ID||ME?.id||'');
+  const targetPer=DB.personas.find(x=>(x.ID||x.id||'')===targetId)||ME;
+  const pid=targetPer?.ID||targetPer?.id||'';
+  const sol={
+    id:uid('SOL_'),ID:uid('SOL_'),
+    tipo,valor,personaId:pid,
+    personaNombre:targetPer?.NombreCompleto||targetPer?.Nombre||'?',
+    estado:'PENDIENTE',ts:new Date().toISOString()
+  };
+  DB.solicitudes.unshift(sol);
+  await saveRemote();
+  toggleForm(formId);
+  toast('Solicitud enviada','ok');
+  renderPortal();
+}
+
+
+async function unirsePartidaMiembro(pid_partida, forzar){
+  const sel=document.getElementById('sel-miembro-partida');
+  const miembroId=sel?sel.value:(ME?.ID||ME?.id||'');
+  const miembro=DB.personas.find(x=>(x.ID||x.id||'')===miembroId)||ME;
+  const nick=miembro?.Nick||miembro?.Nombre||'?';
+  // Verificar conflicto de franja para ese miembro
+  const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
+  const conflictoMiembro=!forzar&&DB.partidas.some(x=>
+    x.id!==p.id && sesolapan(p,x) &&
+    ([{id:x.creadorId},...(x.jugadores||[])].some(j=>j.id===miembroId))
+  );
+  if(conflictoMiembro && !forzar){
+    if(!confirm(`${nick} ya tiene otra partida en esa franja. ¿Apuntar igualmente?`)) return;
+  }
+  if(_uniendose||_saving){ toast('Procesando…'); return; }
+  _uniendose=true; setTimeout(()=>{ _uniendose=false; },4000);
+  p.jugadores.push({id:miembroId,nick});
+  log('UNIRSE',`${nick} → ${p.juego}`);
+  closeModal('mo-partida-det'); toast(`${nick} apuntado a ${p.juego} ✓`,'ok');
+  saveOptimista(renderCalendario);
+}
 // ─── TALLAS ────────────────────────────────────────────
 function renderTallas(){
   const orden=['XS','S','M','L','XL','XXL','XXXL',''];
