@@ -1218,6 +1218,14 @@ tbody tr:hover td{background:var(--paper)}
     <div class="mo-body">
       <input type="hidden" id="pt-id">
       <input type="hidden" id="pt-franja">
+      <div class="fg" id="pt-admin-creador-wrap" style="display:none">
+        <label>¿Quién crea la partida?</label>
+        <div style="display:flex;gap:8px" id="pt-admin-btns">
+          <button type="button" class="btn" id="pt-btn-danib" onclick="elegirAdminCreador('DaniB',this)">DaniB</button>
+          <button type="button" class="btn" id="pt-btn-alex" onclick="elegirAdminCreador('Alex',this)">Alex</button>
+        </div>
+        <input type="hidden" id="pt-admin-nick" value="">
+      </div>
       <div class="fg"><label>🎲 Juego *</label><input type="text" id="pt-juego" placeholder="Nombre del juego"></div>
       <div class="form-grid">
         <div class="fg">
@@ -3459,19 +3467,23 @@ function editarPartida(pid_partida){
 let _guardandoPartida=false;
 async function guardarPartida(){
   if(_guardandoPartida||_saving) return;
+  // Admin: validar identidad PRIMERO
+  const idExistPre=document.getElementById('pt-id').value;
+  var _adminNickSel=ROLE==='admin'?document.getElementById('pt-admin-nick')?.value.trim():'';
+  if(ROLE==='admin'&&!_adminNickSel&&!idExistPre){
+    toast('Primero elige quién eres: DaniB o Alex','err');
+    const w=document.getElementById('pt-admin-creador-wrap');
+    if(w){w.style.border='2px solid var(--red)';setTimeout(()=>w.style.border='',2000);}
+    return;
+  }
   const juego=document.getElementById('pt-juego').value.trim();
   if(!juego){ toast('El nombre del juego es obligatorio','err'); return; }
   const btn=document.querySelector('#mo-partida .mo-ft .btn-primary');
   const txtOrig=btn.textContent;
   btn.disabled=true; btn.textContent='Guardando…'; _guardandoPartida=true;
   try{
-    const idExist=document.getElementById('pt-id').value;
+    const idExist=idExistPre;
     const id=idExist||uid('PT_');
-    // Admin: usar identidad elegida en el selector
-    var _adminNickSel=ROLE==='admin'?document.getElementById('pt-admin-nick')?.value.trim():'';
-    if(ROLE==='admin'&&!_adminNickSel&&!idExist){
-      toast('Elige quién crea la partida (DaniB o Alex)','err'); return;
-    }
     // Buscar el perfil del admin elegido en DB
     var _adminPer=_adminNickSel?DB.personas.find(function(x){return (x.Nick||'').toLowerCase()===_adminNickSel.toLowerCase();}):null;
     var nick=_adminNickSel||miNick();
