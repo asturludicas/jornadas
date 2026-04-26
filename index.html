@@ -2818,29 +2818,36 @@ function renderPortal(){
     }
   }
 
-  // Tarjeta habitacion en Mi ficha
-  if(ME&&!ME._anonimo&&!ME._esInvitado){
-    var _ph=ME.ID||ME.id||'';var _mhid=DB.asignaciones[_ph];
-    var _mh=_mhid?DB.habitaciones.find(function(h){return (h.ID||h.id||'')===_mhid;}):null;
-    if(_mh){
-      var _cpas=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===_mhid&&(x.ID||x.id||'')!==_ph;});
-      var _av=document.getElementById('aviso-box');_av.style.display='block';
-      // Evitar duplicado con ID fijo
-      var _exHd=document.getElementById('hab-asig-card');
-      if(_exHd) _exHd.remove();
-      var _hd=document.createElement('div');
-      _hd.id='hab-asig-card';
-      _hd.setAttribute('style','background:var(--surface);border:2px solid var(--green);border-radius:14px;padding:14px 16px;margin-bottom:10px');
-      var _hh='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:22px">&#x1F6CF;</span><div>'
-        +'<div style="font-weight:700;font-size:12px;color:var(--green)">Tu habitación asignada</div>'
-        +'<div style="font-size:15px;font-weight:800">'+(_mh.hotel||_mh.Hotel||'')+' '+(_mh.num||_mh.NumeroHabitacion||'')+'</div>'
-        +'</div></div>';
-      if(_cpas.length){
-        _hh+='<div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:5px">Compañeros</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
-        _cpas.forEach(function(c){_hh+='<span style="background:var(--accent-l);color:var(--accent);border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">'+(c.Nick?'@'+c.Nick:(c.Nombre||'?'))+'</span>';});
-        _hh+='</div>';
-      }else{_hh+='<div style="font-size:12px;color:var(--ink3);font-style:italic">Sin compañeros aún</div>';}
-      _hd.innerHTML=_hh;_av.appendChild(_hd);
+    // ─── Tarjeta de habitación en Mi ficha (única instancia) ───
+  if(ME && !ME._anonimo && !ME._esInvitado){
+    var _pidH2 = ME.ID||ME.id||'';
+    var _habId2 = DB.asignaciones[_pidH2];
+    var _hab2 = _habId2 ? DB.habitaciones.find(function(h){ return (h.ID||h.id||'')===_habId2; }) : null;
+    if(_hab2){
+      var _avBox = document.getElementById('aviso-box');
+      _avBox.style.display = 'block';
+      // Quitar tarjeta anterior si existe (evita duplicados en SSE)
+      var _old = document.getElementById('hab-asig-card');
+      if(_old) _old.remove();
+      var _cpas2 = DB.personas.filter(function(x){
+        return DB.asignaciones[x.ID||x.id||'']===_habId2 && (x.ID||x.id||'')!==_pidH2;
+      });
+      var _habDiv = document.createElement('div');
+      _habDiv.id = 'hab-asig-card';
+      _habDiv.setAttribute('style','background:var(--surface);border:2px solid var(--green);border-radius:14px;padding:14px 16px;margin-bottom:10px');
+      var _hh = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        + '<span style="font-size:22px">&#x1F6CF;</span><div>'
+        + '<div style="font-weight:700;font-size:12px;color:var(--green)">Tu habitación</div>'
+        + '<div style="font-size:15px;font-weight:800">'+(_hab2.hotel||_hab2.Hotel||'')+' '+(_hab2.num||_hab2.NumeroHabitacion||'')+'</div>'
+        + '</div></div>';
+      if(_cpas2.length){
+        _hh += '<div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:5px">Compañeros</div>'
+          + '<div style="display:flex;flex-wrap:wrap;gap:5px">';
+        _cpas2.forEach(function(c){ _hh += '<span style="background:var(--accent-l);color:var(--accent);border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">'+(c.Nick?'@'+c.Nick:(c.Nombre||'?'))+'</span>'; });
+        _hh += '</div>';
+      } else { _hh += '<div style="font-size:12px;color:var(--ink3);font-style:italic">Sin compañeros aún</div>'; }
+      _habDiv.innerHTML = _hh;
+      _avBox.appendChild(_habDiv);
     }
   }
 
@@ -3250,6 +3257,7 @@ function renderPartidaCard(p, pid){
 }
 
 function verPartida(pid_partida){
+  try{
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
   const pid=miId(), nick=miNick();
   const todosJug=[{id:p.creadorId,nick:p.creadorNick,esCreador:true},...(p.jugadores||[])];
@@ -3303,6 +3311,27 @@ function verPartida(pid_partida){
   const ft=document.getElementById('det-ft');
   let btns='';
   if(!estoyDentro && !llena && pid){
+    // Admin: selector de persona (Alex o Dani)
+    if(ROLE==='admin'){
+      const admPersonas = DB.personas.filter(function(x){
+        return CFG.ADMINS.some(function(a){ return String(x.Email||'').toLowerCase()===a.email; });
+      });
+      if(admPersonas.length>0){
+        const opts = admPersonas.map(function(ap){
+          return '<option value="'+( ap.ID||ap.id||'')+'">'+(ap.Nick?'@'+ap.Nick+' — ':'')+( ap.NombreCompleto||ap.Nombre||ap.Email)+'</option>';
+        }).join('');
+        btns += '<div style="margin-bottom:8px">'
+          + '<label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:4px">¿Quién se apunta?</label>'
+          + '<div style="display:flex;gap:6px">'
+          + '<select id="sel-admin-persona" style="flex:1;padding:6px 8px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--paper);color:var(--ink);font-size:13px">'
+          + opts + '</select>'
+          + '<button class="btn btn-primary" id="btn-admin-join">Apuntar</button>'
+          + '</div></div>';
+        // wired via requestAnimationFrame
+      } else {
+        btns += '<button class="btn btn-primary" onclick="unirsePartida(\'' + p.id + '\',false)">Unirme</button>';
+      }
+    } else {
     // Si hay grupo, mostrar selector de miembro
     const miembrosDisp = (ME&&ME.GrupoID&&ROLE!=='admin')
       ? [ME,...DB.personas.filter(x=>x.GrupoID===ME.GrupoID&&(x.ID||x.id||'')!==pid)]
@@ -3323,6 +3352,7 @@ function verPartida(pid_partida){
         btns+=`<button class="btn btn-primary" onclick="unirsePartida('${p.id}',false)">Unirme a la partida</button>`;
       }
     }
+    } // end else (no admin)
   }
   if(estoyDentro && p.creadorId!==pid){
     btns+=`<button class="btn" onclick="salirPartida('${p.id}')">Salir de la partida</button>`;
@@ -3353,12 +3383,21 @@ function verPartida(pid_partida){
     requestAnimationFrame(function(){
       var si=document.getElementById('det-search-inp');
       if(si) si.addEventListener('input',function(){detSearchNick(vpid,this.value);});
+      var baj=document.getElementById('btn-admin-join');
+      if(baj) baj.onclick=function(){
+        var sel=document.getElementById('sel-admin-persona');
+        var selId=sel?sel.value:'';
+        var selPer=selId?DB.personas.find(function(x){return (x.ID||x.id||'')===selId;}):null;
+        var selNick=selPer?(selPer.Nick||selPer.Nombre||'Admin'):'Admin';
+        unirsePartidaComoAdmin(vpid,selId||'ADMIN',selNick);
+      };
       var be=document.getElementById('det-btn-edit');
       if(be) be.onclick=function(){editarPartida(vpid);};
       var bd=document.getElementById('det-btn-del');
       if(bd) bd.onclick=function(){eliminarPartida(vpid);};
     });
   })(p.id);
+  }catch(e){ console.error('verPartida crash:',e); toast('Error: '+e.message,'err'); }
 }
 
 function abrirNuevaPartida(franjaId, _){
@@ -4153,6 +4192,20 @@ async function detAddNick(pid_partida,jugadorId,nick){
   log('AÑADIR_JUGADOR',nick+' > '+p.juego);
   toast(nick+' añadido ✓','ok');
   saveOptimista(function(){renderCalendario();verPartida(pid_partida);});
+}
+
+
+async function unirsePartidaComoAdmin(pid_partida, personaId, nick){
+  if(_saving){ toast('Procesando…'); return; }
+  var p=DB.partidas.find(function(x){return x.id===pid_partida;}); if(!p) return;
+  var tot=[{id:p.creadorId}].concat(p.jugadores||[]);
+  if(tot.some(function(j){return j.id===personaId;})){ toast(nick+' ya está en la partida'); return; }
+  if(tot.length>=Number(p.maxJugadores||4)){ toast('Partida completa','err'); return; }
+  p.jugadores.push({id:personaId, nick:nick});
+  log('UNIRSE_ADMIN', nick+' → '+p.juego);
+  closeModal('mo-partida-det');
+  toast(nick+' apuntado a '+p.juego+' ✓','ok');
+  saveOptimista(renderCalendario);
 }
 
 // ─── TALLAS ────────────────────────────────────────────
