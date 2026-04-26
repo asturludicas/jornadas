@@ -1617,6 +1617,11 @@ async function loginInscrito(){
     const p = DB.personas.find(x =>
       String(x.Email||x.email||'').trim().toLowerCase() === email && x.Activo !== 'FALSE'
     );
+    // Si no está en la lista, verificar ACCESO_ABIERTO
+    if(!p && !CFG.ACCESO_ABIERTO){
+      showErr('err-i','❌ Tu email no está en la lista de inscritos. Contacta con la organización.');
+      return;
+    }
     ME = p || {
       ID:'ANON_'+Date.now(), id:'ANON_'+Date.now(),
       Nombre: email.split('@')[0], NombreCompleto: email.split('@')[0],
@@ -3298,25 +3303,30 @@ function verPartida(pid_partida){
   if(!estoyDentro && !llena && pid){
     // Admin: selector de persona (Alex o Dani)
     if(ROLE==='admin'){
-      const admPersonas = DB.personas.filter(function(x){
-        return CFG.ADMINS.some(function(a){ return String(x.Email||'').toLowerCase()===a.email; });
+      // Botones ¿Quién eres?: Alex y DaniB
+      if(!p.jugadores) p.jugadores=[];
+      var _admPers=DB.personas.filter(function(x){
+        return CFG.ADMINS.some(function(a){return String(x.Email||'').toLowerCase()===a.email.toLowerCase();});
       });
-      if(admPersonas.length>0){
-        const opts = admPersonas.map(function(ap){
-          return '<option value="'+( ap.ID||ap.id||'')+'">'+(ap.Nick?'@'+ap.Nick+' — ':'')+( ap.NombreCompleto||ap.Nombre||ap.Email)+'</option>';
-        }).join('');
-        btns += '<div style="margin-bottom:8px">'
-          + '<label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:4px">¿Quién se apunta?</label>'
-          + '<div style="display:flex;gap:6px">'
-          + '<select id="sel-admin-persona" style="flex:1;padding:6px 8px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--paper);color:var(--ink);font-size:13px">'
-          + opts + '</select>'
-          + '<button class="btn btn-primary" id="btn-admin-join">Apuntar</button>'
-          + '</div></div>';
-        // wired via requestAnimationFrame
-      } else {
-        btns += '<button class="btn btn-primary" onclick="unirsePartida(\'' + p.id + '\',false)">Unirme</button>';
-      }
-    } else {
+      var _admInfo=CFG.ADMINS.map(function(a){
+        var per=_admPers.find(function(x){return String(x.Email||'').toLowerCase()===a.email.toLowerCase();});
+        var apId=per?(per.ID||per.id||a.email):a.email;
+        var apNick=per?(per.Nick||per.Nombre||a.email.split('@')[0]):a.email.split('@')[0];
+        var ya=p.jugadores.some(function(j){return j.id===apId;})||p.creadorId===apId;
+        return {id:apId,nick:apNick,ya:ya};
+      });
+      btns+='<div style="background:var(--paper);border-radius:var(--rs);padding:12px;margin-bottom:8px;border:1px solid var(--border)">'
+        +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px">¿Quién eres?</div>'
+        +'<div style="display:flex;gap:8px">'
+        +_admInfo.map(function(ai){
+          return '<button class="btn '+(ai.ya?'':'btn-primary')+' btn-admin-quien" '
+            +'data-apid="'+ai.id+'" data-apnick="'+ai.nick+'" '
+            +(ai.ya?'disabled title="Ya está en esta partida"':'')
+            +' style="flex:1;font-size:15px;padding:10px 0;font-weight:700'+(ai.ya?';opacity:.5':'')+'">'
+            +(ai.ya?'✓ ':'')+ai.nick+'</button>';
+        }).join('')
+        +'</div></div>';
+        } else {
     // Si hay grupo, mostrar selector de miembro
     const miembrosDisp = (ME&&ME.GrupoID&&ROLE!=='admin')
       ? [ME,...DB.personas.filter(x=>x.GrupoID===ME.GrupoID&&(x.ID||x.id||'')!==pid)]
@@ -3368,16 +3378,14 @@ function verPartida(pid_partida){
     requestAnimationFrame(function(){
       var si=document.getElementById('det-search-inp');
       if(si) si.addEventListener('input',function(){detSearchNick(vpid,this.value);});
-      var baj=document.getElementById('btn-admin-join');
-      if(baj) baj.onclick=function(){
-        var sel=document.getElementById('sel-admin-persona');
-        if(!sel||!sel.value){ toast('Elige quién se apunta','err'); return; }
-        var selId=sel.value;
-        var selPer=DB.personas.find(function(x){return (x.ID||x.id||'')===selId;});
-        // Fallback para IDs ficticios DANI/ALEX
-        var selNick=selPer?(selPer.Nick||selPer.Nombre||selId):selId;
-        unirsePartidaComoAdmin(vpid,selId,selNick);
-      };
+      // Botones "¿Quién eres?" para admin
+      document.querySelectorAll('.btn-admin-quien').forEach(function(btn){
+        if(!btn.disabled) btn.onclick=function(){
+          var apId=this.getAttribute('data-apid');
+          var apNick=this.getAttribute('data-apnick');
+          unirsePartidaComoAdmin(vpid,apId,apNick);
+        };
+      });
       var be=document.getElementById('det-btn-edit');
       if(be) be.onclick=function(){editarPartida(vpid);};
       var bd=document.getElementById('det-btn-del');
@@ -3968,7 +3976,8 @@ async function añadirJugadorNick(pid_partida, jugadorId, nick){
   if(!p.jugadores) p.jugadores=[];
   p.jugadores.push({id:jugadorId, nick:nick.replace(/^@/,'')});
   log('AÑADIR_JUGADOR',`${nick} → ${p.juego}`);
-  toast(`${nick} añadido a ${p.juego} ✓`,'ok');
+  notificarApuntado(jugadorId, p);
+  toast(`${nick} añadido ✓. Se le notificará en la app.`,'ok');
   saveOptimista(()=>{ renderCalendario(); verPartida(pid_partida); });
 }
 
@@ -4183,6 +4192,7 @@ async function detAddNick(pid_partida,jugadorId,nick){
   if(!p.jugadores) p.jugadores=[];
   p.jugadores.push({id:jugadorId,nick:nick.replace(/^@/,'')});
   log('AÑADIR_JUGADOR',nick+' > '+p.juego);
+  notificarApuntado(jugadorId, p);
   toast(nick+' añadido ✓','ok');
   saveOptimista(function(){renderCalendario();verPartida(pid_partida);});
 }
@@ -4199,9 +4209,33 @@ async function unirsePartidaComoAdmin(pid_partida, personaId, nick){
   if(!p.jugadores) p.jugadores=[];
   p.jugadores.push({id:personaId, nick:nick});
   log('UNIRSE_ADMIN', nick+' → '+p.juego);
+  notificarApuntado(personaId, p);
   closeModal('mo-partida-det');
-  toast(nick+' apuntado a '+p.juego+' ✓','ok');
+  toast(nick+' apuntado a '+p.juego+' ✓. Se le notificará en la app.','ok');
   saveOptimista(renderCalendario);
+}
+
+
+// ─── NOTIF: avisar a jugador cuando lo añaden ──────────
+function notificarApuntado(jugadorId, partida){
+  // Solo si es inscrito activo (no admin, no invitado)
+  var per=DB.personas.find(function(x){return (x.ID||x.id||'')===jugadorId;});
+  if(!per||per._esInvitado) return;
+  var franjaF=FRANJAS.find(function(f){return f.id===normalizarFranja(partida.franja);});
+  var franjaStr=franjaF?(franjaF.dia+' a las '+franjaF.label):'';
+  // Crear mensaje en DB.mensajes dirigido solo a esa persona
+  var msg={
+    id:uid('MSG_'),
+    asunto:'Te han apuntado a una partida',
+    cuerpo:'Has sido añadido/a a la partida de \'' + partida.juego + '\'' + (franjaStr?' ('+franjaStr+')':'') + '.\nDuración: '+(partida.duracion||'?')+' · Máx. '+(partida.maxJugadores||4)+' jugadores.',
+    seg:'PERSONA', segV:jugadorId,
+    destinatarios:[per.Email||''],
+    ts:new Date().toISOString(),
+    _auto:true
+  };
+  if(!DB.mensajes) DB.mensajes=[];
+  DB.mensajes.unshift(msg);
+  // No hace falta saveRemote — se guarda junto con el saveOptimista de la partida
 }
 
 // ─── TALLAS ────────────────────────────────────────────
