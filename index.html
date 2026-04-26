@@ -2825,7 +2825,11 @@ function renderPortal(){
     if(_mh){
       var _cpas=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===_mhid&&(x.ID||x.id||'')!==_ph;});
       var _av=document.getElementById('aviso-box');_av.style.display='block';
+      // Evitar duplicado con ID fijo
+      var _exHd=document.getElementById('hab-asig-card');
+      if(_exHd) _exHd.remove();
       var _hd=document.createElement('div');
+      _hd.id='hab-asig-card';
       _hd.setAttribute('style','background:var(--surface);border:2px solid var(--green);border-radius:14px;padding:14px 16px;margin-bottom:10px');
       var _hh='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:22px">&#x1F6CF;</span><div>'
         +'<div style="font-weight:700;font-size:12px;color:var(--green)">Tu habitación asignada</div>'
@@ -3300,7 +3304,7 @@ function verPartida(pid_partida){
   let btns='';
   if(!estoyDentro && !llena && pid){
     // Si hay grupo, mostrar selector de miembro
-    const miembrosDisp = ME?.GrupoID
+    const miembrosDisp = (ME&&ME.GrupoID&&ROLE!=='admin')
       ? [ME,...DB.personas.filter(x=>x.GrupoID===ME.GrupoID&&(x.ID||x.id||'')!==pid)]
           .filter(m=>!todosJug.some(j=>j.id===(m.ID||m.id||'')))
       : null;
@@ -3434,7 +3438,7 @@ async function unirsePartida(pid_partida, forzar){
   setTimeout(()=>{ _uniendose=false; }, 4000);
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
   const pid=miId(), nick=miNick();
-  if(pid==='ADMIN'){ toast('Los admins no se unen a partidas desde aquí','err'); return; }
+  // Admin puede unirse si tiene ID real en personas
   const todosYa=[{id:p.creadorId},...(p.jugadores||[])];
   if(todosYa.some(j=>j.id===pid)){ toast('Ya estás en esta partida'); return; }
   if(todosYa.length>=Number(p.maxJugadores||4)){ toast('Partida completa','err'); return; }
