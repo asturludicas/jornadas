@@ -19,8 +19,8 @@
 const CFG = {
   // Administradores: cada uno con su email y su contraseña
   ADMINS: [
-    { email: 'asturludicas@gmail.com', pass: 'DanielyAlex26' },
-    { email: 'admin2@asturludicas.es',  pass: 'DanielyAlex26'   },
+    { email: 'asturludicas@gmail.com', pass: 'DanielyAlex26', nick: 'DaniB' },
+    { email: 'admin2@asturludicas.es',  pass: 'DanielyAlex26', nick: 'Alex'  },
   ],
   // ── Firebase Realtime Database ──────────────────────────
   FIREBASE_URL:    'https://asturludicas-2016-default-rtdb.europe-west1.firebasedatabase.app',
@@ -464,7 +464,7 @@ tbody tr:hover td{background:var(--paper)}
 .partida-card:active{transform:scale(.97)}
 .partida-card.abierta{background:linear-gradient(135deg,#2563eb,#1d4ed8)}
 .partida-card.mia{background:linear-gradient(135deg,#16a34a,#15803d)}
-.partida-card.llena{background:linear-gradient(135deg,#6b7280,#4b5563);opacity:.75}
+.partida-card.llena{background:linear-gradient(135deg,#dc2626,#b91c1c)}
 .partida-card.torneo{background:linear-gradient(135deg,#d97706,#b45309)!important;border:2px solid #fbbf24}
 .partida-card.torneo.mia{background:linear-gradient(135deg,#059669,#047857)!important;border:2px solid #34d399}
 .partida-card.torneo.llena{background:linear-gradient(135deg,#78350f,#92400e)!important}
@@ -923,6 +923,7 @@ tbody tr:hover td{background:var(--paper)}
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);margin-right:4px"></span>Partida abierta</span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--green);margin-right:4px"></span>Estoy apuntado</span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--red);margin-right:4px"></span>Completa</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>Torneo</span>
           </div>
           <button class="btn btn-primary btn-sm" onclick="abrirNuevaPartida(null,null)">+ Nueva partida</button>
         </div>
@@ -1233,6 +1234,8 @@ tbody tr:hover td{background:var(--paper)}
               <option value="jue_19">Jueves 19:00</option>
               <option value="jue_20">Jueves 20:00</option>
               <option value="jue_21">Jueves 21:00</option>
+              <option value="jue_22">Jueves 22:00</option>
+              <option value="jue_23">Jueves 23:00</option>
             </optgroup>
             <optgroup label="Viernes">
               <option value="vie_10">Viernes 10:00</option>
@@ -1245,6 +1248,8 @@ tbody tr:hover td{background:var(--paper)}
               <option value="vie_19">Viernes 19:00</option>
               <option value="vie_20">Viernes 20:00</option>
               <option value="vie_21">Viernes 21:00</option>
+              <option value="vie_22">Viernes 22:00</option>
+              <option value="vie_23">Viernes 23:00</option>
             </optgroup>
             <optgroup label="Sábado">
               <option value="sab_10">Sábado 10:00</option>
@@ -1257,6 +1262,8 @@ tbody tr:hover td{background:var(--paper)}
               <option value="sab_19">Sábado 19:00</option>
               <option value="sab_20">Sábado 20:00</option>
               <option value="sab_21">Sábado 21:00</option>
+              <option value="sab_22">Sábado 22:00</option>
+              <option value="sab_23">Sábado 23:00</option>
             </optgroup>
             <optgroup label="Domingo">
               <option value="dom_10">Domingo 10:00</option>
@@ -1614,14 +1621,24 @@ async function loginInscrito(){
 
   try {
     await loadRemote(); // carga fresca garantizada
-    const p = DB.personas.find(x =>
-      String(x.Email||x.email||'').trim().toLowerCase() === email && x.Activo !== 'FALSE'
+    // Buscar TODAS las personas con ese email (puede haber grupo)
+    const personas_email = DB.personas.filter(x =>
+      String(x.Email||x.email||'').trim().toLowerCase() === email && x.Activo !== 'FALSE' && !x._esInvitado
     );
     // Si no está en la lista, verificar ACCESO_ABIERTO
-    if(!p && !CFG.ACCESO_ABIERTO){
+    if(!personas_email.length && !CFG.ACCESO_ABIERTO){
       showErr('err-i','❌ Tu email no está en la lista de inscritos. Contacta con la organización.');
       return;
     }
+    if(btn){ btn.disabled = false; btn.textContent = orig; }
+
+    // Si hay múltiples personas con ese email (grupo), preguntar quién es
+    if(personas_email.length > 1){
+      mostrarSelectorGrupo(personas_email, email);
+      return;
+    }
+
+    const p = personas_email[0] || null;
     ME = p || {
       ID:'ANON_'+Date.now(), id:'ANON_'+Date.now(),
       Nombre: email.split('@')[0], NombreCompleto: email.split('@')[0],
@@ -3295,7 +3312,7 @@ function verPartida(pid_partida){
         ).join('')}
       </div>
     </div>
-    ${conflicto?`<div style="background:var(--amber-l);border-radius:var(--rs);padding:10px;font-size:12px;color:var(--amber);margin-bottom:10px">⚠ Ya tienes otra partida en esta franja horaria.</div>`:''}
+    ${conflicto?`<div style="background:var(--red-l);border:2px solid var(--red);border-radius:var(--rs);padding:14px 16px;font-size:14px;font-weight:700;color:var(--red);margin-bottom:12px;display:flex;align-items:center;gap:10px"><span style="font-size:24px">⚠️</span><div><div>¡Ya tienes otra partida en esta franja!</div><div style="font-size:12px;font-weight:400;margin-top:3px">Revisa tu agenda antes de apuntarte.</div></div></div>`:''}
   `;
 
   const ft=document.getElementById('det-ft');
@@ -3303,17 +3320,24 @@ function verPartida(pid_partida){
   if(!estoyDentro && !llena && pid){
     // Admin: selector de persona (Alex o Dani)
     if(ROLE==='admin'){
-      // Botones ¿Quién eres?: Alex y DaniB
+      // Botones ¿Quién eres?: siempre DaniB y Alex (independiente de cuentas)
       if(!p.jugadores) p.jugadores=[];
-      var _admPers=DB.personas.filter(function(x){
-        return CFG.ADMINS.some(function(a){return String(x.Email||'').toLowerCase()===a.email.toLowerCase();});
-      });
-      var _admInfo=CFG.ADMINS.map(function(a){
-        var per=_admPers.find(function(x){return String(x.Email||'').toLowerCase()===a.email.toLowerCase();});
-        var apId=per?(per.ID||per.id||a.email):a.email;
-        var apNick=per?(per.Nick||per.Nombre||a.email.split('@')[0]):a.email.split('@')[0];
-        var ya=p.jugadores.some(function(j){return j.id===apId;})||p.creadorId===apId;
-        return {id:apId,nick:apNick,ya:ya};
+      // Buscar perfiles en DB por nick o por email de admin
+      var _admNicks=['DaniB','Alex'];
+      var _admInfo=_admNicks.map(function(nick){
+        var per=DB.personas.find(function(x){
+          return (x.Nick||'').toLowerCase()===nick.toLowerCase()
+            || CFG.ADMINS.some(function(a){return String(x.Email||'').toLowerCase()===a.email.toLowerCase();})
+        }) || null;
+        // Si hay 2 admins en DB, asignar uno a cada nick
+        var allAdmPers=DB.personas.filter(function(x){
+          return CFG.ADMINS.some(function(a){return String(x.Email||'').toLowerCase()===a.email.toLowerCase();});
+        });
+        // Buscar por nick exacto primero
+        var perNick=DB.personas.find(function(x){return (x.Nick||'').toLowerCase()===nick.toLowerCase();});
+        var apId=perNick?(perNick.ID||perNick.id||nick):nick;
+        var ya=p.jugadores.some(function(j){return j.id===apId||j.nick===nick;})||p.creadorId===apId;
+        return {id:apId, nick:nick, ya:ya};
       });
       btns+='<div style="background:var(--paper);border-radius:var(--rs);padding:12px;margin-bottom:8px;border:1px solid var(--border)">'
         +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px">¿Quién eres?</div>'
@@ -3886,7 +3910,11 @@ async function enviarSolGrupo(tipo, campoId, formId){
   const pid=targetPer?.ID||targetPer?.id||'';
   const sol={
     id:uid('SOL_'),ID:uid('SOL_'),
-    tipo,valor,personaId:pid,
+    tipo,
+    datosSolicitados:valor,
+    datosActuales:tipo==='ALERGENOS'?(targetPer?.Alergenos||''):(targetPer?.Observaciones||''),
+    personaId:pid,
+    nombrePersona:targetPer?.NombreCompleto||targetPer?.Nombre||'?',
     personaNombre:targetPer?.NombreCompleto||targetPer?.Nombre||'?',
     estado:'PENDIENTE',ts:new Date().toISOString()
   };
@@ -4236,6 +4264,50 @@ function notificarApuntado(jugadorId, partida){
   if(!DB.mensajes) DB.mensajes=[];
   DB.mensajes.unshift(msg);
   // No hace falta saveRemote — se guarda junto con el saveOptimista de la partida
+}
+
+
+// ─── SELECTOR DE PERSONA EN LOGIN (grupo con email compartido) ──
+function mostrarSelectorGrupo(personas, email){
+  const loginBox = document.getElementById('lp-inscrito');
+  const html_sel = '<div style="margin-top:14px;padding:14px;background:var(--paper);border-radius:var(--r);border:1.5px solid var(--accent)">'
+    + '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent)">¿Quién eres?</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px">'
+    + personas.map(function(p){
+        const pid=p.ID||p.id||'';
+        const nombre=p.NombreCompleto||p.Nombre||'?';
+        const nick=p.Nick?'@'+p.Nick:'';
+        const mod=p.Modalidad||'';
+        return '<button class="btn btn-primary" style="text-align:left;padding:10px 14px;display:flex;flex-direction:column;align-items:flex-start" onclick="elegirPersonaGrupo('+JSON.stringify(pid)+','+JSON.stringify(email)+')">'
+          + '<span style="font-size:15px;font-weight:700">'+(nick||nombre)+'</span>'
+          + '<span style="font-size:11px;opacity:.8">'+nombre+(mod?' · '+mod.split('(')[0].trim():'')+'</span>'
+          + '</button>';
+      }).join('')
+    + '</div></div>';
+  // Añadir al login panel
+  const extra=document.getElementById('login-grupo-sel');
+  if(extra) extra.innerHTML=html_sel;
+  else {
+    const div=document.createElement('div');
+    div.id='login-grupo-sel';
+    div.innerHTML=html_sel;
+    loginBox.appendChild(div);
+  }
+}
+
+function elegirPersonaGrupo(personaId, email){
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===personaId);
+  if(!p) return;
+  ME=p;
+  ROLE='inscrito';
+  lsSet('role','inscrito');
+  lsSet('persona_id', personaId);
+  lsSet('persona_email', email);
+  lsSet('session_ts', Date.now() + 365*24*3600*1000);
+  log('LOGIN', email+' → '+(p.Nick||p.Nombre||personaId));
+  const sel=document.getElementById('login-grupo-sel');
+  if(sel) sel.remove();
+  bootApp();
 }
 
 // ─── TALLAS ────────────────────────────────────────────
