@@ -3422,6 +3422,13 @@ function verPartida(pid_partida){
 function abrirNuevaPartida(franjaId, _){
   document.getElementById('pt-id').value='';
   document.getElementById('pt-juego').value='';
+  // Mostrar selector de identidad solo para admin
+  const adminWrap=document.getElementById('pt-admin-creador-wrap');
+  if(adminWrap){
+    adminWrap.style.display=(ROLE==='admin')?'block':'none';
+    document.getElementById('pt-admin-nick').value='';
+    document.querySelectorAll('#pt-admin-btns .btn').forEach(function(b){b.classList.remove('btn-primary');});
+  }
   document.getElementById('pt-max').value='4';
   document.getElementById('pt-duracion').value='2 horas';
   document.getElementById('pt-expl').value='no';
@@ -3460,7 +3467,15 @@ async function guardarPartida(){
   try{
     const idExist=document.getElementById('pt-id').value;
     const id=idExist||uid('PT_');
-    const nick=miNick(), cid=miId();
+    // Admin: usar identidad elegida en el selector
+    var _adminNickSel=ROLE==='admin'?document.getElementById('pt-admin-nick')?.value.trim():'';
+    if(ROLE==='admin'&&!_adminNickSel&&!idExist){
+      toast('Elige quién crea la partida (DaniB o Alex)','err'); return;
+    }
+    // Buscar el perfil del admin elegido en DB
+    var _adminPer=_adminNickSel?DB.personas.find(function(x){return (x.Nick||'').toLowerCase()===_adminNickSel.toLowerCase();}):null;
+    var nick=_adminNickSel||miNick();
+    var cid=_adminPer?(_adminPer.ID||_adminPer.id||'ADMIN'):(ROLE==='admin'?('ADMIN_'+nick):miId());
     let p;
     if(idExist){
       p=DB.partidas.find(x=>x.id===idExist)||{};
@@ -4268,31 +4283,38 @@ function notificarApuntado(jugadorId, partida){
 
 
 // ─── SELECTOR DE PERSONA EN LOGIN (grupo con email compartido) ──
-function mostrarSelectorGrupo(personas, email){
+function mostrarSelectorGrupo(personas, emailGrupo){
+  // Guardar datos para acceso posterior (sin riesgo de comillas rotas)
+  window._grupoPersonas = personas;
+  window._grupoEmail = emailGrupo;
   const loginBox = document.getElementById('lp-inscrito');
   const html_sel = '<div style="margin-top:14px;padding:14px;background:var(--paper);border-radius:var(--r);border:1.5px solid var(--accent)">'
     + '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent)">¿Quién eres?</div>'
     + '<div style="display:flex;flex-direction:column;gap:8px">'
-    + personas.map(function(p){
+    + personas.map(function(p,i){
         const pid=p.ID||p.id||'';
         const nombre=p.NombreCompleto||p.Nombre||'?';
         const nick=p.Nick?'@'+p.Nick:'';
         const mod=p.Modalidad||'';
-        return '<button class="btn btn-primary" style="text-align:left;padding:10px 14px;display:flex;flex-direction:column;align-items:flex-start" onclick="elegirPersonaGrupo('+JSON.stringify(pid)+','+JSON.stringify(email)+')">'
+        return '<button class="btn btn-primary grp-sel-btn" data-idx="'+i+'" style="text-align:left;padding:10px 14px;display:flex;flex-direction:column;align-items:flex-start">'
           + '<span style="font-size:15px;font-weight:700">'+(nick||nombre)+'</span>'
           + '<span style="font-size:11px;opacity:.8">'+nombre+(mod?' · '+mod.split('(')[0].trim():'')+'</span>'
           + '</button>';
       }).join('')
     + '</div></div>';
   // Añadir al login panel
-  const extra=document.getElementById('login-grupo-sel');
-  if(extra) extra.innerHTML=html_sel;
-  else {
-    const div=document.createElement('div');
-    div.id='login-grupo-sel';
-    div.innerHTML=html_sel;
-    loginBox.appendChild(div);
-  }
+  const cont=document.getElementById('login-grupo-sel')||document.createElement('div');
+  cont.id='login-grupo-sel';
+  cont.innerHTML=html_sel;
+  if(!document.getElementById('login-grupo-sel')) loginBox.appendChild(cont);
+  // Event listeners seguros (sin onclick inline)
+  cont.querySelectorAll('.grp-sel-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      const idx=parseInt(this.getAttribute('data-idx'));
+      const per=window._grupoPersonas[idx];
+      if(per) elegirPersonaGrupo(per.ID||per.id||'',window._grupoEmail);
+    });
+  });
 }
 
 function elegirPersonaGrupo(personaId, email){
@@ -4308,6 +4330,16 @@ function elegirPersonaGrupo(personaId, email){
   const sel=document.getElementById('login-grupo-sel');
   if(sel) sel.remove();
   bootApp();
+}
+
+
+// ─── ADMIN: elegir identidad al crear partida ──────────
+function elegirAdminCreador(nick, btn){
+  document.getElementById('pt-admin-nick').value=nick;
+  document.querySelectorAll('#pt-admin-btns .btn').forEach(function(b){
+    b.classList.remove('btn-primary');
+  });
+  btn.classList.add('btn-primary');
 }
 
 // ─── TALLAS ────────────────────────────────────────────
