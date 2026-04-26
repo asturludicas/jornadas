@@ -346,7 +346,7 @@ tbody tr:hover td{background:var(--paper)}
 .gdot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
 
 /* ─── HAB CARDS ───────────────────────────────────────── */
-.hab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.hab-grid{display:grid;grid-template-columns:1fr;gap:10px}@media(min-width:700px){.hab-grid{grid-template-columns:repeat(2,1fr)}}
 .hc{border:1px solid var(--border);border-radius:var(--r);padding:12px;transition:.12s}
 .hc:hover{border-color:var(--accent)}
 .hc.full{opacity:.55}
@@ -698,7 +698,7 @@ tbody tr:hover td{background:var(--paper)}
         <button class="btn btn-primary btn-sm" onclick="openModal('mo-hab')">+ Nueva</button>
       </div>
       <div class="stabs" id="aloj-tabs"></div>
-      <div class="hab-grid" id="hab-grid"></div>
+      <div id="hab-grid"></div>
     </div>
   </div>
 
@@ -2083,7 +2083,7 @@ function renderHabs(){
       av.textContent=(pn[0]||'?').toUpperCase();
       var info=document.createElement('div');
       info.setAttribute('style','flex:1;min-width:0');
-      info.innerHTML='<div style="font-weight:700;font-size:13px">'+pn+'</div><div style="font-size:11px;color:var(--ink3)">'+(per.NombreCompleto||per.Nombre||'')+'</div>';
+      info.innerHTML='<div style="font-weight:700;font-size:13px">'+pn+'</div><div style="font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">'+(per.NombreCompleto||per.Nombre||'').substring(0,30)+'</div>';
       var bQ=document.createElement('button');
       bQ.setAttribute('style','background:var(--red-l);border:1px solid var(--red);color:var(--red);cursor:pointer;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;white-space:nowrap');
       bQ.textContent='Quitar';
@@ -2790,6 +2790,9 @@ function renderLogs(){ document.getElementById('tb-logs').innerHTML=DB.logs.slic
 // ─── PORTAL INSCRITO ───────────────────────────────────
 function renderPortal(){
   if(!ME) return;
+  // Limpiar aviso-box antes de rellenar (evita duplicados al re-render)
+  const _ab=document.getElementById('aviso-box');
+  if(_ab){ _ab.innerHTML=''; _ab.style.display='none'; }
   const p=ME;
   const pid=p.ID||p.id||'';
   const nombre=(p.NombreCompleto||`${p.Nombre||''} ${p.Apellidos||''}`).trim();
@@ -3151,8 +3154,22 @@ function miNick(){
   return ME ? (ME.Nick||ME.Nombre||ME.Email||'?') : '?';
 }
 function miId(){
-  if(ROLE==='admin') return 'ADMIN';
+  // Admin usa su email como ID para poder apuntarse a partidas
+  if(ROLE==='admin'){
+    const ae=lsGet('admin_email','');
+    // Buscar si existe como persona
+    const ap=DB.personas.find(x=>String(x.Email||'').toLowerCase()===ae.toLowerCase());
+    return ap?(ap.ID||ap.id||'ADMIN'):'ADMIN';
+  }
   return ME ? (ME.ID||ME.id||'') : '';
+}
+function miNickAdmin(){
+  if(ROLE==='admin'){
+    const ae=lsGet('admin_email','');
+    const ap=DB.personas.find(x=>String(x.Email||'').toLowerCase()===ae.toLowerCase());
+    return ap?(ap.Nick||ap.Nombre||'Admin'):'Admin';
+  }
+  return miNick();
 }
 
 // Normalizar franjas antiguas (jue_m → jue_10, vie_t → vie_16, etc.)
@@ -3242,6 +3259,7 @@ function renderPartidaCard(p, pid){
 }
 
 function verPartida(pid_partida){
+  try{
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
   const pid=miId(), nick=miNick();
   const todosJug=[{id:p.creadorId,nick:p.creadorNick,esCreador:true},...(p.jugadores||[])];
@@ -3252,7 +3270,7 @@ function verPartida(pid_partida){
   const expl=p.explicacion==='si'?'📖 Con explicación':p.explicacion==='aprende'?'🎓 Ideal para aprender':'Sin explicación necesaria';
 
   // Detectar conflicto de franja
-  const conflicto = !estoyDentro && pid!=='ADMIN' && DB.partidas.some(x=>
+  const conflicto = !estoyDentro && pid && DB.partidas.some(x=>
     x.id!==p.id && sesolapan(p,x) &&
     ([{id:x.creadorId},...(x.jugadores||[])].some(j=>j.id===pid))
   );
@@ -3294,9 +3312,9 @@ function verPartida(pid_partida){
 
   const ft=document.getElementById('det-ft');
   let btns='';
-  if(!estoyDentro && !llena && pid!=='ADMIN'){
+  if(!estoyDentro && !llena && pid){  // admin, inscrito e invitado pueden unirse
     // Si hay grupo, mostrar selector de miembro
-    const miembrosDisp = ME?.GrupoID
+    const miembrosDisp = (ME&&ME.GrupoID&&ROLE!=='admin')
       ? [ME,...DB.personas.filter(x=>x.GrupoID===ME.GrupoID&&(x.ID||x.id||'')!==pid)]
           .filter(m=>!todosJug.some(j=>j.id===(m.ID||m.id||'')))
       : null;
@@ -3348,8 +3366,8 @@ function verPartida(pid_partida){
   }
   btns+=`<button class="btn" onclick="closeModal('mo-partida-det')">Cerrar</button>`;
   ft.innerHTML=btns;
-
   openModal('mo-partida-det');
+  }catch(e){ console.error('verPartida error:',e); toast('Error al abrir la partida','err'); }
 }
 
 function abrirNuevaPartida(franjaId, _){
@@ -3427,9 +3445,12 @@ async function unirsePartida(pid_partida, forzar){
   if(_uniendose||_saving){ toast('Procesando, espera…'); return; }
   _uniendose=true;
   setTimeout(()=>{ _uniendose=false; }, 4000);
+  // Admin usa su email como ID en partidas
+  const _pCalId = ROLE==='admin' ? lsGet('admin_email','admin') : miId();
+  const _pCalNick = ROLE==='admin' ? 'Admin' : miNick();
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
-  const pid=miId(), nick=miNick();
-  if(pid==='ADMIN'){ toast('Los admins no se unen a partidas desde aquí','err'); return; }
+  const pid=_pCalId, nick=_pCalNick;
+  if(!pid){ toast('Identifícate para unirte a partidas','err'); return; }
   const todosYa=[{id:p.creadorId},...(p.jugadores||[])];
   if(todosYa.some(j=>j.id===pid)){ toast('Ya estás en esta partida'); return; }
   if(todosYa.length>=Number(p.maxJugadores||4)){ toast('Partida completa','err'); return; }
