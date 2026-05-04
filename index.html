@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <meta name="theme-color" content="#1E3A5F">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -69,18 +70,19 @@ function noches(p) {
 /* ─── RESET & TOKENS ──────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --ink:#1c1917;--ink2:#57534e;--ink3:#a8a29e;
-  --paper:#f5f5f4;--surface:#fff;--border:#e7e5e4;--border2:#d6d3d1;
-  --accent:#2563eb;--accent-l:#dbeafe;--accent-d:#1d4ed8;
-  --green:#16a34a;--green-l:#dcfce7;
-  --amber:#d97706;--amber-l:#fef3c7;
-  --red:#dc2626;--red-l:#fee2e2;
+  --paper:#FAF6F0;--surface:#F2EBE0;
+  --ink:#1A1A2E;--ink2:#4A4A6A;--ink3:#8888aa;
+  --accent:#D4956A;--accent-d:#B87A52;--accent-l:#f5e5d6;
+  --border:rgba(26,26,46,.1);--border2:rgba(26,26,46,.18);
+  --green:#4A7C59;--green-l:#e0ede4;
+  --red:#C0392B;--red-l:#f8e0de;
+  --amber:#B87A52;--amber-l:#f5e5d6;
   --purple:#7c3aed;--purple-l:#ede9fe;
-  --r:10px;--rs:6px;
-  --sh:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.05);
-  --sh-lg:0 10px 30px rgba(0,0,0,.15);
-  --nav-h:56px; /* bottom nav height mobile */
-  --top-h:52px;
+  --arena:#E8D5B7;
+  --r:12px;--rs:8px;
+  --sh:0 4px 16px rgba(212,149,106,.12);
+  --sh-lg:0 10px 30px rgba(26,26,46,.15);
+  --nav-h:56px;--top-h:52px;
 }
 @media(prefers-color-scheme:dark){
   :root{
@@ -94,7 +96,7 @@ function noches(p) {
   }
 }
 html{font-size:15px;-webkit-text-size-adjust:100%;overflow-x:hidden;max-width:100vw}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;overflow-x:hidden;max-width:100vw}
+body{font-family:'Montserrat',Roboto,'Segoe UI',system-ui,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;overflow-x:hidden;max-width:100vw}
 button{cursor:pointer;font-family:inherit;font-size:inherit}
 input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 
@@ -1758,7 +1760,8 @@ function buildNav(role){
   document.getElementById('sb-nav').innerHTML=sb;
 
   // Bottom nav (mobile) — max 4 items
-  const bnItems=items.filter(i=>i.id).slice(0,4);
+  const bnItems=items.filter(i=>i.id&&!i.sec).slice(0,4);
+  var _bnLogout='<button class="bn-item" onclick="logout()" style="color:var(--red)"><span class="bn-ico">↩</span><span>Salir</span></button>';
   document.getElementById('bottom-nav').innerHTML=bnItems.map(i=>{
     if(i.action) return `<button class="bn-item" id="bn-${i.id}" onclick="${i.action}"><span class="bn-ico">${i.ico}</span><span>${i.label}</span></button>`;
     return `<button class="bn-item" id="bn-${i.id}" onclick="nav('${i.id}')"><span class="bn-ico">${i.ico}</span><span>${i.label}</span>${i.badge?`<span class="bn-dot" id="bndot-sol"></span>`:''}</button>`;
@@ -4450,15 +4453,81 @@ function renderConfra(){
 
 async function confraApuntarse(apuntar){
   if(!ME||_saving) return;
-  var pid=ME.ID||ME.id||'';
   if(!DB.confra_apuntados) DB.confra_apuntados=[];
+  // Detectar grupo
+  var grupo=ME.GrupoID?DB.personas.filter(function(x){
+    return (x.GrupoID===ME.GrupoID||(x.ID||x.id||'')===(ME.ID||ME.id||''))&&!x._esInvitado&&x.Activo!=='FALSE';
+  }):[ME];
+  var soloJueves=grupo.filter(function(p){return (p.Modalidad||'').toLowerCase().includes('jueves');});
+  if(apuntar && soloJueves.length>1){
+    confraModalGrupo(soloJueves); return;
+  }
+  var pid=ME.ID||ME.id||'';
   if(apuntar){
     if(!DB.confra_apuntados.includes(pid)) DB.confra_apuntados.push(pid);
   } else {
     DB.confra_apuntados=DB.confra_apuntados.filter(function(x){return x!==pid;});
   }
   await saveOptimista(renderConfra);
-  toast(apuntar?'¡Apuntado a la confra! 🍻':'Cancelada la asistencia','ok');
+  toast(apuntar?'Apuntado a la confra!':'Cancelada la asistencia','ok');
+}
+
+function confraModalGrupo(miembros){
+  var mo=document.getElementById('mo-confra-grupo');
+  if(!mo){
+    mo=document.createElement('div');mo.className='mo';mo.id='mo-confra-grupo';
+    var box=document.createElement('div');box.className='mo-box';
+    var hd=document.createElement('div');hd.className='mo-hd';
+    var h3=document.createElement('h3');h3.textContent='Quienes se apuntan a la confra?';
+    var xbtn=document.createElement('button');xbtn.className='mo-close';xbtn.textContent='X';
+    xbtn.onclick=function(){closeModal('mo-confra-grupo');};
+    hd.append(h3,xbtn);
+    var body=document.createElement('div');body.className='mo-body';body.id='confra-grupo-body';
+    var ft=document.createElement('div');ft.className='mo-ft';
+    var cancBtn=document.createElement('button');cancBtn.className='btn';cancBtn.textContent='Cancelar';
+    cancBtn.onclick=function(){closeModal('mo-confra-grupo');};
+    var okBtn=document.createElement('button');okBtn.className='btn btn-primary';okBtn.textContent='Apuntar seleccionados';
+    okBtn.onclick=confraApuntarGrupo;
+    ft.append(cancBtn,okBtn);
+    box.append(hd,body,ft);mo.appendChild(box);
+    document.body.appendChild(mo);
+  }
+  var body=document.getElementById('confra-grupo-body');
+  body.innerHTML='';
+  miembros.forEach(function(p){
+    var pid=p.ID||p.id||'';
+    var ya=(DB.confra_apuntados||[]).includes(pid);
+    var lbl=document.createElement('label');
+    lbl.setAttribute('style','display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border);border-radius:var(--rs);margin-bottom:8px;cursor:pointer');
+    var cb=document.createElement('input');cb.type='checkbox';cb.setAttribute('data-pid',pid);
+    if(ya)cb.checked=true;cb.style.cssText='width:18px;height:18px';
+    var info=document.createElement('div');
+    info.innerHTML='<div style="font-weight:700;font-size:14px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
+      +'<div style="font-size:11px;color:var(--ink3)">'+(ya?'Ya apuntado':'Sin apuntar')+'</div>';
+    lbl.append(cb,info);body.appendChild(lbl);
+  });
+  openModal('mo-confra-grupo');
+}
+
+async function confraApuntarGrupo(){
+  if(!DB.confra_apuntados) DB.confra_apuntados=[];
+  var checks=document.querySelectorAll('#confra-grupo-body input[type=checkbox]');
+  checks.forEach(function(cb){
+    var pid=cb.getAttribute('data-pid');
+    if(cb.checked){if(!DB.confra_apuntados.includes(pid))DB.confra_apuntados.push(pid);}
+    else{DB.confra_apuntados=DB.confra_apuntados.filter(function(x){return x!==pid;});}
+  });
+  closeModal('mo-confra-grupo');
+  await saveOptimista(renderConfra);
+  toast('Grupo apuntado a la confra!','ok');
+}
+
+async function confraAdminToggle(pid){
+  if(!DB.confra_apuntados) DB.confra_apuntados=[];
+  if(DB.confra_apuntados.includes(pid)){DB.confra_apuntados=DB.confra_apuntados.filter(function(x){return x!==pid;});}
+  else{DB.confra_apuntados.push(pid);}
+  await saveOptimista(renderConfraAdmin);
+  toast('Lista actualizada','ok');
 }
 
 // ─── ADMIN: configurar confra ───────────────────────────────
