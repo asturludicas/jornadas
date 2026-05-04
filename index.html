@@ -995,6 +995,27 @@ tbody tr:hover td{background:var(--paper)}
         <div id="agenda-content"></div>
       </div>
 
+
+      <!-- ══ CONFRA (inscrito) ══════════════════════════ -->
+      <div id="page-confra" class="page">
+        <div id="confra-content"></div>
+      </div>
+
+      <!-- ══ MERCADILLO (inscrito) ════════════════════════ -->
+      <div id="page-mercadillo" class="page">
+        <div id="mercadillo-content"></div>
+      </div>
+
+      <!-- ══ CONFRA ADMIN ═══════════════════════════════ -->
+      <div id="page-confra-admin" class="page">
+        <div id="confra-admin-content"></div>
+      </div>
+
+      <!-- ══ MERCADILLO ADMIN ════════════════════════════ -->
+      <div id="page-mercadillo-admin" class="page">
+        <div id="mercadillo-admin-content"></div>
+      </div>
+
       <!-- ══ INSCRITO PAGES ════════════════════════════════ -->
 
       <!-- Mi ficha -->
@@ -1373,6 +1394,9 @@ const DB = {
   modulos:{ alojamiento:false },
   config:{ nombre:CFG.EVENTO, fechas:'', aviso:'' },
   logs:[],
+  mercadillo:[],     // [{id,vendedorId,vendedorNick,juego,desc,precio,estado,compradorId,compradorNick,compradorNombre,ts}]
+  confra:null,       // {fecha:'',precio:0,lugar:''} — comida confraternización jueves
+  confra_apuntados:[],// [personaId, ...]
 };
 
 let ROLE=null, ME=null;
@@ -1707,6 +1731,8 @@ const NAV_ADMIN=[
   {sec:'Inscritos'},{id:'personas',ico:'👥',label:'Personas'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
   {sec:'Economía'},{id:'pagos',ico:'💰',label:'Pagos'},
   {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'calendario',ico:'🎲',label:'Calendario'},{id:'mensajes',ico:'✉',label:'Mensajes'},
+  {id:'confra-admin',ico:'🍻',label:'Confra'},
+  {id:'mercadillo-admin',ico:'🏷',label:'Mercadillo'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
 ];
@@ -1716,6 +1742,8 @@ const NAV_INSCRITO=[
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
   {id:'mi-comidas',ico:'🍽',label:'Comidas'},
+  {id:'confra',ico:'🍻',label:'Confra'},
+  {id:'mercadillo',ico:'🏷',label:'Mercadillo'},
   {id:'_salir',ico:'↩',label:'Salir', action:'logout()'},
 ];
 
@@ -1767,6 +1795,7 @@ function nav(page, pushHist=true){
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
+    'confra':renderConfra, 'mercadillo':renderMercadillo,
     tallas:renderTallas, contabilidad:renderContabilidad, calendario:renderCalendario, suministros:renderSuministros,
   };
   if(renders[page]) renders[page]();
@@ -2827,7 +2856,8 @@ function renderPortal(){
   if(DB.config.aviso){ const ab=document.getElementById('aviso-box'); ab.style.display='block'; ab.innerHTML=`<div class="card" style="border-left:3px solid var(--accent);padding:12px 14px"><strong style="font-size:13px">📢 Aviso</strong><p style="font-size:13px;margin-top:4px">${DB.config.aviso}</p></div>`; }
   if(ME?._anonimo){ const ab=document.getElementById('aviso-box'); ab.style.display='block'; ab.innerHTML=(ab.innerHTML||'') + `<div style="background:var(--amber-l);border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--amber);margin-top:8px">⚠ Tu email no está en la lista de inscritos. Puedes ver el calendario y el alojamiento, pero no tienes ficha personal asignada. Contacta con la organización.</div>`; }
 
-    // ─── Tarjeta de habitación en Mi ficha (única instancia) ───
+    renderMercadilloEnFicha();
+  // ─── Tarjeta de habitación en Mi ficha (única instancia) ───
   if(ME && !ME._anonimo && !ME._esInvitado){
     var _pidH2 = ME.ID||ME.id||'';
     var _habId2 = DB.asignaciones[_pidH2];
@@ -4111,33 +4141,37 @@ function renderMiAgenda(){
 async function nuevaEdicion(){
   var nombre=prompt('Nombre de la nueva edición (ej: AsturLúdicas 10ª):');
   if(!nombre) return;
-  if(!confirm('¿Archivar los datos actuales e iniciar la edición "'+nombre+'"?\n\nSe borrarán: personas, pagos, partidas, solicitudes, asignaciones, mensajes.\nSe conservan: habitaciones, configuración, contabilidad.')) return;
+  if(!confirm('¿Iniciar la edición "'+nombre+'"?\n\nSe borrarán TODOS los datos: personas, pagos, partidas, habitaciones, asignaciones, mensajes, mercadillo, comida confraternización.\n\nSolo se conservan los SUMINISTROS.\n\n¿Continuar?')) return;
 
-  // Archivar en un nodo separado antes de borrar
-  var archivo={
-    nombre:nombre,
-    fecha:new Date().toISOString().split('T')[0],
-    personas:DB.personas.filter(function(p){return !p._esInvitado;}),
-    pagos:DB.pagos,
-    partidas:DB.partidas
-  };
-  if(!DB.archivos) DB.archivos=[];
-  DB.archivos.push(archivo);
+  // Conservar solo suministros
+  var stockActual = DB.suministros_stock || {};
 
-  // Limpiar para nueva edición
+  // Reset completo de DB
   DB.personas=[];
+  DB.grupos=[];
   DB.pagos=[];
-  DB.partidas=[];
-  DB.solicitudes=[];
+  DB.habitaciones=[];
   DB.asignaciones={};
+  DB.solicitudes=[];
   DB.mensajes=[];
   DB.mensajes_leidos={};
+  DB.partidas=[];
   DB.comidas_optin={};
-  DB.grupos=[];
-  DB.config.nombre=nombre;
-  DB.config.acceso_abierto=false;
+  DB.comidas_info={};
+  DB.gastos=[];
+  DB.cobros=[];
+  DB.mercadillo=[];
+  DB.confra=null;
+  DB.confra_apuntados=[];
+  DB.modulos={ alojamiento:false };
+  DB.config={ nombre:nombre, fechas:'', aviso:'' };
+  DB.logs=[];
+  // Restaurar suministros
+  DB.suministros_stock = stockActual;
+  DB.sum_consumos={};
+  DB.sum_sobrantes={};
 
-  log('NUEVA_EDICION',nombre);
+  log('NUEVA_EDICION', nombre);
   await saveRemote();
   toast('Nueva edición iniciada: '+nombre,'ok');
   nav('dashboard');
@@ -4353,6 +4387,360 @@ function elegirAdminCreador(nick, btn){
   });
   btn.classList.add('btn-primary');
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CONFRATERNIZACIÓN — Comida opcional jueves
+// ═══════════════════════════════════════════════════════════════
+
+// ─── INSCRITO: ver y apuntarse ─────────────────────────────
+function renderConfra(){
+  var el=document.getElementById('confra-content');
+  if(!el||!ME) return;
+  var pid=ME.ID||ME.id||'';
+  // Solo visible para modalidades de Jueves
+  var modalidad=(ME.Modalidad||'').toLowerCase();
+  var esJueves=modalidad.includes('jueves');
+  if(!esJueves){
+    el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:32px;margin-bottom:10px">🍻</div><div style="font-weight:700;font-size:16px;margin-bottom:6px">Acceso restringido</div><div style="font-size:13px;color:var(--ink3)">Esta sección es solo para asistentes del Jueves.</div></div>';
+    return;
+  }
+  var confra=DB.confra||{};
+  var apuntados=DB.confra_apuntados||[];
+  var estoy=apuntados.includes(pid);
+  var listaPersonas=apuntados.map(function(id){
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
+    return p?'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">'+(p.Nick||p.Nombre||'?')[0].toUpperCase()+'</div>'
+      +'<div><div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' — ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
+      +'<div style="font-size:11px;color:var(--ink3)">'+(p.Modalidad||'').split('(')[0].trim()+'</div></div>'
+      +(id===pid?'<span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:700">✓ Tú</span>':'')
+      +'</div>':'';
+  }).join('');
+
+  var html='';
+  if(!confra.fecha&&!confra.precio){
+    html='<div class="card" style="background:var(--amber-l);border:1px solid var(--amber);margin-bottom:14px">'
+      +'<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:4px">🗓 Fecha y precio por confirmar</div>'
+      +'<div style="font-size:13px;color:var(--ink2)">La organización confirmará pronto los detalles de la comida de confraternización del jueves.</div>'
+      +'</div>';
+  } else {
+    html='<div class="card" style="background:var(--surface);border:2px solid var(--accent);margin-bottom:14px">'
+      +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+      +'<span style="font-size:36px">🍻</span>'
+      +'<div><div style="font-weight:800;font-size:17px">Comida de confraternización</div>'
+      +'<div style="font-size:13px;color:var(--ink3);margin-top:2px">'+(confra.lugar||'Lugar por confirmar')+'</div></div></div>'
+      +'<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">'
+      +(confra.fecha?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3)">Fecha</div><div style="font-weight:700;font-size:15px">'+confra.fecha+'</div></div>':'')
+      +(confra.hora?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3)">Hora</div><div style="font-weight:700;font-size:15px">'+confra.hora+'</div></div>':'')
+      +(confra.precio?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3)">Precio</div><div style="font-weight:700;font-size:15px;color:var(--accent)">'+confra.precio+'€</div></div>':'')
+      +'</div>'
+      +(confra.desc?'<div style="font-size:13px;color:var(--ink2);margin-bottom:14px">'+confra.desc+'</div>':'')
+      +(estoy
+        ?'<div style="background:var(--green-l);border-radius:var(--rs);padding:10px 14px;font-weight:700;color:var(--green);margin-bottom:10px">✓ Estás apuntado/a</div>'
+         +'<button class="btn" onclick="confraApuntarse(false)">Cancelar asistencia</button>'
+        :'<button class="btn btn-primary" style="width:100%;font-size:15px;padding:12px" onclick="confraApuntarse(true)">🍻 Apuntarme ('+( confra.precio||'?')+'€)</button>'
+      )
+      +'</div>';
+  }
+  html+='<div class="card"><div class="card-hd"><span class="card-title">Asistentes ('+apuntados.length+')</span></div>'
+    +(listaPersonas||'<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie apuntado aún</div>')
+    +'</div>';
+  el.innerHTML=html;
+}
+
+async function confraApuntarse(apuntar){
+  if(!ME||_saving) return;
+  var pid=ME.ID||ME.id||'';
+  if(!DB.confra_apuntados) DB.confra_apuntados=[];
+  if(apuntar){
+    if(!DB.confra_apuntados.includes(pid)) DB.confra_apuntados.push(pid);
+  } else {
+    DB.confra_apuntados=DB.confra_apuntados.filter(function(x){return x!==pid;});
+  }
+  await saveOptimista(renderConfra);
+  toast(apuntar?'¡Apuntado a la confra! 🍻':'Cancelada la asistencia','ok');
+}
+
+// ─── ADMIN: configurar confra ───────────────────────────────
+function renderConfraAdmin(){
+  var el=document.getElementById('confra-admin-content');
+  if(!el) return;
+  var c=DB.confra||{};
+  var apuntados=DB.confra_apuntados||[];
+  var personas=apuntados.map(function(id){
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
+    return p?'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
+      +'<div style="font-size:11px;color:var(--ink3);margin-left:auto">'+(p.Modalidad||'').split('(')[0].trim()+'</div>'
+      +'</div>':'';
+  }).join('');
+
+  el.innerHTML='<div class="card" style="margin-bottom:14px">'
+    +'<div class="card-hd"><span class="card-title">⚙ Configurar comida de confra</span></div>'
+    +'<div class="form-grid">'
+    +'<div class="fg"><label>Fecha</label><input type="text" id="confra-fecha" placeholder="Ej: Jueves 27 de marzo" value="'+(c.fecha||'')+'"></div>'
+    +'<div class="fg"><label>Hora</label><input type="text" id="confra-hora" placeholder="14:00" value="'+(c.hora||'')+'"></div>'
+    +'<div class="fg"><label>Lugar</label><input type="text" id="confra-lugar" placeholder="Restaurante..." value="'+(c.lugar||'')+'"></div>'
+    +'<div class="fg"><label>Precio por persona (€)</label><input type="number" id="confra-precio" placeholder="25" value="'+(c.precio||'')+'"></div>'
+    +'</div>'
+    +'<div class="fg"><label>Descripción / menú</label><textarea id="confra-desc" rows="3" placeholder="Menú del día, incluye...">'+(c.desc||'')+'</textarea></div>'
+    +'<button class="btn btn-primary" onclick="guardarConfra()">Guardar configuración</button>'
+    +'</div>'
+    +'<div class="card"><div class="card-hd"><span class="card-title">Apuntados ('+apuntados.length+')</span>'
+    +'<button class="btn btn-sm" onclick="exportConfraCSV()">⬇ CSV</button></div>'
+    +(personas||'<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie apuntado aún</div>')
+    +'</div>';
+}
+
+async function guardarConfra(){
+  DB.confra={
+    fecha:document.getElementById('confra-fecha').value.trim(),
+    hora:document.getElementById('confra-hora').value.trim(),
+    lugar:document.getElementById('confra-lugar').value.trim(),
+    precio:parseFloat(document.getElementById('confra-precio').value)||0,
+    desc:document.getElementById('confra-desc').value.trim()
+  };
+  await saveRemote();
+  toast('Confra actualizada ✓','ok');
+  renderConfraAdmin();
+}
+
+function exportConfraCSV(){
+  var apuntados=DB.confra_apuntados||[];
+  var lines=['"Nick","Nombre","Email","Modalidad"'];
+  apuntados.forEach(function(id){
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
+    if(p) lines.push('"'+(p.Nick||'')+'","'+(p.NombreCompleto||p.Nombre||'')+'","'+(p.Email||'')+'","'+(p.Modalidad||'')+'"');
+  });
+  dlCSV(lines.join('\n'),'confra_asistentes.csv');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MERCADILLO
+// ═══════════════════════════════════════════════════════════════
+
+function renderMercadillo(){
+  var el=document.getElementById('mercadillo-content');
+  if(!el||!ME) return;
+  var pid=ME.ID||ME.id||'';
+  var items=DB.mercadillo||[];
+
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+    +'<div style="font-size:13px;color:var(--ink3)">'+items.length+' juego'+(items.length!==1?'s':'')+' en venta</div>'
+    +'<button class="btn btn-primary btn-sm" onclick="abrirNuevoAnuncio()">+ Poner en venta</button>'
+    +'</div>';
+
+  if(!items.length){
+    html+='<div class="card" style="text-align:center;padding:30px">'
+      +'<div style="font-size:40px;margin-bottom:10px">🏷️</div>'
+      +'<div style="font-weight:700;font-size:16px;margin-bottom:6px">El mercadillo está vacío</div>'
+      +'<div style="font-size:13px;color:var(--ink3)">Sé el primero en poner un juego a la venta.</div>'
+      +'</div>';
+  } else {
+    // Mis juegos primero, luego disponibles, luego reservados
+    var misItems=items.filter(function(i){return i.vendedorId===pid;});
+    var disponibles=items.filter(function(i){return i.vendedorId!==pid&&i.estado==='disponible';});
+    var reservados=items.filter(function(i){return i.vendedorId!==pid&&i.estado!=='disponible';});
+
+    var renderItem=function(item){
+      var esMio=item.vendedorId===pid;
+      var reservado=item.estado==='reservado';
+      var compradorSoy=item.compradorId===pid;
+      var borderColor=esMio?'var(--accent)':reservado?'var(--border2)':'var(--green)';
+      var badgeHTML=reservado
+        ?'<span style="background:var(--red-l);color:var(--red);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">No disponible</span>'
+        :'<span style="background:var(--green-l);color:var(--green);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">Disponible</span>';
+
+      var accionHTML='';
+      if(esMio){
+        accionHTML='<div style="display:flex;gap:6px;margin-top:10px">'
+          +(reservado?'<div style="font-size:12px;color:var(--ink3);flex:1">Reservado por <strong>'+(item.compradorNick?'@'+item.compradorNick:item.compradorNombre||'?')+'</strong></div>':'')
+          +'<button class="btn btn-xs btn-danger" onclick="eliminarAnuncio(\''+item.id+'\')">Retirar</button>'
+          +'</div>';
+      } else if(!reservado){
+        accionHTML='<button class="btn btn-primary" style="width:100%;margin-top:10px;font-size:14px" onclick="reservarJuego(\''+item.id+'\')">🛒 Reservar por '+item.precio+'€</button>';
+      } else if(compradorSoy){
+        accionHTML='<div style="background:var(--green-l);border-radius:var(--rs);padding:8px 12px;margin-top:10px;font-size:12px;font-weight:600;color:var(--green)">✓ Lo has reservado tú</div>';
+      }
+
+      return '<div style="background:var(--surface);border:2px solid '+borderColor+';border-radius:16px;padding:16px;margin-bottom:12px;'+(reservado?'opacity:.7':'')+(esMio?'border-style:dashed':'')+'">'
+        +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-weight:800;font-size:16px;margin-bottom:3px">'+item.juego+'</div>'
+        +(item.desc?'<div style="font-size:13px;color:var(--ink2);margin-bottom:6px">'+item.desc+'</div>':'')
+        +'<div style="font-size:12px;color:var(--ink3)">Vendido por <strong>'+(item.vendedorNick?'@'+item.vendedorNick:item.vendedorNombre||'?')+'</strong></div>'
+        +'</div>'
+        +'<div style="flex-shrink:0;text-align:right">'
+        +'<div style="font-size:22px;font-weight:800;color:var(--accent)">'+item.precio+'€</div>'
+        +badgeHTML
+        +'</div></div>'
+        +accionHTML
+        +'</div>';
+    };
+
+    if(misItems.length){
+      html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;letter-spacing:.08em">Mis juegos en venta</div>';
+      html+=misItems.map(renderItem).join('');
+      html+='<div style="height:14px"></div>';
+    }
+    if(disponibles.length){
+      html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--green);margin-bottom:8px;letter-spacing:.08em">Disponibles</div>';
+      html+=disponibles.map(renderItem).join('');
+    }
+    if(reservados.length){
+      html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;margin-top:10px;letter-spacing:.08em">No disponibles</div>';
+      html+=reservados.map(renderItem).join('');
+    }
+  }
+
+  el.innerHTML=html;
+}
+
+function abrirNuevoAnuncio(){
+  var mo=document.getElementById('mo-mercadillo');
+  if(!mo){
+    var div=document.createElement('div');
+    div.className='mo'; div.id='mo-mercadillo';
+    div.innerHTML='<div class="mo-box" style="max-width:480px;margin:auto">'
+      +'<div class="mo-hd"><h3>Poner juego en venta</h3><button class="mo-close" onclick="closeModal(\'mo-mercadillo\')">✕</button></div>'
+      +'<div class="mo-body">'
+      +'<div class="fg"><label>Nombre del juego *</label><input type="text" id="merc-juego" placeholder="Brass Birmingham, Root..."></div>'
+      +'<div class="fg"><label>Descripción breve</label><input type="text" id="merc-desc" placeholder="Edición 2ª, completo, sin uso..."></div>'
+      +'<div class="fg"><label>Precio (€) *</label><input type="number" id="merc-precio" placeholder="25" min="0" step="0.5"></div>'
+      +'</div>'
+      +'<div class="mo-ft"><button class="btn" onclick="closeModal(\'mo-mercadillo\')">Cancelar</button>'
+      +'<button class="btn btn-primary" onclick="publicarAnuncio()">Publicar</button></div>'
+      +'</div>';
+    document.body.appendChild(div);
+    mo=div;
+  }
+  document.getElementById('merc-juego').value='';
+  document.getElementById('merc-desc').value='';
+  document.getElementById('merc-precio').value='';
+  openModal('mo-mercadillo');
+}
+
+async function publicarAnuncio(){
+  var juego=(document.getElementById('merc-juego').value||'').trim();
+  var desc=(document.getElementById('merc-desc').value||'').trim();
+  var precio=parseFloat(document.getElementById('merc-precio').value||0);
+  if(!juego){ toast('Escribe el nombre del juego','err'); return; }
+  if(!precio){ toast('Indica el precio','err'); return; }
+  if(!DB.mercadillo) DB.mercadillo=[];
+  var pid=ME.ID||ME.id||'';
+  DB.mercadillo.unshift({
+    id:uid('MRC_'),
+    vendedorId:pid,
+    vendedorNick:ME.Nick||'',
+    vendedorNombre:ME.NombreCompleto||ME.Nombre||'',
+    juego:juego, desc:desc, precio:precio,
+    estado:'disponible',
+    compradorId:null, compradorNick:null, compradorNombre:null,
+    ts:new Date().toISOString()
+  });
+  closeModal('mo-mercadillo');
+  await saveOptimista(renderMercadillo);
+  toast(juego+' publicado en el mercadillo ✓','ok');
+}
+
+async function reservarJuego(itemId){
+  if(!ME||_saving) return;
+  var item=DB.mercadillo.find(function(x){return x.id===itemId;});
+  if(!item||item.estado!=='disponible'){ toast('Ya no está disponible','err'); return; }
+  if(!confirm('¿Reservar "'+item.juego+'" por '+item.precio+'€?\n\nEl vendedor recibirá tu contacto para coordinar la entrega.')){ return; }
+  var pid=ME.ID||ME.id||'';
+  item.estado='reservado';
+  item.compradorId=pid;
+  item.compradorNick=ME.Nick||'';
+  item.compradorNombre=ME.NombreCompleto||ME.Nombre||'?';
+
+  // Notificación al vendedor
+  if(!DB.mensajes) DB.mensajes=[];
+  DB.mensajes.unshift({
+    id:uid('MSG_'),
+    asunto:'¡Alguien quiere tu juego!',
+    cuerpo:'Tu juego "'+item.juego+'" ('+item.precio+'€) ha sido reservado por '
+      +(ME.Nick?'@'+ME.Nick+' — ':'')+( ME.NombreCompleto||ME.Nombre||'?')+'.\nContacta con él/ella para coordinar la entrega.',
+    seg:'PERSONA', segV:item.vendedorId,
+    ts:new Date().toISOString(), _auto:true
+  });
+  // Notificación al comprador (para que salga en Mi ficha)
+  DB.mensajes.unshift({
+    id:uid('MSG_'),
+    asunto:'Has reservado un juego',
+    cuerpo:'Has reservado "'+item.juego+'" a '+(item.vendedorNick?'@'+item.vendedorNick+' — ':'')+( item.vendedorNombre||'?')+' por '+item.precio+'€.',
+    seg:'PERSONA', segV:pid,
+    ts:new Date().toISOString(), _auto:true
+  });
+
+  await saveOptimista(renderMercadillo);
+  toast('¡'+item.juego+' reservado! El vendedor recibirá tu contacto.','ok');
+}
+
+async function eliminarAnuncio(itemId){
+  if(!confirm('¿Retirar este juego del mercadillo?')) return;
+  DB.mercadillo=DB.mercadillo.filter(function(x){return x.id!==itemId;});
+  await saveOptimista(renderMercadillo);
+  toast('Juego retirado del mercadillo','ok');
+}
+
+// ─── ADMIN: ver mercadillo ──────────────────────────────────
+function renderMercadilloAdmin(){
+  var el=document.getElementById('mercadillo-admin-content');
+  if(!el) return;
+  var items=DB.mercadillo||[];
+  var html='<div class="card"><div class="card-hd"><span class="card-title">Mercadillo ('+items.length+' juegos)</span>'
+    +'<button class="btn btn-xs btn-danger" onclick="if(confirm(\'¿Borrar todo el mercadillo?\')){ DB.mercadillo=[]; saveRemote(); renderMercadilloAdmin(); toast(\'Mercadillo vaciado\',\'ok\'); }">Vaciar</button></div>';
+  if(!items.length){
+    html+='<div style="font-size:13px;color:var(--ink3);font-style:italic;padding:10px 0">Sin juegos en el mercadillo</div>';
+  } else {
+    items.forEach(function(item){
+      var comp=item.compradorNick?'@'+item.compradorNick+' '+item.compradorNombre:'—';
+      html+='<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
+        +'<div style="font-size:11px;color:var(--ink3)">Vendedor: '+(item.vendedorNick?'@'+item.vendedorNick:item.vendedorNombre||'?')
+        +' · '+item.precio+'€'
+        +(item.desc?' · '+item.desc:'')+'</div>'
+        +(item.estado==='reservado'?'<div style="font-size:11px;color:var(--red)">Reservado por: '+comp+'</div>':'')
+        +'</div>'
+        +'<button class="btn btn-xs btn-danger" onclick="DB.mercadillo=DB.mercadillo.filter(function(x){return x.id!==\''+item.id+'\';});saveRemote();renderMercadilloAdmin();toast(\'Retirado\',\'ok\')">✕</button>'
+        +'</div>';
+    });
+  }
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+// ─── DASHBOARD: mostrar compras/ventas en Mi ficha ─────────
+function renderMercadilloEnFicha(){
+  if(!ME) return;
+  var pid=ME.ID||ME.id||'';
+  var items=DB.mercadillo||[];
+  var vendidos=items.filter(function(x){return x.vendedorId===pid&&x.estado==='reservado';});
+  var comprados=items.filter(function(x){return x.compradorId===pid;});
+  if(!vendidos.length&&!comprados.length) return;
+  var ab=document.getElementById('aviso-box');
+  if(!ab) return;
+  ab.style.display='block';
+  var old=document.getElementById('mercadillo-ficha-card');
+  if(old) old.remove();
+  var div=document.createElement('div');
+  div.id='mercadillo-ficha-card';
+  div.setAttribute('style','background:var(--surface);border:2px solid var(--amber);border-radius:14px;padding:14px 16px;margin-bottom:10px');
+  var hh='<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--amber);margin-bottom:8px">🏷️ Mercadillo</div>';
+  vendidos.forEach(function(it){
+    var cname=(it.compradorNick?'@'+it.compradorNick+' ':'')+( it.compradorNombre||'?');
+    hh+='<div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--border)">💰 <strong>'+it.juego+'</strong> vendido a <strong>'+cname+'</strong></div>';
+  });
+  comprados.forEach(function(it){
+    var vname=(it.vendedorNick?'@'+it.vendedorNick+' ':'')+( it.vendedorNombre||'?');
+    hh+='<div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--border)">🛒 Has comprado <strong>'+it.juego+'</strong> a <strong>'+vname+'</strong> por <strong>'+it.precio+'€</strong></div>';
+  });
+  div.innerHTML=hh;
+  ab.appendChild(div);
+}
+
 
 // ─── TALLAS ────────────────────────────────────────────
 function renderTallas(){
