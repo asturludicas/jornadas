@@ -1730,22 +1730,24 @@ function bootApp(){
 // ─── NAV ───────────────────────────────────────────────
 const NAV_ADMIN=[
   {sec:'General'},{id:'dashboard',ico:'⊞',label:'Dashboard'},
-  {sec:'Inscritos'},{id:'personas',ico:'👥',label:'Personas'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
-  {sec:'Economía'},{id:'pagos',ico:'💰',label:'Pagos'},
-  {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'calendario',ico:'🎲',label:'Calendario'},{id:'mensajes',ico:'✉',label:'Mensajes'},
   {id:'confra-admin',ico:'🍻',label:'Confra'},
   {id:'mercadillo-admin',ico:'🏷',label:'Mercadillo'},
+  {id:'calendario',ico:'🎲',label:'Calendario'},
+  {id:'personas',ico:'👥',label:'Personas'},
+  {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
+  {sec:'Economía'},{id:'pagos',ico:'💰',label:'Pagos'},
+  {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
 ];
 const NAV_INSCRITO=[
   {id:'mi-ficha',ico:'◉',label:'Mi ficha'},
-  {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
-  {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
-  {id:'mi-comidas',ico:'🍽',label:'Comidas'},
   {id:'confra',ico:'🍻',label:'Confra'},
   {id:'mercadillo',ico:'🏷',label:'Mercadillo'},
+  {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
+  {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
+  {id:'mi-comidas',ico:'🍽',label:'Comidas'},
   {id:'_salir',ico:'↩',label:'Salir', action:'logout()'},
 ];
 
@@ -1760,7 +1762,7 @@ function buildNav(role){
   document.getElementById('sb-nav').innerHTML=sb;
 
   // Bottom nav (mobile) — max 4 items
-  const bnItems=items.filter(i=>i.id&&!i.sec).slice(0,4);
+  const bnItems=items.filter(i=>i.id&&!i.sec).slice(0,5);
   var _bnLogout='<button class="bn-item" onclick="logout()" style="color:var(--red)"><span class="bn-ico">↩</span><span>Salir</span></button>';
   document.getElementById('bottom-nav').innerHTML=bnItems.map(i=>{
     if(i.action) return `<button class="bn-item" id="bn-${i.id}" onclick="${i.action}"><span class="bn-ico">${i.ico}</span><span>${i.label}</span></button>`;
@@ -1784,6 +1786,7 @@ function nav(page, pushHist=true){
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
+    'confra':'Confraternización','mercadillo':'Mercadillo','confra-admin':'Confra','mercadillo-admin':'Mercadillo',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
 
@@ -1799,6 +1802,7 @@ function nav(page, pushHist=true){
     logs:renderLogs, config:renderConfig,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
     'confra':renderConfra, 'mercadillo':renderMercadillo,
+    'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
     tallas:renderTallas, contabilidad:renderContabilidad, calendario:renderCalendario, suministros:renderSuministros,
   };
   if(renders[page]) renders[page]();
