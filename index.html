@@ -1162,7 +1162,7 @@ tbody tr:hover td{background:var(--paper)}
       <div class="form-grid">
         <div class="fg"><label>Hotel</label><input type="text" id="hb-hotel"></div>
         <div class="fg"><label>Nº / Nombre hab.</label><input type="text" id="hb-num" placeholder="101"></div>
-        <div class="fg"><label>Tipo</label><select id="hb-tipo"><option>individual</option><option>doble</option><option>triple</option><option>cuádruple</option></select></div>
+        <div class="fg"><label>Tipo</label><select id="hb-tipo" onchange="(function(){var m={individual:1,doble:2,triple:3,cuadruple:4};var t=document.getElementById('hb-tipo').value;var c=m[t.normalize('NFD').replace(/[\u0300-\u036f]/g,'')] || 2;document.getElementById('hb-cap').value=c;})()"><option>individual</option><option>doble</option><option>triple</option><option>cuádruple</option></select></div>
         <div class="fg"><label>Capacidad</label><input type="number" id="hb-cap" min="1" max="6" value="2"></div>
         <div class="fg"><label>Noches</label><select id="hb-noches"><option value="ambas">Jueves + Viernes → Dom</option><option value="viernes">Solo Viernes → Dom</option></select></div>
         <div class="fg"><label>Modalidades (o TODAS)</label><input type="text" id="hb-mods" value="TODAS"></div>
@@ -2185,7 +2185,7 @@ async function guardarHab(){
     Hotel:document.getElementById('hb-hotel').value, hotel:document.getElementById('hb-hotel').value,
     NumeroHabitacion:document.getElementById('hb-num').value, num:document.getElementById('hb-num').value,
     Tipo:document.getElementById('hb-tipo').value, tipo:document.getElementById('hb-tipo').value,
-    Capacidad:document.getElementById('hb-cap').value, cap:document.getElementById('hb-cap').value,
+    Capacidad:(function(){var m={individual:1,doble:2,triple:3,cuadruple:4};var t=(document.getElementById('hb-tipo').value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');return m[t]||document.getElementById('hb-cap').value||2;})(), cap:document.getElementById('hb-cap').value,
     noches:document.getElementById('hb-noches').value,
     Modalidades:document.getElementById('hb-mods').value,
   };
@@ -4398,58 +4398,75 @@ function elegirAdminCreador(nick, btn){
 // ─── INSCRITO: ver y apuntarse ─────────────────────────────
 function renderConfra(){
   var el=document.getElementById('confra-content');
-  if(!el||!ME) return;
-  var pid=ME.ID||ME.id||'';
-  // Solo visible para modalidades de Jueves
-  var modalidad=(ME.Modalidad||'').toLowerCase();
-  var esJueves=modalidad.includes('jueves');
-  if(!esJueves){
-    el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:32px;margin-bottom:10px">🍻</div><div style="font-weight:700;font-size:16px;margin-bottom:6px">Acceso restringido</div><div style="font-size:13px;color:var(--ink3)">Esta sección es solo para asistentes del Jueves.</div></div>';
-    return;
-  }
+  if(!el) return;
+  var pid=(ROLE==='admin')?'ADMIN':(ME?ME.ID||ME.id||'':'');
   var confra=DB.confra||{};
   var apuntados=DB.confra_apuntados||[];
-  var estoy=apuntados.includes(pid);
-  var listaPersonas=apuntados.map(function(id){
-    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
-    return p?'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
-      +'<div style="width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">'+(p.Nick||p.Nombre||'?')[0].toUpperCase()+'</div>'
-      +'<div><div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' — ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
-      +'<div style="font-size:11px;color:var(--ink3)">'+(p.Modalidad||'').split('(')[0].trim()+'</div></div>'
-      +(id===pid?'<span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:700">✓ Tú</span>':'')
-      +'</div>':'';
-  }).join('');
 
-  var html='';
-  if(!confra.fecha&&!confra.precio){
-    html='<div class="card" style="background:var(--amber-l);border:1px solid var(--amber);margin-bottom:14px">'
-      +'<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:4px">🗓 Fecha y precio por confirmar</div>'
-      +'<div style="font-size:13px;color:var(--ink2)">La organización confirmará pronto los detalles de la comida de confraternización del jueves.</div>'
-      +'</div>';
-  } else {
-    html='<div class="card" style="background:var(--surface);border:2px solid var(--accent);margin-bottom:14px">'
-      +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
-      +'<span style="font-size:36px">🍻</span>'
-      +'<div><div style="font-weight:800;font-size:17px">Comida de confraternización</div>'
-      +'<div style="font-size:13px;color:var(--ink3);margin-top:2px">'+(confra.lugar||'Lugar por confirmar')+'</div></div></div>'
-      +'<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">'
-      +(confra.fecha?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3)">Fecha</div><div style="font-weight:700;font-size:15px">'+confra.fecha+'</div></div>':'')
-      +(confra.hora?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3)">Hora</div><div style="font-weight:700;font-size:15px">'+confra.hora+'</div></div>':'')
-      +(confra.precio?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ink3)">Precio</div><div style="font-weight:700;font-size:15px;color:var(--accent)">'+confra.precio+'€</div></div>':'')
-      +'</div>'
-      +(confra.desc?'<div style="font-size:13px;color:var(--ink2);margin-bottom:14px">'+confra.desc+'</div>':'')
-      +(estoy
-        ?'<div style="background:var(--green-l);border-radius:var(--rs);padding:10px 14px;font-weight:700;color:var(--green);margin-bottom:10px">✓ Estás apuntado/a</div>'
-         +'<button class="btn" onclick="confraApuntarse(false)">Cancelar asistencia</button>'
-        :'<button class="btn btn-primary" style="width:100%;font-size:15px;padding:12px" onclick="confraApuntarse(true)">🍻 Apuntarme ('+( confra.precio||'?')+'€)</button>'
-      )
-      +'</div>';
-  }
-  html+='<div class="card"><div class="card-hd"><span class="card-title">Asistentes ('+apuntados.length+')</span></div>'
-    +(listaPersonas||'<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie apuntado aún</div>')
+  // Banner info siempre visible
+  var bannerInfo='<div style="background:#fff0f0;border:2px solid var(--red);border-radius:var(--r);padding:16px;margin-bottom:16px">'
+    +'<div style="font-size:13px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">'
+    +(confra.titulo||'Vermouth de bienvenida y comida')+'</div>'
+    +'<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:8px">NO INCLUIDO EN EL PRECIO DE LAS JORNADAS</div>'
+    +(confra.desc?'<div style="font-size:13px;color:var(--ink2);margin-bottom:8px">'+confra.desc+'</div>':'')
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">'
+    +(confra.fecha?'<span><strong>Cuando:</strong> '+confra.fecha+(confra.hora?' a las '+confra.hora:'')+'</span>':'<span style="color:var(--amber)">Fecha por confirmar</span>')
+    +(confra.lugar?'<span><strong>Donde:</strong> '+confra.lugar+'</span>':'')
+    +(confra.precio?'<span><strong>Precio:</strong> <span style="color:var(--accent);font-weight:800">'+confra.precio+'€ / persona</span></span>':'')
+    +'</div>'
+    +(ROLE==='admin'?'<button class="btn btn-sm" style="margin-top:10px" onclick="nav(\"confra-admin\")">Editar informacion</button>':'')
     +'</div>';
-  el.innerHTML=html;
+
+  // Boton apuntarse (si no es admin ADMIN sin perfil)
+  var estoy = pid&&pid!='ADMIN' ? apuntados.includes(pid) : false;
+  var btnHTML='';
+  if(pid && pid!=='ADMIN'){
+    // Detectar grupo
+    var grupo=ME&&ME.GrupoID?DB.personas.filter(function(x){
+      return (x.GrupoID===ME.GrupoID||(x.ID||x.id||'')===(ME.ID||ME.id||''))&&!x._esInvitado&&x.Activo!=='FALSE';
+    }):[ME].filter(Boolean);
+    var tieneGrupo=grupo.length>1;
+    if(estoy){
+      btnHTML='<div style="background:var(--green-l);border-radius:var(--rs);padding:12px 16px;font-weight:700;color:var(--green);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">'
+        +'<span>Tu asistencia esta confirmada</span>'
+        +'<button class="btn btn-sm" onclick="confraApuntarse(false)">Cancelar</button></div>';
+    } else {
+      btnHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+        +'<button class="btn btn-primary" style="flex:1;font-size:15px;padding:12px" onclick="confraApuntarse(true)">'
+        +'Apuntarme'+(confra.precio?' ('+confra.precio+'€)':'')+'</button>'
+        +(tieneGrupo?'<button class="btn" style="flex:1;font-size:14px;padding:12px" onclick="confraApuntarseGrupoModal()">Apuntar a mi grupo</button>':'')
+        +'</div>';
+    }
+  }
+
+  // Lista publica de asistentes
+  var listaHTML=apuntados.length
+    ? apuntados.map(function(id){
+        var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
+        if(!p) return '';
+        var esMio=id===pid;
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">'
+          +'<div style="width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">'+(p.Nick||p.Nombre||'?')[0].toUpperCase()+'</div>'
+          +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
+          +'<div style="font-size:11px;color:var(--ink3)">'+(p.Modalidad||'').split('(')[0].trim()+'</div></div>'
+          +(esMio?'<span style="font-size:11px;color:var(--green);font-weight:700">Tu</span>':'')
+          +'</div>';
+      }).join('')
+    : '<div style="font-size:13px;color:var(--ink3);font-style:italic;padding:10px 0">Nadie apuntado aun</div>';
+
+  el.innerHTML=bannerInfo+btnHTML
+    +'<div class="card"><div class="card-hd"><span class="card-title">Asistentes ('+apuntados.length+')</span></div>'
+    +listaHTML+'</div>';
 }
+
+function confraApuntarseGrupoModal(){
+  if(!ME||!ME.GrupoID) return;
+  var grupo=DB.personas.filter(function(x){
+    return (x.GrupoID===ME.GrupoID||(x.ID||x.id||'')===(ME.ID||ME.id||''))&&!x._esInvitado&&x.Activo!=='FALSE';
+  });
+  confraModalGrupo(grupo);
+}
+
 
 async function confraApuntarse(apuntar){
   if(!ME||_saving) return;
@@ -4536,33 +4553,56 @@ function renderConfraAdmin(){
   if(!el) return;
   var c=DB.confra||{};
   var apuntados=DB.confra_apuntados||[];
-  var personas=apuntados.map(function(id){
-    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
-    return p?'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
-      +'<div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
-      +'<div style="font-size:11px;color:var(--ink3);margin-left:auto">'+(p.Modalidad||'').split('(')[0].trim()+'</div>'
-      +'</div>':'';
-  }).join('');
 
-  el.innerHTML='<div class="card" style="margin-bottom:14px">'
-    +'<div class="card-hd"><span class="card-title">⚙ Configurar comida de confra</span></div>'
+  // Formulario editable
+  var formHTML='<div class="card" style="margin-bottom:14px">'
+    +'<div class="card-hd"><span class="card-title">Informacion del evento</span></div>'
+    +'<div class="fg"><label>Titulo / nombre del evento</label>'
+    +'<input type="text" id="confra-titulo" placeholder="Vermouth de bienvenida y comida" value="'+(c.titulo||'Vermouth de bienvenida y comida')+'"></div>'
+    +'<div class="fg"><label>Descripcion / menu</label>'
+    +'<textarea id="confra-desc" rows="3" placeholder="Menu del dia, lugar, detalles...">'+(c.desc||'')+'</textarea></div>'
     +'<div class="form-grid">'
-    +'<div class="fg"><label>Fecha</label><input type="text" id="confra-fecha" placeholder="Ej: Jueves 27 de marzo" value="'+(c.fecha||'')+'"></div>'
+    +'<div class="fg"><label>Fecha</label><input type="text" id="confra-fecha" placeholder="Jueves 27 de marzo" value="'+(c.fecha||'')+'"></div>'
     +'<div class="fg"><label>Hora</label><input type="text" id="confra-hora" placeholder="14:00" value="'+(c.hora||'')+'"></div>'
     +'<div class="fg"><label>Lugar</label><input type="text" id="confra-lugar" placeholder="Restaurante..." value="'+(c.lugar||'')+'"></div>'
     +'<div class="fg"><label>Precio por persona (€)</label><input type="number" id="confra-precio" placeholder="25" value="'+(c.precio||'')+'"></div>'
     +'</div>'
-    +'<div class="fg"><label>Descripción / menú</label><textarea id="confra-desc" rows="3" placeholder="Menú del día, incluye...">'+(c.desc||'')+'</textarea></div>'
-    +'<button class="btn btn-primary" onclick="guardarConfra()">Guardar configuración</button>'
-    +'</div>'
-    +'<div class="card"><div class="card-hd"><span class="card-title">Apuntados ('+apuntados.length+')</span>'
-    +'<button class="btn btn-sm" onclick="exportConfraCSV()">⬇ CSV</button></div>'
-    +(personas||'<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie apuntado aún</div>')
+    +'<button class="btn btn-primary" onclick="guardarConfra()">Guardar informacion</button>'
     +'</div>';
+
+  // Lista editable de apuntados
+  var listaHTML=apuntados.map(function(id){
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
+    if(!p) return '';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="flex:1;font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
+      +'<div style="font-size:11px;color:var(--ink3);flex-shrink:0">'+(p.Modalidad||'').split('(')[0].trim()+'</div>'
+      +'<button class="btn btn-xs btn-danger" data-pid="'+id+'" onclick="confraAdminToggle(this.getAttribute(\"data-pid\"))">X</button>'
+      +'</div>';
+  }).filter(Boolean).join('');
+
+  // Selector para añadir
+  var noApuntados=DB.personas.filter(function(x){return !x._esInvitado&&x.Activo!=='FALSE'&&!apuntados.includes(x.ID||x.id||'');});
+  var addOpts=noApuntados.map(function(p){
+    return '<option value="'+(p.ID||p.id||'')+'">'+( p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||p.Email||'?')+'</option>';
+  }).join('');
+
+  var listaCard='<div class="card"><div class="card-hd"><span class="card-title">Apuntados ('+apuntados.length+')</span>'
+    +'<button class="btn btn-sm" onclick="exportConfraCSV()">CSV</button></div>'
+    +(listaHTML||'<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie apuntado aun</div>')
+    +'<div style="display:flex;gap:8px;margin-top:12px">'
+    +'<select id="confra-add-sel" style="flex:1;padding:7px;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:13px">'
+    +'<option value="">+ Añadir persona...</option>'+addOpts+'</select>'
+    +'<button class="btn btn-primary btn-sm" onclick="confraAdminAnadir()">Añadir</button>'
+    +'</div></div>';
+
+  el.innerHTML=formHTML+listaCard;
 }
+
 
 async function guardarConfra(){
   DB.confra={
+    titulo:document.getElementById('confra-titulo')?.value.trim()||'',
     fecha:document.getElementById('confra-fecha').value.trim(),
     hora:document.getElementById('confra-hora').value.trim(),
     lugar:document.getElementById('confra-lugar').value.trim(),
@@ -4590,8 +4630,10 @@ function exportConfraCSV(){
 
 function renderMercadillo(){
   var el=document.getElementById('mercadillo-content');
-  if(!el||!ME) return;
-  var pid=ME.ID||ME.id||'';
+  if(!el) return;
+  // Admin puede usar el mercadillo como DaniB o Alex
+  var pid=ROLE==='admin'?('ADMIN_'+( lsGet('confra_admin_nick','Admin')||'Admin')):(ME?ME.ID||ME.id||'':'');
+  if(!ME&&ROLE!=='admin') return;
   var items=DB.mercadillo||[];
 
   var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
@@ -4696,12 +4738,14 @@ async function publicarAnuncio(){
   if(!juego){ toast('Escribe el nombre del juego','err'); return; }
   if(!precio){ toast('Indica el precio','err'); return; }
   if(!DB.mercadillo) DB.mercadillo=[];
-  var pid=ME.ID||ME.id||'';
+  var pid=ROLE==='admin'?('ADMIN_'+( lsGet('confra_admin_nick','Admin'))):(ME?ME.ID||ME.id||'':'');
+  var _nick=ROLE==='admin'?(lsGet('confra_admin_nick','Admin')):(ME?ME.Nick||'':'');
+  var _nombre=ROLE==='admin'?(lsGet('confra_admin_nick','Admin')):(ME?ME.NombreCompleto||ME.Nombre||'':'');
   DB.mercadillo.unshift({
     id:uid('MRC_'),
     vendedorId:pid,
-    vendedorNick:ME.Nick||'',
-    vendedorNombre:ME.NombreCompleto||ME.Nombre||'',
+    vendedorNick:_nick,
+    vendedorNombre:_nombre,
     juego:juego, desc:desc, precio:precio,
     estado:'disponible',
     compradorId:null, compradorNick:null, compradorNombre:null,
