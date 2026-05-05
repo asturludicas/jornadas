@@ -1005,9 +1005,9 @@ tbody tr:hover td{background:var(--paper)}
       <!-- ══ CONFRA (inscrito) ══════════════════════════ -->
       <div id="page-confra" class="page">
         <div style="display:flex;gap:6px;margin-bottom:12px;padding:2px;background:var(--surface);border-radius:var(--r)">
-          <button class="btn" id="tab-confra-info" onclick="confraTab('info')" style="flex:1;font-size:12px">🍻 Info</button>
-          <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Peticiones</button>
-          <button class="btn" id="tab-confra-llevar" onclick="confraTab('llevar')" style="flex:1;font-size:12px">🎒 Llevar</button>
+          <button class="btn" id="tab-confra-info" onclick="confraTab('info')" style="flex:1;font-size:12px">🧙 AsturL</button>
+          <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Juegos</button>
+          <button class="btn" id="tab-confra-llevar" onclick="confraTab('llevar')" style="flex:1;font-size:12px">🎒 Traigo</button>
         </div>
         <div id="confra-content"></div>
         <div id="confra-peticiones-content" style="display:none"></div>
@@ -1750,7 +1750,7 @@ function bootApp(){
 // ─── NAV ───────────────────────────────────────────────
 const NAV_ADMIN=[
   {sec:'General'},{id:'dashboard',ico:'⊞',label:'Dashboard'},
-  {id:'confra-admin',ico:'🍻',label:'Confra'},
+  {id:'confra-admin',ico:'🧙',label:'AsturL'},
   {id:'mercadillo-admin',ico:'🏷',label:'Mercadillo'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'personas',ico:'👥',label:'Personas'},
@@ -1763,7 +1763,7 @@ const NAV_ADMIN=[
 const NAV_INSCRITO=[
   {id:'mi-ficha',ico:'◉',label:'Mi ficha'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
-  {id:'confra',ico:'🍻',label:'Confra'},
+  {id:'confra',ico:'🧙',label:'AsturL'},
   {id:'mercadillo',ico:'🏷',label:'Mercadillo'},
   {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
   {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
@@ -1806,7 +1806,7 @@ function nav(page, pushHist=true){
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
-    'confra':'Confraternización','mercadillo':'Mercadillo','confra-admin':'Confra','mercadillo-admin':'Mercadillo',
+    'confra':'AsturL','mercadillo':'Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
 
@@ -4993,12 +4993,6 @@ async function guardarPeticion(){
   if(!juego){ toast('Escribe el nombre del juego','err'); return; }
   if(!DB.confra_peticiones) DB.confra_peticiones=[];
   DB.confra_peticiones.unshift({id:uid('PET_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
-  el.innerHTML=html;
-  var bpx=document.getElementById('btn-pub-pet');if(bpx)bpx.onclick=guardarPeticion;
-  var bcx=document.getElementById('btn-canc-pet');if(bcx)bcx.onclick=function(){document.getElementById('form-peticion').style.display='none';};
-  // wire: bp;if(bp)bp.onclick=guardarPeticion;
-  var bc=document.getElementById('btn-canc-pet');if(bc)bc.onclick=function(){document.getElementById('form-peticion').style.display='none';};
-  document.getElementById('form-peticion').style.display='none';
   await saveRemote();
   renderConfraPeticiones();
   toast(juego+' añadido a peticiones','ok');
@@ -5051,8 +5045,9 @@ async function guardarLlevar(){
   if(!juego){ toast('Escribe el nombre del juego','err'); return; }
   if(!DB.confra_llevar) DB.confra_llevar=[];
   DB.confra_llevar.unshift({id:uid('LLV_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
-  document.getElementById('form-llevar').style.display='none';
-  await saveRemote(); renderConfraLlevar(); toast(juego+' añadido a la lista','ok');
+  await saveRemote();
+  renderConfraLlevar();
+  toast(juego+' añadido','ok');
 }
 
 async function borrarLlevar(id){
@@ -5295,15 +5290,12 @@ function mostrarBanner(msg, total){
     <div class="notif-banner" id="notif-activo">
       <div class="notif-banner-hd">
         <span class="notif-banner-title">📢 ${msg.asunto||'Mensaje de la organización'}</span>
-        <button class="notif-banner-close" onclick="cerrarBanner('${msg.id}')">✕</button>
+        ${total>1?`<span style="font-size:11px;opacity:.7;font-weight:600">${total} mensajes</span>`:''}
       </div>
       <div class="notif-banner-body">${(msg.cuerpo||'').split('\n').join('<br>')}</div>
-      ${extras}
-      <div style="margin-top:10px;display:flex;gap:8px">
-        <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.3)" 
-          onclick="marcarLeido('${msg.id}')">✓ Entendido</button>
-        ${total>1?`<button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.2)" 
-          onclick="verTodosMensajes()">Ver todos (${total})</button>`:''}
+      <div style="margin-top:12px">
+        <button class="btn" style="width:100%;background:#fff;color:var(--accent-d);font-weight:700;font-size:14px;padding:10px"
+          onclick="marcarLeido('${msg.id}')">✓ LEÍDO${total>1?' (quedan '+(total-1)+')':''}</button>
       </div>
     </div>`;
   // Auto-cerrar a los 12 segundos sin marcar leído
