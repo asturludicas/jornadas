@@ -158,11 +158,14 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
   position:fixed;bottom:0;left:0;right:0;
   height:var(--nav-h);background:var(--paper);
   border-top:2px solid rgba(212,149,106,.2);
+  overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
   z-index:50;
 }
 @media(max-width:700px){.bottom-nav{display:flex}}
 .bn-item{
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:0 0 64px;min-width:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:2px;border:none;background:none;color:var(--ink3);
   font-size:10px;font-weight:500;padding:4px 0;
   position:relative;
@@ -1001,7 +1004,14 @@ tbody tr:hover td{background:var(--paper)}
 
       <!-- ══ CONFRA (inscrito) ══════════════════════════ -->
       <div id="page-confra" class="page">
+        <div style="display:flex;gap:6px;margin-bottom:12px;padding:2px;background:var(--surface);border-radius:var(--r)">
+          <button class="btn" id="tab-confra-info" onclick="confraTab('info')" style="flex:1;font-size:12px">🍻 Info</button>
+          <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Peticiones</button>
+          <button class="btn" id="tab-confra-llevar" onclick="confraTab('llevar')" style="flex:1;font-size:12px">🎒 Llevar</button>
+        </div>
         <div id="confra-content"></div>
+        <div id="confra-peticiones-content" style="display:none"></div>
+        <div id="confra-llevar-content" style="display:none"></div>
       </div>
 
       <!-- ══ MERCADILLO (inscrito) ════════════════════════ -->
@@ -1260,6 +1270,8 @@ tbody tr:hover td{background:var(--paper)}
               <option value="jue_11">Jueves 11:00</option>
               <option value="jue_12">Jueves 12:00</option>
               <option value="jue_13">Jueves 13:00</option>
+              <option value="jue_14">Jueves 14:00</option>
+              <option value="jue_15">Jueves 15:00</option>
               <option value="jue_16">Jueves 16:00</option>
               <option value="jue_17">Jueves 17:00</option>
               <option value="jue_18">Jueves 18:00</option>
@@ -1274,6 +1286,8 @@ tbody tr:hover td{background:var(--paper)}
               <option value="vie_11">Viernes 11:00</option>
               <option value="vie_12">Viernes 12:00</option>
               <option value="vie_13">Viernes 13:00</option>
+              <option value="vie_14">Viernes 14:00</option>
+              <option value="vie_15">Viernes 15:00</option>
               <option value="vie_16">Viernes 16:00</option>
               <option value="vie_17">Viernes 17:00</option>
               <option value="vie_18">Viernes 18:00</option>
@@ -1288,6 +1302,8 @@ tbody tr:hover td{background:var(--paper)}
               <option value="sab_11">Sábado 11:00</option>
               <option value="sab_12">Sábado 12:00</option>
               <option value="sab_13">Sábado 13:00</option>
+              <option value="sab_14">Sábado 14:00</option>
+              <option value="sab_15">Sábado 15:00</option>
               <option value="sab_16">Sábado 16:00</option>
               <option value="sab_17">Sábado 17:00</option>
               <option value="sab_18">Sábado 18:00</option>
@@ -1355,6 +1371,7 @@ tbody tr:hover td{background:var(--paper)}
 <div class="mo" id="mo-partida-det">
   <div class="mo-box">
     <div class="mo-hd"><h3 id="det-juego">—</h3><button class="mo-close" onclick="closeModal('mo-partida-det')">✕</button></div>
+    <div id="det-ft-top" style="padding:0 0 10px"></div>
     <div class="mo-body" id="det-body"></div>
     <div class="mo-ft" id="det-ft"></div>
   </div>
@@ -1400,6 +1417,8 @@ const DB = {
   mercadillo:[],     // [{id,vendedorId,vendedorNick,juego,desc,precio,estado,compradorId,compradorNick,compradorNombre,ts}]
   confra:null,       // {fecha:'',precio:0,lugar:''} — comida confraternización jueves
   confra_apuntados:[],// [personaId, ...]
+  confra_peticiones:[],// [{id,pid,nick,juego,desc,ts}] juegos que quieren jugar
+  confra_llevar:[],    // [{id,pid,nick,juego,desc,ts}] juegos que traen
 };
 
 let ROLE=null, ME=null;
@@ -1763,7 +1782,7 @@ function buildNav(role){
   document.getElementById('sb-nav').innerHTML=sb;
 
   // Bottom nav (mobile) — max 4 items
-  const bnItems=items.filter(i=>i.id&&!i.sec&&i.id!=='_salir').slice(0,5);
+  const bnItems=items.filter(i=>i.id&&!i.sec&&i.id!=='_salir').slice(0,7);
   var _bnLogout='<button class="bn-item" onclick="logout()" style="color:var(--red);font-weight:600"><span class="bn-ico" style="font-size:20px">↩</span><span style="font-size:10px;font-weight:700">Salir</span></button>';
   document.getElementById('bottom-nav').innerHTML=bnItems.map(i=>{
     if(i.action) return `<button class="bn-item" id="bn-${i.id}" onclick="${i.action}"><span class="bn-ico">${i.ico}</span><span>${i.label}</span></button>`;
@@ -1802,7 +1821,7 @@ function nav(page, pushHist=true){
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
-    'confra':renderConfra, 'mercadillo':renderMercadillo,
+    'confra':function(){ confraTab('info'); renderConfra(); }, 'mercadillo':renderMercadillo,
     'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
     tallas:renderTallas, contabilidad:renderContabilidad, calendario:renderCalendario, suministros:renderSuministros,
   };
@@ -2843,7 +2862,13 @@ function renderPortal(){
   const pid=p.ID||p.id||'';
   const nombre=(p.NombreCompleto||`${p.Nombre||''} ${p.Apellidos||''}`).trim();
   document.getElementById('port-av').textContent=av(p.Nombre||nombre);
-  document.getElementById('port-nombre').textContent=nombre;
+  document.getElementById('port-nombre').textContent=nombre+(p.Nick?' (@'+p.Nick+')':'');
+  var portNick=document.getElementById('port-nick');
+  if(portNick) portNick.textContent=p.Nick?('@'+p.Nick):'(sin nick)';
+  var portBGG=document.getElementById('port-bgg');
+  if(portBGG) portBGG.textContent=p.NickBGG||'(sin nick BGG)';
+  var chkVL=document.getElementById('chk-visible-lista');
+  if(chkVL) chkVL.checked=(p.visibleLista!==false);
   const chips=[
     p.Modalidad?`<span class="chip chip-blue">${p.Modalidad}</span>`:'',
     `<span class="chip ${p.EsTitular==='SI'?'chip-green':'chip-gray'}">${p.EsTitular==='SI'?'Titular':'Acompañante'}</span>`,
@@ -3174,6 +3199,8 @@ const FRANJAS = [
   { id:'jue_11', dia:'Jueves',  label:'11:00', diaid:'jue' },
   { id:'jue_12', dia:'Jueves',  label:'12:00', diaid:'jue' },
   { id:'jue_13', dia:'Jueves',  label:'13:00', diaid:'jue' },
+  { id:'jue_14', dia:'Jueves',  label:'14:00', diaid:'jue' },
+  { id:'jue_15', dia:'Jueves',  label:'15:00', diaid:'jue' },
   { id:'jue_16', dia:'Jueves',  label:'16:00', diaid:'jue' },
   { id:'jue_17', dia:'Jueves',  label:'17:00', diaid:'jue' },
   { id:'jue_18', dia:'Jueves',  label:'18:00', diaid:'jue' },
@@ -3186,6 +3213,8 @@ const FRANJAS = [
   { id:'vie_11', dia:'Viernes', label:'11:00', diaid:'vie' },
   { id:'vie_12', dia:'Viernes', label:'12:00', diaid:'vie' },
   { id:'vie_13', dia:'Viernes', label:'13:00', diaid:'vie' },
+  { id:'vie_14', dia:'Viernes', label:'14:00', diaid:'vie' },
+  { id:'vie_15', dia:'Viernes', label:'15:00', diaid:'vie' },
   { id:'vie_16', dia:'Viernes', label:'16:00', diaid:'vie' },
   { id:'vie_17', dia:'Viernes', label:'17:00', diaid:'vie' },
   { id:'vie_18', dia:'Viernes', label:'18:00', diaid:'vie' },
@@ -3198,6 +3227,8 @@ const FRANJAS = [
   { id:'sab_11', dia:'Sábado',  label:'11:00', diaid:'sab' },
   { id:'sab_12', dia:'Sábado',  label:'12:00', diaid:'sab' },
   { id:'sab_13', dia:'Sábado',  label:'13:00', diaid:'sab' },
+  { id:'sab_14', dia:'Sábado',  label:'14:00', diaid:'sab' },
+  { id:'sab_15', dia:'Sábado',  label:'15:00', diaid:'sab' },
   { id:'sab_16', dia:'Sábado',  label:'16:00', diaid:'sab' },
   { id:'sab_17', dia:'Sábado',  label:'17:00', diaid:'sab' },
   { id:'sab_18', dia:'Sábado',  label:'18:00', diaid:'sab' },
@@ -3362,6 +3393,7 @@ function verPartida(pid_partida){
   `;
 
   const ft=document.getElementById('det-ft');
+  const ftTop=document.getElementById('det-ft-top');
   let btns='';
   if(!estoyDentro && !llena && pid){
     // Admin: selector de persona (Alex o Dani)
@@ -4268,10 +4300,10 @@ function detSearchNick(pid_partida, raw){
   // Build results with DOM to avoid quote issues
   res.innerHTML='';
   ms.forEach(function(m){
-    var xid=m.ID||m.id||'',xn=m.Nick?'@'+m.Nick:(m.Nombre||'?');
+    var xid=m.ID||m.id||'',xn=m.Nick?'@'+m.Nick:(m.Nombre||'?'),xFull=m.NombreCompleto||m.Nombre||'';
     var row=document.createElement('div');
-    row.style.cssText='padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center';
-    row.innerHTML='<span style="font-weight:600;font-size:13px">'+xn+'</span><span style="font-size:11px;color:var(--accent)">+ Añadir</span>';
+    row.style.cssText='padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;justify-content:space-between';
+    row.innerHTML='<div><div style="font-weight:700;font-size:13px">'+xn+'</div>'+(xFull&&xFull!==xn?'<div style="font-size:11px;color:var(--ink3)">'+xFull+'</div>':'')+'</div><span style="font-size:11px;color:var(--accent);white-space:nowrap">+ Añadir</span>';
     row.onmouseover=function(){this.style.background='var(--accent-l)';};
     row.onmouseout=function(){this.style.background='';};
     (function(pp,xi,xni){row.onclick=function(){detAddNick(pp,xi,xni);};})(pid_partida,xid,xn);
@@ -4449,13 +4481,14 @@ function renderConfra(){
     ? apuntados.map(function(id){
         var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
         if(!p) return '';
+        if(p.visibleLista===false&&id!==pid) return '';
         var esMio=id===pid;
         return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">'
           +'<div style="width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">'+(p.Nick||p.Nombre||'?')[0].toUpperCase()+'</div>'
-          +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
-          +'<div style="font-size:11px;color:var(--ink3)">'+(p.Modalidad||'').split('(')[0].trim()+'</div></div>'
+          +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick:p.NombreCompleto||p.Nombre||'?')+'</div>'
+          +'<div style="font-size:11px;color:var(--ink3)">'+(p.NombreCompleto&&p.Nick?p.NombreCompleto+' · ':'')+( p.NickBGG?'BGG: @'+p.NickBGG+' · ':'')+( p.Modalidad||'').split('(')[0].trim()+'</div></div>'
           +(esMio?'<span style="font-size:11px;color:var(--green);font-weight:700">Tu</span>':'')
-          +'</div>';
+          +'</div>'; 
       }).join('')
     : '<div style="font-size:13px;color:var(--ink3);font-style:italic;padding:10px 0">Nadie apuntado aun</div>';
 
@@ -4867,6 +4900,166 @@ function renderMercadilloEnFicha(){
 }
 
 
+
+// ─── EDITAR NICK / BGG ─────────────────────────────────
+async function cambiarNickDirecto(){
+  if(!ME||_saving) return;
+  var val=(document.getElementById('val-nick')?.value||'').trim();
+  if(!val){ toast('Escribe tu nick','err'); return; }
+  // Actualizar en DB.personas
+  var per=DB.personas.find(function(x){return (x.ID||x.id||'')===(ME.ID||ME.id||'');});
+  if(per){ per.Nick=val; ME.Nick=val; }
+  toggleForm('fnick');
+  await saveRemote();
+  toast('Nick actualizado: @'+val,'ok');
+  renderPortal();
+}
+async function cambiarBGGDirecto(){
+  if(!ME||_saving) return;
+  var val=(document.getElementById('val-bgg')?.value||'').trim();
+  var per=DB.personas.find(function(x){return (x.ID||x.id||'')===(ME.ID||ME.id||'');});
+  if(per){ per.NickBGG=val; ME.NickBGG=val; }
+  toggleForm('fbgg');
+  await saveRemote();
+  toast('Nick BGG actualizado','ok');
+  renderPortal();
+}
+
+
+async function toggleVisibleLista(visible){
+  if(!ME||_saving) return;
+  var per=DB.personas.find(function(x){return (x.ID||x.id||'')===(ME.ID||ME.id||'');});
+  if(per){ per.visibleLista=visible; ME.visibleLista=visible; }
+  await saveRemote();
+  toast(visible?'Aparecerás en listas públicas':'No aparecerás en listas públicas','ok');
+}
+
+
+// ─── CONFRA TABS ───────────────────────────────────────
+var _confraTab='info';
+function confraTab(tab){
+  _confraTab=tab;
+  ['info','peticiones','llevar'].forEach(function(t){
+    var c=document.getElementById('confra-'+( t==='info'?'content':t+'-content'));
+    if(c) c.style.display=(t===tab)?'block':'none';
+    var b=document.getElementById('tab-confra-'+t);
+    if(b){ b.style.background=t===tab?'var(--accent)':''; b.style.color=t===tab?'#fff':''; }
+  });
+  if(tab==='peticiones') renderConfraPeticiones();
+  if(tab==='llevar') renderConfraLlevar();
+}
+
+function renderConfraPeticiones(){
+  var el=document.getElementById('confra-peticiones-content');
+  if(!el) return;
+  var items=DB.confra_peticiones||[];
+  var pid=ME?ME.ID||ME.id||'':'';
+  var miItems=items.filter(function(x){return x.pid===pid;});
+  var otros=items.filter(function(x){return x.pid!==pid;});
+
+  var html='<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="abrirFormPeticion()">+ Pedir un juego</button>';
+  html+='<div id="form-peticion" style="display:none;background:var(--surface);border-radius:var(--r);padding:14px;margin-bottom:14px">';
+  html+='<div class="fg"><label>Juego que quieres jugar *</label><input type="text" id="pet-juego" placeholder="Nombre del juego..."></div>';
+  html+='<div class="fg"><label>Notas (opcional)</label><input type="text" id="pet-desc" placeholder="Expansion, edicion, nivel..."></div>';
+  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" data-action="pet-pub">Publicar peticion</button><button class="btn" data-action="pet-canc">Cancelar</button></div>';
+  html+='</div>';
+  if(items.length){
+    html+='<div class="card"><div class="card-hd"><span class="card-title">Peticiones ('+items.length+')</span></div>';
+    items.forEach(function(item){
+      var esMio=item.pid===pid;
+      html+='<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px">'
+        +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
+        +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
+        +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">'+( item.nick?'@'+item.nick:item.pid)+'</div></div>'
+        +(esMio?'<button class="btn btn-xs btn-danger" data-del-pet="'+item.id+'">X</button>':'')
+        +'</div>';
+    });
+    html+='</div>';
+  } else {
+    html+='<div class="card" style="text-align:center;padding:20px;color:var(--ink3)">Sin peticiones aun. Se el primero!</div>';
+  }
+  el.innerHTML=html;
+}
+
+function abrirFormPeticion(){
+  var f=document.getElementById('form-peticion');
+  if(f) f.style.display=f.style.display==='none'?'block':'none';
+}
+
+async function guardarPeticion(){
+  if(!ME||_saving) return;
+  var juego=(document.getElementById('pet-juego')?.value||'').trim();
+  var desc=(document.getElementById('pet-desc')?.value||'').trim();
+  if(!juego){ toast('Escribe el nombre del juego','err'); return; }
+  if(!DB.confra_peticiones) DB.confra_peticiones=[];
+  DB.confra_peticiones.unshift({id:uid('PET_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
+  el.innerHTML=html;
+  var bpx=document.getElementById('btn-pub-pet');if(bpx)bpx.onclick=guardarPeticion;
+  var bcx=document.getElementById('btn-canc-pet');if(bcx)bcx.onclick=function(){document.getElementById('form-peticion').style.display='none';};
+  // wire: bp;if(bp)bp.onclick=guardarPeticion;
+  var bc=document.getElementById('btn-canc-pet');if(bc)bc.onclick=function(){document.getElementById('form-peticion').style.display='none';};
+  document.getElementById('form-peticion').style.display='none';
+  await saveRemote();
+  renderConfraPeticiones();
+  toast(juego+' añadido a peticiones','ok');
+}
+
+async function borrarPeticion(id){
+  DB.confra_peticiones=(DB.confra_peticiones||[]).filter(function(x){return x.id!==id;});
+  await saveRemote(); renderConfraPeticiones(); toast('Peticion eliminada','ok');
+}
+
+function renderConfraLlevar(){
+  var el=document.getElementById('confra-llevar-content');
+  if(!el) return;
+  var items=DB.confra_llevar||[];
+  var pid=ME?ME.ID||ME.id||'':'';
+
+  var html='<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="abrirFormLlevar()">+ Añadir juego que traigo</button>';
+  html+='<div id="form-llevar" style="display:none;background:var(--surface);border-radius:var(--r);padding:14px;margin-bottom:14px">';
+  html+='<div class="fg"><label>Juego que traes *</label><input type="text" id="llev-juego" placeholder="Nombre del juego..."></div>';
+  html+='<div class="fg"><label>Notas (expansiones, condicion...)</label><input type="text" id="llev-desc" placeholder="Completo, con todas las expansiones..."></div>';
+  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" data-action="llev-pub">Publicar</button><button class="btn" data-action="llev-canc">Cancelar</button></div>';
+  html+='</div>';
+  if(items.length){
+    html+='<div class="card"><div class="card-hd"><span class="card-title">Juegos que traemos ('+items.length+')</span></div>';
+    items.forEach(function(item){
+      var esMio=item.pid===pid;
+      html+='<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px">'
+        +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
+        +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
+        +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">Lo trae '+(item.nick?'@'+item.nick:item.pid)+'</div></div>'
+        +(esMio?'<button class="btn btn-xs btn-danger" data-del-llev="'+item.id+'">X</button>':'')
+        +'</div>';
+    });
+    html+='</div>';
+  } else {
+    html+='<div class="card" style="text-align:center;padding:20px;color:var(--ink3)">Nadie ha indicado que trae juegos aun.</div>';
+  }
+  el.innerHTML=html;
+}
+
+function abrirFormLlevar(){
+  var f=document.getElementById('form-llevar');
+  if(f) f.style.display=f.style.display==='none'?'block':'none';
+}
+
+async function guardarLlevar(){
+  if(!ME||_saving) return;
+  var juego=(document.getElementById('llev-juego')?.value||'').trim();
+  var desc=(document.getElementById('llev-desc')?.value||'').trim();
+  if(!juego){ toast('Escribe el nombre del juego','err'); return; }
+  if(!DB.confra_llevar) DB.confra_llevar=[];
+  DB.confra_llevar.unshift({id:uid('LLV_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
+  document.getElementById('form-llevar').style.display='none';
+  await saveRemote(); renderConfraLlevar(); toast(juego+' añadido a la lista','ok');
+}
+
+async function borrarLlevar(id){
+  DB.confra_llevar=(DB.confra_llevar||[]).filter(function(x){return x.id!==id;});
+  await saveRemote(); renderConfraLlevar(); toast('Eliminado','ok');
+}
+
 // ─── TALLAS ────────────────────────────────────────────
 function renderTallas(){
   const orden=['XS','S','M','L','XL','XXL','XXXL',''];
@@ -5115,7 +5308,7 @@ function mostrarBanner(msg, total){
     </div>`;
   // Auto-cerrar a los 12 segundos sin marcar leído
   if(_bannerTimer) clearTimeout(_bannerTimer);
-  _bannerTimer=setTimeout(()=>cerrarBanner(null), 12000);
+  _bannerTimer=null; // Banner permanente - sin auto-cierre
 }
 
 function cerrarBanner(msgId){
