@@ -1008,10 +1008,12 @@ tbody tr:hover td{background:var(--paper)}
           <button class="btn" id="tab-confra-info" onclick="confraTab('info')" style="flex:1;font-size:12px">🧙 AsturL</button>
           <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Juegos</button>
           <button class="btn" id="tab-confra-llevar" onclick="confraTab('llevar')" style="flex:1;font-size:12px">🎒 Traigo</button>
+          <button class="btn" id="tab-confra-mercadillo" onclick="confraTab('mercadillo')" style="flex:1;font-size:12px">🏷 Mercadillo</button>
         </div>
         <div id="confra-content"></div>
         <div id="confra-peticiones-content" style="display:none"></div>
         <div id="confra-llevar-content" style="display:none"></div>
+        <div id="confra-mercadillo-content" style="display:none"></div>
       </div>
 
       <!-- ══ MERCADILLO (inscrito) ════════════════════════ -->
@@ -1751,7 +1753,6 @@ function bootApp(){
 const NAV_ADMIN=[
   {sec:'General'},{id:'dashboard',ico:'⊞',label:'Dashboard'},
   {id:'confra-admin',ico:'🧙',label:'AsturL'},
-  {id:'mercadillo-admin',ico:'🏷',label:'Mercadillo'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'personas',ico:'👥',label:'Personas'},
   {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
@@ -1764,7 +1765,6 @@ const NAV_INSCRITO=[
   {id:'mi-ficha',ico:'◉',label:'Mi ficha'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'confra',ico:'🧙',label:'AsturL'},
-  {id:'mercadillo',ico:'🏷',label:'Mercadillo'},
   {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
   {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
   {id:'mi-comidas',ico:'🍽',label:'Comidas'},
@@ -1806,7 +1806,7 @@ function nav(page, pushHist=true){
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
-    'confra':'AsturL','mercadillo':'Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
+    'confra':'🍻 Comida Jueves','mercadillo':'Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
 
@@ -4939,14 +4939,15 @@ async function toggleVisibleLista(visible){
 var _confraTab='info';
 function confraTab(tab){
   _confraTab=tab;
-  ['info','peticiones','llevar'].forEach(function(t){
-    var c=document.getElementById('confra-'+( t==='info'?'content':t+'-content'));
+  ['info','peticiones','llevar','mercadillo'].forEach(function(t){
+    var c=document.getElementById(t==='info'?'confra-content':('confra-'+t+'-content'));
     if(c) c.style.display=(t===tab)?'block':'none';
     var b=document.getElementById('tab-confra-'+t);
     if(b){ b.style.background=t===tab?'var(--accent)':''; b.style.color=t===tab?'#fff':''; }
   });
   if(tab==='peticiones') renderConfraPeticiones();
   if(tab==='llevar') renderConfraLlevar();
+  if(tab==='mercadillo') renderMercadilloEnTab();
 }
 
 function renderConfraPeticiones(){
@@ -4961,7 +4962,7 @@ function renderConfraPeticiones(){
   html+='<div id="form-peticion" style="display:none;background:var(--surface);border-radius:var(--r);padding:14px;margin-bottom:14px">';
   html+='<div class="fg"><label>Juego que quieres jugar *</label><input type="text" id="pet-juego" placeholder="Nombre del juego..."></div>';
   html+='<div class="fg"><label>Notas (opcional)</label><input type="text" id="pet-desc" placeholder="Expansion, edicion, nivel..."></div>';
-  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" data-action="pet-pub">Publicar peticion</button><button class="btn" data-action="pet-canc">Cancelar</button></div>';
+  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="guardarPeticion()">Publicar peticion</button><button class="btn" onclick="abrirFormPeticion()">Cancelar</button></div>';
   html+='</div>';
   if(items.length){
     html+='<div class="card"><div class="card-hd"><span class="card-title">Peticiones ('+items.length+')</span></div>';
@@ -4971,7 +4972,7 @@ function renderConfraPeticiones(){
         +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
         +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
         +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">'+( item.nick?'@'+item.nick:item.pid)+'</div></div>'
-        +(esMio?'<button class="btn btn-xs btn-danger" data-del-pet="'+item.id+'">X</button>':'')
+        +(esMio?'<button class="btn btn-xs btn-danger" onclick="borrarPeticion(\''+item.id+'\')" >X</button>':'')
         +'</div>';
     });
     html+='</div>';
@@ -4983,7 +4984,7 @@ function renderConfraPeticiones(){
 
 function abrirFormPeticion(){
   var f=document.getElementById('form-peticion');
-  if(f) f.style.display=f.style.display==='none'?'block':'none';
+  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block'){var i=document.getElementById('pet-juego');if(i)i.focus();} }
 }
 
 async function guardarPeticion(){
@@ -5013,7 +5014,7 @@ function renderConfraLlevar(){
   html+='<div id="form-llevar" style="display:none;background:var(--surface);border-radius:var(--r);padding:14px;margin-bottom:14px">';
   html+='<div class="fg"><label>Juego que traes *</label><input type="text" id="llev-juego" placeholder="Nombre del juego..."></div>';
   html+='<div class="fg"><label>Notas (expansiones, condicion...)</label><input type="text" id="llev-desc" placeholder="Completo, con todas las expansiones..."></div>';
-  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" data-action="llev-pub">Publicar</button><button class="btn" data-action="llev-canc">Cancelar</button></div>';
+  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="guardarLlevar()">Publicar</button><button class="btn" onclick="abrirFormLlevar()">Cancelar</button></div>';
   html+='</div>';
   if(items.length){
     html+='<div class="card"><div class="card-hd"><span class="card-title">Juegos que traemos ('+items.length+')</span></div>';
@@ -5023,7 +5024,7 @@ function renderConfraLlevar(){
         +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
         +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
         +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">Lo trae '+(item.nick?'@'+item.nick:item.pid)+'</div></div>'
-        +(esMio?'<button class="btn btn-xs btn-danger" data-del-llev="'+item.id+'">X</button>':'')
+        +(esMio?'<button class="btn btn-xs btn-danger" onclick="borrarLlevar(\''+item.id+'\')" >X</button>':'')
         +'</div>';
     });
     html+='</div>';
@@ -5035,7 +5036,7 @@ function renderConfraLlevar(){
 
 function abrirFormLlevar(){
   var f=document.getElementById('form-llevar');
-  if(f) f.style.display=f.style.display==='none'?'block':'none';
+  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block'){var i=document.getElementById('llev-juego');if(i)i.focus();} }
 }
 
 async function guardarLlevar(){
@@ -5053,6 +5054,20 @@ async function guardarLlevar(){
 async function borrarLlevar(id){
   DB.confra_llevar=(DB.confra_llevar||[]).filter(function(x){return x.id!==id;});
   await saveRemote(); renderConfraLlevar(); toast('Eliminado','ok');
+}
+
+
+// Renderizar mercadillo dentro del tab de confra
+function renderMercadilloEnTab(){
+  var el=document.getElementById('confra-mercadillo-content');
+  if(!el) return;
+  // Temporalmente redirigir el render al contenedor del tab
+  var orig=document.getElementById('mercadillo-content');
+  if(orig) orig.id='mercadillo-content-hidden';
+  el.id='mercadillo-content';
+  renderMercadillo();
+  el.id='confra-mercadillo-content';
+  if(orig) orig.id='mercadillo-content';
 }
 
 // ─── TALLAS ────────────────────────────────────────────
