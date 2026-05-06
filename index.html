@@ -1489,13 +1489,26 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
-        // Re-inyectar invitado en memoria
-        DB.personas=(DB.personas||[]).filter(p=>!p._esInvitado);
+        // Re-inyectar personajes fijos en memoria
+        DB.personas=(DB.personas||[]).filter(p=>!p._esInvitado&&!p._esOrganizador);
         DB.personas.push({ID:'P_INVITADO',id:'P_INVITADO',Nombre:'Invitado',
           Apellidos:'',NombreCompleto:'Invitado',Nick:'invitado',
           Email:'invitado@asturludicas.es',Modalidad:'Jueves (270€)',
           TallaCamiseta:'',GrupoID:'',EsTitular:'SI',Alojamiento:'SI',
           ImporteTotal:0,Codigo:'',Activo:'TRUE',_esInvitado:true});
+        // Organizadores siempre presentes (sin pago, en comidas)
+        DB.personas.push({ID:'ORG_DANI',id:'ORG_DANI',Nombre:'Daniel',
+          Apellidos:'Bonito',NombreCompleto:'DaniBonito (Organización)',Nick:'DaniB',
+          Email:'asturludicas@gmail.com',Modalidad:'Organizador',
+          TallaCamiseta:'',GrupoID:'',EsTitular:'SI',Alojamiento:'NO',
+          ImporteTotal:0,Codigo:'',Activo:'TRUE',Alergenos:'',
+          _esOrganizador:true});
+        DB.personas.push({ID:'ORG_ALEX',id:'ORG_ALEX',Nombre:'Alex',
+          Apellidos:'',NombreCompleto:'Alex (Organización)',Nick:'Alex',
+          Email:'asturludicas@gmail.com',Modalidad:'Organizador',
+          TallaCamiseta:'',GrupoID:'',EsTitular:'SI',Alojamiento:'NO',
+          ImporteTotal:0,Codigo:'',Activo:'TRUE',Alergenos:'Alérgico al marisco',
+          _esOrganizador:true});
         lsSet('jdb',DB);
         // Re-render silencioso de la página actual
         const pg=HIST[HIST.length-1];
@@ -1528,6 +1541,18 @@ async function loadRemote(){
     Modalidad:'Jueves (270€)',TallaCamiseta:'',GrupoID:'',EsTitular:'SI',
     Alojamiento:'SI',ImporteTotal:0,Codigo:'',Activo:'TRUE',_esInvitado:true
   });
+  // Organizadores siempre presentes (no se guardan en remoto, no pagan, sí van a comidas)
+  DB.personas.push({ID:'ORG_DANI',id:'ORG_DANI',Nombre:'Daniel',Apellidos:'Bonito',
+    NombreCompleto:'DaniBonito (Organización)',Nick:'DaniB',
+    Email:'asturludicas@gmail.com',Modalidad:'Organizador',TallaCamiseta:'',
+    GrupoID:'',EsTitular:'SI',Alojamiento:'NO',ImporteTotal:0,Codigo:'',
+    Activo:'TRUE',Alergenos:'',_esOrganizador:true});
+  DB.personas.push({ID:'ORG_ALEX',id:'ORG_ALEX',Nombre:'Alex',Apellidos:'',
+    NombreCompleto:'Alex (Organización)',Nick:'Alex',
+    Email:'asturludicas@gmail.com',Modalidad:'Organizador',TallaCamiseta:'',
+    GrupoID:'',EsTitular:'SI',Alojamiento:'NO',ImporteTotal:0,Codigo:'',
+    Activo:'TRUE',Alergenos:'Alérgico al marisco',_esOrganizador:true});
+
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
@@ -1550,7 +1575,7 @@ async function saveRemote(){
     if(!b.disabled&&!b.dataset.nospin){ b.disabled=true; btns.push(b); }
   });
   try{
-    const pFilt=DB.personas.filter(p=>!p._esInvitado);
+    const pFilt=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador);
     const dbG={...DB,personas:pFilt};
     lsSet('jdb',dbG);
     await jbSet({_jornadas:dbG});
@@ -1756,7 +1781,6 @@ const NAV_ADMIN=[
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'personas',ico:'👥',label:'Personas'},
   {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
-  {sec:'Economía'},{id:'pagos',ico:'💰',label:'Pagos'},
   {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
@@ -1821,7 +1845,7 @@ function nav(page, pushHist=true){
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
-    'confra':function(){ confraTab('info'); renderConfra(); }, 'mercadillo':renderMercadillo,
+    'confra':function(){ confraTab(_confraTab||'info'); }, 'mercadillo':renderMercadillo,
     'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
     tallas:renderTallas, contabilidad:renderContabilidad, calendario:renderCalendario, suministros:renderSuministros,
   };
@@ -4994,9 +5018,14 @@ async function guardarPeticion(){
   if(!juego){ toast('Escribe el nombre del juego','err'); return; }
   if(!DB.confra_peticiones) DB.confra_peticiones=[];
   DB.confra_peticiones.unshift({id:uid('PET_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
-  await saveRemote();
+  // Render local primero — feedback inmediato
+  document.getElementById('pet-juego').value='';
+  document.getElementById('pet-desc').value='';
+  document.getElementById('form-peticion').style.display='none';
   renderConfraPeticiones();
   toast(juego+' añadido a peticiones','ok');
+  // Guardar en Firebase en background (sin await)
+  saveRemote();
 }
 
 async function borrarPeticion(id){
@@ -5046,9 +5075,13 @@ async function guardarLlevar(){
   if(!juego){ toast('Escribe el nombre del juego','err'); return; }
   if(!DB.confra_llevar) DB.confra_llevar=[];
   DB.confra_llevar.unshift({id:uid('LLV_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
-  await saveRemote();
+  // Render local inmediato
+  document.getElementById('llev-juego').value='';
+  document.getElementById('llev-desc').value='';
+  document.getElementById('form-llevar').style.display='none';
   renderConfraLlevar();
   toast(juego+' añadido','ok');
+  saveRemote();
 }
 
 async function borrarLlevar(id){
@@ -5436,9 +5469,9 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
     _esInvitado: true  // marca para excluirlo de listas y conteos
   };
   // Limpiar P_INVITADO y P_DEMO_ADMIN si quedaron guardados antes
-  const tenia_basura = DB.personas.some(x=>x.ID==='P_INVITADO'||x.ID==='P_DEMO_ADMIN');
+  const tenia_basura = DB.personas.some(x=>x.ID==='P_INVITADO'||x.ID==='ORG_DANI'||x.ID==='ORG_ALEX'||x.ID==='P_DEMO_ADMIN');
   if(tenia_basura){
-    DB.personas = DB.personas.filter(x=>x.ID!=='P_INVITADO'&&x.ID!=='P_DEMO_ADMIN');
+    DB.personas = DB.personas.filter(x=>x.ID!=='P_INVITADO'&&x.ID!=='ORG_DANI'&&x.ID!=='ORG_ALEX'&&x.ID!=='P_DEMO_ADMIN');
     await saveRemote(); // limpiar del JSONBin
   }
   // Inyectar invitado solo en memoria para que loginInscrito lo encuentre
