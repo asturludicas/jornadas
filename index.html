@@ -1052,6 +1052,14 @@ tbody tr:hover td{background:var(--paper)}
             <div class="portal-av" id="port-av">?</div>
             <div><h2 style="font-size:16px" id="port-nombre"></h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px" id="port-chips"></div></div>
           </div>
+          <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px">
+            <div id="port-avatar" style="width:64px;height:64px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;flex-shrink:0;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(212,149,106,.3)">?</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px">Foto de perfil</div>
+              <input type="file" id="avatar-file" accept="image/*" style="font-size:11px" onchange="subirAvatar(this)">
+              <div style="font-size:10px;color:var(--ink3);margin-top:3px">Se redimensiona a 128x128px</div>
+            </div>
+          </div>
           <div class="card">
             <div class="card-hd"><span class="card-title">Mis datos</span></div>
             <div class="data-grid c3" id="port-datos"></div>
@@ -1875,41 +1883,54 @@ function renderDashboard(){
   var inscritos=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador&&p.Activo!=='FALSE';});
   var total=inscritos.length;
 
+  // Ingresos: usa pagadoPor para cada persona (suma DB.pagos correctamente)
   var ingresoEsp=inscritos.reduce(function(s,p){return s+(Number(p.ImporteTotal)||0);},0);
-  var totalCobros=(DB.cobros||[]).reduce(function(s,c){return s+(Number(c.importe)||0);},0);
-  var pagosManual=(DB.pagos||[]).reduce(function(s,p){return s+(Number(p.Importe)||0);},0);
-  var cobrado=totalCobros+pagosManual;
+  var cobradoInscripcion=inscritos.reduce(function(s,p){return s+pagadoPor(p.ID||p.id||'');},0);
+  // Cobros adicionales (ingresos extra desde quick-add)
+  var cobrosExtra=(DB.cobros||[]).reduce(function(s,c){return s+(Number(c.importe)||0);},0);
+  var cobrado=cobradoInscripcion+cobrosExtra;
+  var pendiente=Math.max(0,ingresoEsp-cobradoInscripcion);
   var totalGastos=(DB.gastos||[]).reduce(function(s,g){return s+(Number(g.importe)||0);},0);
   var balance=cobrado-totalGastos;
 
   var solP=(DB.solicitudes||[]).filter(function(s){return s.estado==='PENDIENTE';}).length;
   var confraNum=(DB.confra_apuntados||[]).length;
   var merc=DB.mercadillo||[];
+  var habs=DB.habitaciones||[];
+  var totCap=habs.reduce(function(s,h){return s+(Number(h.Capacidad)||0);},0);
+  var ocupadas=Object.keys(DB.asignaciones||{}).length;
 
+  // 8 stat cards en dos filas: 4 económicas + 4 contadores
   var stats=
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
-    +'<div class="stat" style="border-left:3px solid var(--accent)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Inscritos</div><div style="font-size:30px;font-weight:800;color:var(--accent);line-height:1">'+total+'</div></div>'
-    +'<div class="stat" style="border-left:3px solid var(--green)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Ingresado</div><div style="font-size:24px;font-weight:800;color:var(--green);line-height:1">'+cobrado.toFixed(0)+'\u20ac</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">de '+ingresoEsp.toFixed(0)+'\u20ac</div></div>'
-    +'<div class="stat" style="border-left:3px solid var(--red)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Gastos</div><div style="font-size:24px;font-weight:800;color:var(--red);line-height:1">'+totalGastos.toFixed(0)+'\u20ac</div></div>'
-    +'<div class="stat" style="border-left:3px solid '+(balance>=0?'var(--green)':'var(--red)')+'"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Balance</div><div style="font-size:24px;font-weight:800;color:'+(balance>=0?'var(--green)':'var(--red)')+';line-height:1">'+balance.toFixed(0)+'\u20ac</div></div>'
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">'
+    +'<div class="stat" style="border-left:3px solid var(--accent)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Inscritos</div><div style="font-size:28px;font-weight:800;color:var(--accent);line-height:1">'+total+'</div></div>'
+    +'<div class="stat" style="border-left:3px solid var(--green)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Ingresado</div><div style="font-size:22px;font-weight:800;color:var(--green);line-height:1">'+cobrado.toFixed(0)+'\u20ac</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">de '+ingresoEsp.toFixed(0)+'\u20ac</div></div>'
+    +'<div class="stat" style="border-left:3px solid var(--red)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Gastos</div><div style="font-size:22px;font-weight:800;color:var(--red);line-height:1">'+totalGastos.toFixed(0)+'\u20ac</div></div>'
+    +'<div class="stat" style="border-left:3px solid '+(balance>=0?'var(--green)':'var(--red)')+'"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Balance</div><div style="font-size:22px;font-weight:800;color:'+(balance>=0?'var(--green)':'var(--red)')+';line-height:1">'+balance.toFixed(0)+'\u20ac</div></div>'
+    +'<div class="stat" style="border-left:3px solid var(--amber)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Pendiente cobro</div><div style="font-size:22px;font-weight:800;color:var(--amber);line-height:1">'+pendiente.toFixed(0)+'\u20ac</div></div>'
+    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Habitaciones</div><div style="font-size:22px;font-weight:800;line-height:1">'+ocupadas+'/'+totCap+'</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">'+habs.length+' habs</div></div>'
+    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Confra</div><div style="font-size:22px;font-weight:800;line-height:1">'+confraNum+'</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">apuntados</div></div>'
+    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Mercadillo</div><div style="font-size:22px;font-weight:800;line-height:1">'+merc.length+'</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">'+merc.filter(function(x){return x.estado==='disponible';}).length+' disp</div></div>'
     +'</div>';
 
   var quickAdd=
     '<div class="card" style="margin-bottom:14px">'
-    +'<div class="card-hd"><span class="card-title">Anota rapido!</span></div>'
+    +'<div class="card-hd"><span class="card-title">Anota rapido</span></div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +'<button class="btn btn-primary" style="flex:1;min-width:140px" onclick="abrirModalIngreso()">+ Ingreso</button>'
-    +'<button class="btn" style="flex:1;min-width:140px;background:var(--red);color:#fff" onclick="abrirModalGasto()">+ Gasto</button>'
+    +'<button class="btn btn-primary" style="flex:1;min-width:120px" onclick="abrirModalIngreso()">+ Ingreso</button>'
+    +'<button class="btn" style="flex:1;min-width:120px;background:var(--red);color:#fff;border-color:var(--red)" onclick="abrirModalGasto()">+ Gasto</button>'
+    +'<button class="btn" style="flex:1;min-width:120px" onclick="enviarRecordatoriosPago()">Recordar pagos</button>'
     +'</div></div>';
 
+  // Solo solicitudes muestran badge (son pendientes reales)
   var menus=[
     {id:'personas',ico:'\ud83d\udc65',label:'Personas',color:'var(--accent)'},
     {id:'calendario',ico:'\ud83c\udfb2',label:'Calendario',color:'#7c3aed'},
     {id:'solicitudes',ico:'\ud83d\udcdd',label:'Solicitudes',color:'var(--amber)',badge:solP},
     {id:'alojamiento',ico:'\ud83c\udfe8',label:'Alojamiento',color:'var(--green)'},
     {id:'comidas',ico:'\ud83c\udf7d',label:'Comidas',color:'#16a34a'},
-    {id:'confra-admin',ico:'\ud83e\uddd9',label:'AsturL',color:'var(--accent-d)',badge:confraNum},
-    {id:'mercadillo-admin',ico:'\ud83c\udff7',label:'Mercadillo',color:'#d97706',badge:merc.length},
+    {id:'confra-admin',ico:'\ud83e\uddd9',label:'AsturL',color:'var(--accent-d)'},
+    {id:'mercadillo-admin',ico:'\ud83c\udff7',label:'Mercadillo',color:'#d97706'},
     {id:'mensajes',ico:'\u2709',label:'Mensajes',color:'#0ea5e9'},
     {id:'tallas',ico:'\ud83d\udc55',label:'Tallas',color:'var(--ink2)'},
     {id:'contabilidad',ico:'\ud83d\udcca',label:'Contabilidad',color:'var(--ink2)'},
@@ -1917,7 +1938,7 @@ function renderDashboard(){
     {id:'config',ico:'\u2699',label:'Config',color:'var(--ink2)'}
   ];
   var menuHTML='<div class="card"><div class="card-hd"><span class="card-title">Acceso rapido</span></div>'
-    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">';
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">';
   menus.forEach(function(m){
     var badge=m.badge>0?'<span style="position:absolute;top:8px;right:8px;background:var(--red);color:#fff;font-size:10px;font-weight:800;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center">'+m.badge+'</span>':'';
     menuHTML+='<button onclick="nav(\''+m.id+'\')" style="position:relative;background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:14px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;color:var(--ink);transition:all .15s">'
@@ -1929,6 +1950,7 @@ function renderDashboard(){
 
   document.getElementById('dashboard-content').innerHTML=stats+quickAdd+menuHTML;
 }
+
 
 function abrirModalIngreso(){
   var mo=document.getElementById('mo-ingreso');
@@ -2950,12 +2972,14 @@ function renderPortal(){
   if(portNick) portNick.textContent=p.Nick?('@'+p.Nick):'(sin nick)';
   var portBGG=document.getElementById('port-bgg');
   if(portBGG) portBGG.textContent=p.NickBGG||'(sin nick BGG)';
-  // Avatar
-  var portAv=document.getElementById('port-avatar');
-  if(portAv){
-    if(p.avatar){ portAv.style.backgroundImage='url('+p.avatar+')'; portAv.textContent=''; }
-    else { portAv.style.backgroundImage=''; portAv.textContent=(p.Nick||p.Nombre||'?')[0].toUpperCase(); }
-  }
+  // Avatar (cabecera y card de subida)
+  ['port-av','port-avatar'].forEach(function(id){
+    var av=document.getElementById(id);
+    if(av){
+      if(p.avatar){ av.style.backgroundImage='url('+p.avatar+')'; av.textContent=''; }
+      else { av.style.backgroundImage=''; av.textContent=(p.Nick||p.Nombre||'?')[0].toUpperCase(); }
+    }
+  });
   var chkVL=document.getElementById('chk-visible-lista');
   if(chkVL) chkVL.checked=(p.visibleLista!==false);
   const chips=[
