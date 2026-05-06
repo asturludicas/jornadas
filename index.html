@@ -468,12 +468,16 @@ tbody tr:hover td{background:var(--paper)}
 }
 .partida-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.22)}
 .partida-card:active{transform:scale(.97)}
-.partida-card.abierta{background:linear-gradient(135deg,#2563eb,#1d4ed8)}
-.partida-card.mia{background:linear-gradient(135deg,#16a34a,#15803d)}
-.partida-card.llena{background:linear-gradient(135deg,#dc2626,#b91c1c)}
-.partida-card.torneo{background:linear-gradient(135deg,#d97706,#b45309)!important;border:2px solid #fbbf24}
-.partida-card.torneo.mia{background:linear-gradient(135deg,#059669,#047857)!important;border:2px solid #34d399}
-.partida-card.torneo.llena{background:linear-gradient(135deg,#78350f,#92400e)!important}
+/* Partidas — colores llamativos por estado */
+.partida-card.abierta{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#1a1a2e!important;text-shadow:0 1px 0 rgba(255,255,255,.4)}
+.partida-card.abierta .pj{background:rgba(0,0,0,.18);color:#1a1a2e}
+.partida-card.abierta .pj-libre{background:rgba(0,0,0,.08);color:rgba(0,0,0,.45);border:1px dashed rgba(0,0,0,.3)}
+.partida-card.abierta .pj-yo{background:rgba(0,0,0,.28);color:#1a1a2e}
+.partida-card.mia{background:linear-gradient(135deg,#15803d,#14532d)}
+.partida-card.llena{background:linear-gradient(135deg,#ef4444,#b91c1c)}
+.partida-card.torneo{background:linear-gradient(135deg,#9333ea,#6b21a8)!important;border:2px solid #c084fc}
+.partida-card.torneo.mia{background:linear-gradient(135deg,#15803d,#14532d)!important;border:2px solid #4ade80}
+.partida-card.torneo.llena{background:linear-gradient(135deg,#7e22ce,#581c87)!important;border:2px solid #c084fc}
 .partida-juego{font-weight:700;font-size:13px;line-height:1.2;margin-bottom:3px;display:flex;align-items:center;gap:5px}
 .partida-meta{font-size:11px;opacity:.85;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
 .partida-nota{font-size:11px;font-style:italic;opacity:.9;margin-bottom:5px;line-height:1.3}
@@ -567,9 +571,6 @@ tbody tr:hover td{background:var(--paper)}
 
 /* Indicador de conexión */
 #conn-indicator{box-shadow:0 1px 3px rgba(0,0,0,.3)}
-
-/* Avatar en mi ficha */
-#port-avatar{box-shadow:0 2px 8px rgba(212,149,106,.3);transition:all .2s}
 
 </style>
 </head>
@@ -934,10 +935,10 @@ tbody tr:hover td{background:var(--paper)}
       <div id="page-calendario" class="page">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <div id="cal-leyenda" style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px">
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);margin-right:4px"></span>Partida abierta</span>
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--green);margin-right:4px"></span>Estoy apuntado</span>
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--red);margin-right:4px"></span>Completa</span>
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>Torneo</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#fbbf24;margin-right:4px"></span>Plazas libres</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#15803d;margin-right:4px"></span>Estoy apuntado</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ef4444;margin-right:4px"></span>Completa</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9333ea;margin-right:4px"></span>Torneo</span>
           </div>
           <button class="btn btn-primary btn-sm" onclick="abrirNuevaPartida(null,null)">+ Nueva partida</button>
         </div>
@@ -1017,7 +1018,7 @@ tbody tr:hover td{background:var(--paper)}
       <div id="page-confra" class="page">
         <div style="display:flex;gap:6px;margin-bottom:12px;padding:2px;background:var(--surface);border-radius:var(--r)">
           <button class="btn" id="tab-confra-info" onclick="confraTab('info')" style="flex:1;font-size:12px">🧙 AsturL</button>
-          <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Juegos</button>
+          <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Peticiones</button>
           <button class="btn" id="tab-confra-llevar" onclick="confraTab('llevar')" style="flex:1;font-size:12px">🎒 Traigo</button>
           <button class="btn" id="tab-confra-mercadillo" onclick="confraTab('mercadillo')" style="flex:1;font-size:12px">🏷 Mercadillo</button>
         </div>
@@ -1051,14 +1052,6 @@ tbody tr:hover td{background:var(--paper)}
           <div class="portal-hd">
             <div class="portal-av" id="port-av">?</div>
             <div><h2 style="font-size:16px" id="port-nombre"></h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px" id="port-chips"></div></div>
-          </div>
-          <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px">
-            <div id="port-avatar" style="width:64px;height:64px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;flex-shrink:0;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(212,149,106,.3)">?</div>
-            <div style="flex:1">
-              <div style="font-weight:700;font-size:13px;margin-bottom:4px">Foto de perfil</div>
-              <input type="file" id="avatar-file" accept="image/*" style="font-size:11px" onchange="subirAvatar(this)">
-              <div style="font-size:10px;color:var(--ink3);margin-top:3px">Se redimensiona a 128x128px</div>
-            </div>
           </div>
           <div class="card">
             <div class="card-hd"><span class="card-title">Mis datos</span></div>
@@ -1797,6 +1790,7 @@ const NAV_ADMIN=[
   {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
+  {id:'_salir',ico:'↩',label:'Cerrar sesión', action:'logout()'},
 ];
 const NAV_INSCRITO=[
   {id:'mi-ficha',ico:'◉',label:'Mi ficha'},
@@ -1819,7 +1813,11 @@ function buildNav(role){
   document.getElementById('sb-nav').innerHTML=sb;
 
   // Bottom nav (mobile) — max 4 items
-  const bnItems=items.filter(i=>i.id&&!i.sec&&i.id!=='_salir').slice(0,7);
+  // Bottom nav móvil: solo 1 botón principal (Menu Principal/Mi ficha) + Salir
+  var primary;
+  if(role==='admin') primary={id:'dashboard',ico:'☰',label:'Menu Principal'};
+  else primary={id:'mi-ficha',ico:'☰',label:'Menu Principal'};
+  const bnItems=[primary];
   var _bnLogout='<button class="bn-item" onclick="logout()" style="color:var(--red);font-weight:600"><span class="bn-ico" style="font-size:20px">↩</span><span style="font-size:10px;font-weight:700">Salir</span></button>';
   setTimeout(actualizarBadgeHoy,300);
   document.getElementById('bottom-nav').innerHTML=bnItems.map(i=>{
@@ -1840,7 +1838,7 @@ function nav(page, pushHist=true){
   ['si-'+page,'bn-'+page].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.add('active'); });
 
   const titles={
-    dashboard:'Dashboard',personas:'Personas',solicitudes:'Solicitudes',
+    dashboard:'Menu Principal',personas:'Personas',solicitudes:'Solicitudes',
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
@@ -2972,14 +2970,9 @@ function renderPortal(){
   if(portNick) portNick.textContent=p.Nick?('@'+p.Nick):'(sin nick)';
   var portBGG=document.getElementById('port-bgg');
   if(portBGG) portBGG.textContent=p.NickBGG||'(sin nick BGG)';
-  // Avatar (cabecera y card de subida)
-  ['port-av','port-avatar'].forEach(function(id){
-    var av=document.getElementById(id);
-    if(av){
-      if(p.avatar){ av.style.backgroundImage='url('+p.avatar+')'; av.textContent=''; }
-      else { av.style.backgroundImage=''; av.textContent=(p.Nick||p.Nombre||'?')[0].toUpperCase(); }
-    }
-  });
+  // Inicial del nick en cabecera
+  var portAv=document.getElementById('port-av');
+  if(portAv){ portAv.textContent=(p.Nick||p.Nombre||'?')[0].toUpperCase(); }
   var chkVL=document.getElementById('chk-visible-lista');
   if(chkVL) chkVL.checked=(p.visibleLista!==false);
   const chips=[
@@ -5087,6 +5080,7 @@ function confraTab(tab){
     var b=document.getElementById('tab-confra-'+t);
     if(b){ b.style.background=t===tab?'var(--accent)':''; b.style.color=t===tab?'#fff':''; }
   });
+  if(tab==='info') renderConfra();
   if(tab==='peticiones') renderConfraPeticiones();
   if(tab==='llevar') renderConfraLlevar();
   if(tab==='mercadillo') renderMercadilloEnTab();
@@ -5374,48 +5368,6 @@ function actualizarBadgeHoy(){
   }
 }
 
-
-// ─── AVATAR ─────────────────────────────────────────────
-async function subirAvatar(input){
-  if(!input.files||!input.files[0]||!ME) return;
-  var file=input.files[0];
-  if(file.size>5*1024*1024){ toast('Imagen demasiado grande (max 5MB)','err'); return; }
-  toast('Procesando imagen...','ok');
-  // Comprimir a 128x128 base64
-  var img=new Image();
-  var url=URL.createObjectURL(file);
-  img.onload=async function(){
-    URL.revokeObjectURL(url);
-    var canvas=document.createElement('canvas');
-    var size=128;
-    canvas.width=size;canvas.height=size;
-    var ctx=canvas.getContext('2d');
-    // Crop cuadrado centrado
-    var s=Math.min(img.width,img.height);
-    var sx=(img.width-s)/2;
-    var sy=(img.height-s)/2;
-    ctx.drawImage(img,sx,sy,s,s,0,0,size,size);
-    var b64=canvas.toDataURL('image/jpeg',0.7);
-    var per=DB.personas.find(function(x){return (x.ID||x.id||'')===(ME.ID||ME.id||'');});
-    if(per){ per.avatar=b64; ME.avatar=b64; }
-    await saveRemote();
-    toast('Foto guardada ✓','ok');
-    renderPortal();
-  };
-  img.src=url;
-}
-
-function renderAvatar(p, sizePx){
-  var sz=sizePx||64;
-  var el=document.createElement('div');
-  el.style.cssText='width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:'+(sz/2.6)+'px;flex-shrink:0;background-size:cover;background-position:center';
-  if(p&&p.avatar){
-    el.style.backgroundImage='url('+p.avatar+')';
-    el.style.color='transparent';
-  }
-  el.textContent=(p&&(p.Nick||p.Nombre)?(p.Nick||p.Nombre)[0].toUpperCase():'?');
-  return el.outerHTML;
-}
 
 
 // ─── SINCRONIZACIÓN OFFLINE ────────────────────────────
