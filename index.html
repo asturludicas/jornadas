@@ -1906,9 +1906,6 @@ function renderDashboard(){
     +'<div class="stat" style="border-left:3px solid var(--red)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Gastos</div><div style="font-size:22px;font-weight:800;color:var(--red);line-height:1">'+totalGastos.toFixed(0)+'\u20ac</div></div>'
     +'<div class="stat" style="border-left:3px solid '+(balance>=0?'var(--green)':'var(--red)')+'"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Balance</div><div style="font-size:22px;font-weight:800;color:'+(balance>=0?'var(--green)':'var(--red)')+';line-height:1">'+balance.toFixed(0)+'\u20ac</div></div>'
     +'<div class="stat" style="border-left:3px solid var(--amber)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Pendiente cobro</div><div style="font-size:22px;font-weight:800;color:var(--amber);line-height:1">'+pendiente.toFixed(0)+'\u20ac</div></div>'
-    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Habitaciones</div><div style="font-size:22px;font-weight:800;line-height:1">'+ocupadas+'/'+totCap+'</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">'+habs.length+' habs</div></div>'
-    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Confra</div><div style="font-size:22px;font-weight:800;line-height:1">'+confraNum+'</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">apuntados</div></div>'
-    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Mercadillo</div><div style="font-size:22px;font-weight:800;line-height:1">'+merc.length+'</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">'+merc.filter(function(x){return x.estado==='disponible';}).length+' disp</div></div>'
     +'</div>';
 
   var quickAdd=
@@ -4822,9 +4819,17 @@ function renderMercadillo(){
       +'</div>';
   } else {
     // Mis juegos primero, luego disponibles, luego reservados
+    // Mis juegos primero, después disponibles, finalmente reservados (al fondo)
     var misItems=items.filter(function(i){return i.vendedorId===pid;});
     var disponibles=items.filter(function(i){return i.vendedorId!==pid&&i.estado==='disponible';});
-    var reservados=items.filter(function(i){return i.vendedorId!==pid&&i.estado!=='disponible';});
+    var reservados=items.filter(function(i){return i.vendedorId!==pid&&i.estado==='reservado';});
+    // Fallback: si algún item no encaja en ninguna categoría, mostrarlo en disponibles
+    var todoIds=new Set([...misItems,...disponibles,...reservados].map(function(x){return x.id;}));
+    items.forEach(function(i){
+      if(!todoIds.has(i.id)){
+        if(i.estado==='reservado') reservados.push(i); else disponibles.push(i);
+      }
+    });
 
     var renderItem=function(item){
       var esMio=item.vendedorId===pid;
@@ -4932,15 +4937,35 @@ async function publicarAnuncio(){
 }
 
 async function reservarJuego(itemId){
-  if(!ME||_saving) return;
+  if(_saving){ toast('Espera, guardando...','err'); return; }
   var item=DB.mercadillo.find(function(x){return x.id===itemId;});
   if(!item||item.estado!=='disponible'){ toast('Ya no está disponible','err'); return; }
-  if(!confirm('¿Reservar "'+item.juego+'" por '+item.precio+'€?\n\nEl vendedor recibirá tu contacto para coordinar la entrega.')){ return; }
-  var pid=ME.ID||ME.id||'';
+  if(!confirm('¿Reservar "'+item.juego+'" por '+item.precio+'€?\nEl vendedor recibirá tu contacto.')){ return; }
+  // pid coherente para admin (ORG_DANI/ORG_ALEX) o inscrito (ME.ID)
+  var pid='', _nick='', _nombre='';
+  if(ROLE==='admin'){
+    var adminNick=lsGet('confra_admin_nick','')||lsGet('admin_nick','');
+    if(!adminNick){
+      // Forzar elección si no hay nick guardado
+      adminNick=prompt('¿Quién reserva? Escribe DaniB o Alex:','DaniB')||'';
+      if(adminNick) lsSet('admin_nick',adminNick);
+    }
+    if(!adminNick){ toast('Necesitas indicar quién reserva','err'); return; }
+    var per=DB.personas.find(function(x){return (x.Nick||'').toLowerCase()===adminNick.toLowerCase();});
+    pid=per?(per.ID||per.id||''):('ADMIN_'+adminNick);
+    _nick=adminNick;
+    _nombre=per?(per.NombreCompleto||per.Nombre||adminNick):adminNick;
+  } else if(ME){
+    pid=ME.ID||ME.id||'';
+    _nick=ME.Nick||'';
+    _nombre=ME.NombreCompleto||ME.Nombre||'?';
+  } else {
+    toast('Sesion no iniciada','err'); return;
+  }
   item.estado='reservado';
   item.compradorId=pid;
-  item.compradorNick=ME.Nick||'';
-  item.compradorNombre=ME.NombreCompleto||ME.Nombre||'?';
+  item.compradorNick=_nick;
+  item.compradorNombre=_nombre;
 
   // Notificación al vendedor
   if(!DB.mensajes) DB.mensajes=[];
@@ -4948,7 +4973,7 @@ async function reservarJuego(itemId){
     id:uid('MSG_'),
     asunto:'¡Alguien quiere tu juego!',
     cuerpo:'Tu juego "'+item.juego+'" ('+item.precio+'€) ha sido reservado por '
-      +(ME.Nick?'@'+ME.Nick+' — ':'')+( ME.NombreCompleto||ME.Nombre||'?')+'.\nContacta con él/ella para coordinar la entrega.',
+      +(_nick?'@'+_nick+' — ':'')+(_nombre||'?')+'.\nContacta con esa persona para la entrega.',
     seg:'PERSONA', segV:item.vendedorId,
     ts:new Date().toISOString(), _auto:true
   });
@@ -5636,8 +5661,9 @@ async function guardarInfoComida(){
 
 // ─── NOTIFICACIONES IN-APP ─────────────────────────────
 function getMensajesNoLeidos(){
-  if(!ME||ROLE!=='inscrito') return [];
-  const pid=ME.ID||ME.id||'';
+  if(!ME) return [];
+  // Para admin, usar email como pid de leidos para que persista entre sesiones
+  const pid=ROLE==='admin'?('ADMIN_'+lsGet('admin_email','')):(ME.ID||ME.id||'');
   const leidos=(DB.mensajes_leidos||{})[pid]||[];
   // Mensajes dirigidos a esta persona (por modalidad, alojamiento o todos)
   return (DB.mensajes||[]).filter(m=>{
@@ -5690,7 +5716,7 @@ function cerrarBanner(msgId){
 
 async function marcarLeido(msgId){
   cerrarBanner(msgId);
-  const pid=ME?.ID||ME?.id||'';
+  const pid=ROLE==='admin'?('ADMIN_'+lsGet('admin_email','')):(ME?.ID||ME?.id||'');
   if(!pid||!msgId) return;
   if(!DB.mensajes_leidos) DB.mensajes_leidos={};
   if(!DB.mensajes_leidos[pid]) DB.mensajes_leidos[pid]=[];
