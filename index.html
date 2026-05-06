@@ -635,12 +635,7 @@ tbody tr:hover td{background:var(--paper)}
 
       <!-- Dashboard -->
       <div id="page-dashboard" class="page">
-        <div class="stats" id="stats-grid"></div>
-        <div id="dash-quicklinks" style="display:grid;gap:8px;grid-template-columns:1fr 1fr;margin-bottom:14px"></div>
-        <div class="card">
-          <div class="card-hd"><span class="card-title">Solicitudes pendientes</span><button class="btn btn-sm" onclick="nav('solicitudes')">Ver todas</button></div>
-          <div id="dash-sols"></div>
-        </div>
+        <div id="dashboard-content"></div>
       </div>
 
       <!-- Personas -->
@@ -688,7 +683,9 @@ tbody tr:hover td{background:var(--paper)}
               <span style="font-size:13px">Módulo alojamiento: <strong id="lbl-aloj">CERRADO</strong></span>
             </div>
             <div style="display:flex;gap:6px">
-              <button class="btn btn-sm" onclick="exportAlojamiento()">⬇ Lista hotel</button>
+              <button class="btn btn-sm" onclick="exportarHotel('jueves')">📋 PDF Jue→Dom</button>
+              <button class="btn btn-sm" onclick="exportarHotel('viernes')">📋 PDF Vie→Dom</button>
+              <button class="btn btn-sm" onclick="exportAlojamiento()">⬇ CSV</button>
             </div>
           </div>
         </div>
@@ -942,8 +939,10 @@ tbody tr:hover td{background:var(--paper)}
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--red);margin-right:4px"></span>Completa</span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>Torneo</span>
           </div>
-        </div>
           <button class="btn btn-primary btn-sm" onclick="abrirNuevaPartida(null,null)">+ Nueva partida</button>
+        </div>
+        <div style="margin-bottom:10px">
+          <input type="text" id="cal-search" placeholder="🔍 Buscar juego..." style="width:100%;padding:8px 10px;border:1.5px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:13px" oninput="filtrarCalendario(this.value)">
         </div>
         <div class="cal-outer">
           <div class="cal-dias" id="cal-dias"></div>
@@ -1873,67 +1872,134 @@ function updateBadge(){
 // ─── DASHBOARD ─────────────────────────────────────────
 function renderDashboard(){
   if(!DB||!DB.personas) return;
-  const inscritos=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador&&p.Activo!=='FALSE');
-  const total=inscritos.length;
-  const totales={
-    jueves:inscritos.filter(p=>(p.Modalidad||'').toLowerCase().includes('jueves')).length,
-    viernes:inscritos.filter(p=>(p.Modalidad||'').toLowerCase().includes('viernes')).length,
-    sabado:inscritos.filter(p=>(p.Modalidad||'').toLowerCase().includes('sábado')||(p.Modalidad||'').toLowerCase().includes('sabado')).length,
-  };
-  // Pagos: total esperado vs cobrado
-  const ingresoEsp=inscritos.reduce((s,p)=>s+(Number(p.ImporteTotal)||0),0);
-  const cobrado=(DB.pagos||[]).reduce((s,p)=>s+(Number(p.Importe)||0),0);
-  const pendiente=Math.max(0,ingresoEsp-cobrado);
-  // Habitaciones
-  const habs=(DB.habitaciones||[]);
-  const totHabs=habs.length;
-  const totCap=habs.reduce((s,h)=>s+(Number(h.Capacidad)||0),0);
-  const ocupadas=Object.keys(DB.asignaciones||{}).length;
-  const libres=Math.max(0,totCap-ocupadas);
-  // Comidas
-  const optin=DB.comidas_optin||{};
-  const comidasInfo=Object.keys(DB.comidas_info||{}).length;
-  // Confra
-  const confraNum=(DB.confra_apuntados||[]).length;
-  // Mercadillo
-  const merc=DB.mercadillo||[];
-  const mercDisp=merc.filter(x=>x.estado==='disponible').length;
-  const mercVend=merc.filter(x=>x.estado==='reservado').length;
-  // Solicitudes pendientes
-  const solP=(DB.solicitudes||[]).filter(s=>s.estado==='PENDIENTE').length;
+  var inscritos=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador&&p.Activo!=='FALSE';});
+  var total=inscritos.length;
 
-  // Datos por modalidad
-  const modalidades={};
-  inscritos.forEach(p=>{
-    const m=(p.Modalidad||'Sin modalidad').split('(')[0].trim()||'Sin modalidad';
-    modalidades[m]=(modalidades[m]||0)+1;
-  });
-  // SVG bar chart simple
-  const maxMod=Math.max(...Object.values(modalidades),1);
-  const barras=Object.entries(modalidades).map(([k,v])=>{
-    const pct=Math.round((v/maxMod)*100);
-    return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span style="font-weight:600">'+k+'</span><span style="color:var(--ink3)">'+v+'</span></div><div style="height:8px;background:var(--paper);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--accent);border-radius:4px;transition:width .5s"></div></div></div>';
-  }).join('');
+  var ingresoEsp=inscritos.reduce(function(s,p){return s+(Number(p.ImporteTotal)||0);},0);
+  var totalCobros=(DB.cobros||[]).reduce(function(s,c){return s+(Number(c.importe)||0);},0);
+  var pagosManual=(DB.pagos||[]).reduce(function(s,p){return s+(Number(p.Importe)||0);},0);
+  var cobrado=totalCobros+pagosManual;
+  var totalGastos=(DB.gastos||[]).reduce(function(s,g){return s+(Number(g.importe)||0);},0);
+  var balance=cobrado-totalGastos;
 
-  const html_d=
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">'
-    +'<div class="stat" style="border-left:3px solid var(--accent)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Inscritos</div><div style="font-size:28px;font-weight:800;color:var(--accent)">'+total+'</div></div>'
-    +'<div class="stat" style="border-left:3px solid var(--green)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Cobrado</div><div style="font-size:24px;font-weight:800;color:var(--green)">'+cobrado.toFixed(0)+'€</div><div style="font-size:11px;color:var(--ink3)">de '+ingresoEsp.toFixed(0)+'€</div></div>'
-    +'<div class="stat" style="border-left:3px solid var(--red)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Pendiente</div><div style="font-size:24px;font-weight:800;color:var(--red)">'+pendiente.toFixed(0)+'€</div></div>'
-    +'<div class="stat" style="border-left:3px solid var(--amber)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Habitaciones</div><div style="font-size:24px;font-weight:800">'+ocupadas+'/'+totCap+'</div><div style="font-size:11px;color:var(--ink3)">'+libres+' camas libres</div></div>'
-    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Confra</div><div style="font-size:24px;font-weight:800">'+confraNum+'</div><div style="font-size:11px;color:var(--ink3)">apuntados</div></div>'
-    +'<div class="stat"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Mercadillo</div><div style="font-size:24px;font-weight:800">'+merc.length+'</div><div style="font-size:11px;color:var(--ink3)">'+mercDisp+' disponibles · '+mercVend+' vendidos</div></div>'
-    +'<div class="stat" style="cursor:pointer" onclick="nav(\'solicitudes\')"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Solicitudes</div><div style="font-size:24px;font-weight:800;color:'+(solP>0?'var(--red)':'var(--ink)')+'">'+solP+'</div><div style="font-size:11px;color:var(--ink3)">pendientes</div></div>'
-    +'</div>'
-    +'<div class="card"><div class="card-hd"><span class="card-title">Inscritos por modalidad</span></div>'+(barras||'<div style="color:var(--ink3);font-size:13px">Sin datos aún</div>')+'</div>'
-    +'<div class="card"><div class="card-hd"><span class="card-title">Acciones rápidas</span></div>'
-    +'<div style="display:flex;flex-direction:column;gap:8px">'
-    +'<button class="btn" onclick="enviarRecordatoriosPago()">📨 Enviar recordatorios de pago pendiente</button>'
-    +'<button class="btn" onclick="exportarHotel(\'jueves\')">📋 PDF hotel — Jueves a Domingo</button>'
-    +'<button class="btn" onclick="exportarHotel(\'viernes\')">📋 PDF hotel — Viernes a Domingo</button>'
-    +'<button class="btn" onclick="toggleEventoEnVivo()">🔴 Modo evento en vivo: <strong>'+(DB.config?.eventoEnVivo?'ACTIVO':'INACTIVO')+'</strong></button>'
+  var solP=(DB.solicitudes||[]).filter(function(s){return s.estado==='PENDIENTE';}).length;
+  var confraNum=(DB.confra_apuntados||[]).length;
+  var merc=DB.mercadillo||[];
+
+  var stats=
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+    +'<div class="stat" style="border-left:3px solid var(--accent)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Inscritos</div><div style="font-size:30px;font-weight:800;color:var(--accent);line-height:1">'+total+'</div></div>'
+    +'<div class="stat" style="border-left:3px solid var(--green)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Ingresado</div><div style="font-size:24px;font-weight:800;color:var(--green);line-height:1">'+cobrado.toFixed(0)+'\u20ac</div><div style="font-size:11px;color:var(--ink3);margin-top:3px">de '+ingresoEsp.toFixed(0)+'\u20ac</div></div>'
+    +'<div class="stat" style="border-left:3px solid var(--red)"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Gastos</div><div style="font-size:24px;font-weight:800;color:var(--red);line-height:1">'+totalGastos.toFixed(0)+'\u20ac</div></div>'
+    +'<div class="stat" style="border-left:3px solid '+(balance>=0?'var(--green)':'var(--red)')+'"><div style="font-size:11px;color:var(--ink3);font-weight:700;text-transform:uppercase">Balance</div><div style="font-size:24px;font-weight:800;color:'+(balance>=0?'var(--green)':'var(--red)')+';line-height:1">'+balance.toFixed(0)+'\u20ac</div></div>'
+    +'</div>';
+
+  var quickAdd=
+    '<div class="card" style="margin-bottom:14px">'
+    +'<div class="card-hd"><span class="card-title">Anota rapido!</span></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn btn-primary" style="flex:1;min-width:140px" onclick="abrirModalIngreso()">+ Ingreso</button>'
+    +'<button class="btn" style="flex:1;min-width:140px;background:var(--red);color:#fff" onclick="abrirModalGasto()">+ Gasto</button>'
     +'</div></div>';
-  document.getElementById('dashboard-content').innerHTML=html_d;
+
+  var menus=[
+    {id:'personas',ico:'\ud83d\udc65',label:'Personas',color:'var(--accent)'},
+    {id:'calendario',ico:'\ud83c\udfb2',label:'Calendario',color:'#7c3aed'},
+    {id:'solicitudes',ico:'\ud83d\udcdd',label:'Solicitudes',color:'var(--amber)',badge:solP},
+    {id:'alojamiento',ico:'\ud83c\udfe8',label:'Alojamiento',color:'var(--green)'},
+    {id:'comidas',ico:'\ud83c\udf7d',label:'Comidas',color:'#16a34a'},
+    {id:'confra-admin',ico:'\ud83e\uddd9',label:'AsturL',color:'var(--accent-d)',badge:confraNum},
+    {id:'mercadillo-admin',ico:'\ud83c\udff7',label:'Mercadillo',color:'#d97706',badge:merc.length},
+    {id:'mensajes',ico:'\u2709',label:'Mensajes',color:'#0ea5e9'},
+    {id:'tallas',ico:'\ud83d\udc55',label:'Tallas',color:'var(--ink2)'},
+    {id:'contabilidad',ico:'\ud83d\udcca',label:'Contabilidad',color:'var(--ink2)'},
+    {id:'suministros',ico:'\ud83d\udce6',label:'Suministros',color:'var(--ink2)'},
+    {id:'config',ico:'\u2699',label:'Config',color:'var(--ink2)'}
+  ];
+  var menuHTML='<div class="card"><div class="card-hd"><span class="card-title">Acceso rapido</span></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">';
+  menus.forEach(function(m){
+    var badge=m.badge>0?'<span style="position:absolute;top:8px;right:8px;background:var(--red);color:#fff;font-size:10px;font-weight:800;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center">'+m.badge+'</span>':'';
+    menuHTML+='<button onclick="nav(\''+m.id+'\')" style="position:relative;background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:14px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;color:var(--ink);transition:all .15s">'
+      +'<div style="font-size:28px;line-height:1">'+m.ico+'</div>'
+      +'<div style="font-size:12px;font-weight:700;color:'+m.color+'">'+m.label+'</div>'
+      +badge+'</button>';
+  });
+  menuHTML+='</div></div>';
+
+  document.getElementById('dashboard-content').innerHTML=stats+quickAdd+menuHTML;
+}
+
+function abrirModalIngreso(){
+  var mo=document.getElementById('mo-ingreso');
+  if(!mo){
+    mo=document.createElement('div');mo.className='mo';mo.id='mo-ingreso';
+    mo.innerHTML='<div class="mo-box" style="max-width:440px"><div class="mo-hd"><h3>+ Ingreso</h3>'
+      +'<button class="mo-close" onclick="closeModal(\'mo-ingreso\')">\u2715</button></div>'
+      +'<div class="mo-body">'
+      +'<div class="fg"><label>Concepto *</label><input type="text" id="ing-concepto" placeholder="Pago de Juan, etc."></div>'
+      +'<div class="fg"><label>Importe (\u20ac) *</label><input type="number" id="ing-importe" placeholder="50" step="0.5"></div>'
+      +'<div class="fg"><label>Notas (opcional)</label><textarea id="ing-notas" rows="2"></textarea></div>'
+      +'</div>'
+      +'<div class="mo-ft"><button class="btn" onclick="closeModal(\'mo-ingreso\')">Cancelar</button>'
+      +'<button class="btn btn-primary" onclick="guardarIngreso()">Guardar</button></div></div>';
+    document.body.appendChild(mo);
+  }
+  document.getElementById('ing-concepto').value='';
+  document.getElementById('ing-importe').value='';
+  document.getElementById('ing-notas').value='';
+  openModal('mo-ingreso');
+}
+
+async function guardarIngreso(){
+  var c=document.getElementById('ing-concepto').value.trim();
+  var i=parseFloat(document.getElementById('ing-importe').value)||0;
+  var n=document.getElementById('ing-notas').value.trim();
+  if(!c){toast('Escribe el concepto','err');return;}
+  if(!i){toast('Escribe el importe','err');return;}
+  if(!DB.cobros) DB.cobros=[];
+  DB.cobros.push({id:uid('COB_'),fecha:new Date().toISOString().split('T')[0],concepto:c,importe:i,notas:n});
+  closeModal('mo-ingreso');
+  await saveRemote();
+  renderDashboard();
+  toast('Ingreso de '+i.toFixed(2)+'\u20ac registrado','ok');
+}
+
+function abrirModalGasto(){
+  var mo=document.getElementById('mo-gasto');
+  if(!mo){
+    mo=document.createElement('div');mo.className='mo';mo.id='mo-gasto';
+    mo.innerHTML='<div class="mo-box" style="max-width:440px"><div class="mo-hd"><h3>+ Gasto</h3>'
+      +'<button class="mo-close" onclick="closeModal(\'mo-gasto\')">\u2715</button></div>'
+      +'<div class="mo-body">'
+      +'<div class="fg"><label>Concepto *</label><input type="text" id="gas-concepto" placeholder="Cena, suministros, etc."></div>'
+      +'<div class="fg"><label>Categoria</label><select id="gas-cat"><option>Comida</option><option>Bebida</option><option>Suministros</option><option>Premios</option><option>Otros</option></select></div>'
+      +'<div class="fg"><label>Importe (\u20ac) *</label><input type="number" id="gas-importe" placeholder="30" step="0.5"></div>'
+      +'<div class="fg"><label>Notas (opcional)</label><textarea id="gas-notas" rows="2"></textarea></div>'
+      +'</div>'
+      +'<div class="mo-ft"><button class="btn" onclick="closeModal(\'mo-gasto\')">Cancelar</button>'
+      +'<button class="btn btn-primary" onclick="guardarGasto()">Guardar</button></div></div>';
+    document.body.appendChild(mo);
+  }
+  document.getElementById('gas-concepto').value='';
+  document.getElementById('gas-importe').value='';
+  document.getElementById('gas-notas').value='';
+  openModal('mo-gasto');
+}
+
+async function guardarGasto(){
+  var c=document.getElementById('gas-concepto').value.trim();
+  var cat=document.getElementById('gas-cat').value;
+  var i=parseFloat(document.getElementById('gas-importe').value)||0;
+  var n=document.getElementById('gas-notas').value.trim();
+  if(!c){toast('Escribe el concepto','err');return;}
+  if(!i){toast('Escribe el importe','err');return;}
+  if(!DB.gastos) DB.gastos=[];
+  DB.gastos.push({id:uid('GAS_'),fecha:new Date().toISOString().split('T')[0],categoria:cat,concepto:c,importe:i,notas:n});
+  closeModal('mo-gasto');
+  await saveRemote();
+  renderDashboard();
+  toast('Gasto de '+i.toFixed(2)+'\u20ac registrado','ok');
 }
 
 
@@ -5252,15 +5318,6 @@ async function enviarRecordatoriosPago(){
   renderDashboard();
 }
 
-
-// ─── MODO EVENTO EN VIVO ───────────────────────────────
-async function toggleEventoEnVivo(){
-  if(!DB.config) DB.config={};
-  DB.config.eventoEnVivo=!DB.config.eventoEnVivo;
-  await saveRemote();
-  toast(DB.config.eventoEnVivo?'🔴 Modo evento ACTIVADO':'Modo evento desactivado','ok');
-  renderDashboard();
-}
 
 
 // ─── BADGE PARTIDAS DE HOY ──────────────────────────────
