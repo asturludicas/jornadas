@@ -1049,6 +1049,16 @@ tbody tr:hover td{background:var(--paper)}
       <div id="page-mi-ficha" class="page">
         <div class="portal">
           <div id="aviso-box" style="display:none;margin-bottom:14px"></div>
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-hd"><span class="card-title">Acceso rápido</span></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:8px">
+              <button onclick="nav('calendario')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🎲</div><div style="font-size:11px;font-weight:700;color:#7c3aed">Calendario</div></button>
+              <button onclick="nav('confra')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🧙</div><div style="font-size:11px;font-weight:700;color:var(--accent-d)">AsturL</div></button>
+              <button onclick="nav('mi-aloj')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🏨</div><div style="font-size:11px;font-weight:700;color:var(--green)">Alojamiento</div></button>
+              <button onclick="nav('mi-agenda')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">📋</div><div style="font-size:11px;font-weight:700;color:var(--accent)">Mi agenda</div></button>
+              <button onclick="nav('mi-comidas')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🍽</div><div style="font-size:11px;font-weight:700;color:#16a34a">Comidas</div></button>
+            </div>
+          </div>
           <div class="portal-hd">
             <div class="portal-av" id="port-av">?</div>
             <div><h2 style="font-size:16px" id="port-nombre"></h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px" id="port-chips"></div></div>
@@ -1164,7 +1174,7 @@ tbody tr:hover td{background:var(--paper)}
         <div class="fg"><label>Talla camiseta</label><select id="mp-talla"><option value="">—</option><option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>XXXL</option></select></div>
         <div class="fg"><label>Grupo ID</label><input type="text" id="mp-gid" placeholder="G_001"></div>
         <div class="fg"><label>Rol</label><select id="mp-rol"><option value="SI">Titular</option><option value="NO">Acompañante</option></select></div>
-        <div class="fg"><label>Importe total (€)</label><input type="number" id="mp-imp" step="0.01" placeholder="0"></div>
+        <div class="fg"><label>Importe total (€) <button type="button" onclick="recalcularImporte()" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:2px 6px;cursor:pointer;font-size:10px;color:var(--accent);font-weight:600;margin-left:6px">Recalcular</button></label><input type="number" id="mp-imp" step="0.01" placeholder="0"></div>
         <div class="fg" style="align-self:flex-end">
           <label>Código acceso</label>
           <div style="display:flex;gap:6px"><input type="text" id="mp-cod" placeholder="ABC123"><button class="btn btn-sm" type="button" onclick="genCod()">🔑</button></div>
@@ -2126,6 +2136,29 @@ function precioDeModalidad(modStr){
   if(!modStr) return 0;
   var m = String(modStr).match(/(\d+(?:[.,]\d+)?)\s*\u20ac/);
   return m ? Number(String(m[1]).replace(',','.')) : 0;
+}
+
+
+// ─── Recalcular importe forzosamente desde la modalidad ─
+function recalcularImporte(){
+  var sel = document.getElementById('mp-mod');
+  var imp = document.getElementById('mp-imp');
+  if(!sel || !imp) return;
+  var modAct = sel.value || '';
+  var precio = precioDeModalidad(modAct);
+  if(!precio){
+    alert('No se puede extraer un precio de "' + modAct + '".\nLa modalidad debe contener un importe como "(270€)".');
+    return;
+  }
+  var actual = Number(imp.value || 0);
+  if(actual === precio){
+    alert('El importe ya coincide con el precio de la modalidad (' + precio.toFixed(2) + '€).');
+    return;
+  }
+  if(confirm('Cambiar importe total:\n\n  De: ' + actual.toFixed(2) + '€\n  A:  ' + precio.toFixed(2) + '€\n\n(precio nominal de la modalidad)')){
+    imp.value = precio.toFixed(2);
+    sel.setAttribute('data-orig-mod', modAct);
+  }
 }
 
 // ─── Listener: al cambiar mp-mod en el modal de persona ─
