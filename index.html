@@ -2083,6 +2083,7 @@ function openModalPersona(){
   ['mp-id','mp-nombre','mp-apellidos','mp-nick','mp-email','mp-tel','mp-ciudad','mp-cod','mp-alerg','mp-obs','mp-notas','mp-gid'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
   document.getElementById('mp-imp').value='';
   document.getElementById('mp-rol').value='SI';
+  var _mm=document.getElementById('mp-mod'); if(_mm){_mm.removeAttribute('data-orig-mod'); _mm.onchange=onChangeModalidad;}
   document.getElementById('mp-title').textContent='Nueva persona';
   openModal('mo-persona');
 }
@@ -2096,7 +2097,12 @@ function editarPersona(id){
   document.getElementById('mp-tel').value=p.Telefono||'';
   document.getElementById('mp-ciudad').value=p.Ciudad||'';
   const mpMod=document.getElementById('mp-mod');
-  if(mpMod){ if(![...mpMod.options].find(o=>o.value===p.Modalidad)) mpMod.add(new Option(p.Modalidad,p.Modalidad)); mpMod.value=p.Modalidad||''; }
+  if(mpMod){
+    if(![...mpMod.options].find(o=>o.value===p.Modalidad)) mpMod.add(new Option(p.Modalidad,p.Modalidad));
+    mpMod.value=p.Modalidad||'';
+    mpMod.setAttribute('data-orig-mod', p.Modalidad||'');
+    mpMod.onchange = onChangeModalidad;
+  }
   document.getElementById('mp-talla').value=p.TallaCamiseta||'';
   document.getElementById('mp-gid').value=p.GrupoID||'';
   document.getElementById('mp-rol').value=p.EsTitular||'SI';
@@ -2114,6 +2120,41 @@ async function genCodigoPersona(pid){
   p.Codigo=Math.random().toString(36).slice(2,8).toUpperCase();
   await saveRemote(); renderPersonas(); toast('Código: '+p.Codigo,'ok');
 }
+
+// ─── Extraer precio (NNN€) de un texto de modalidad ─────
+function precioDeModalidad(modStr){
+  if(!modStr) return 0;
+  var m = String(modStr).match(/(\d+(?:[.,]\d+)?)\s*\u20ac/);
+  return m ? Number(String(m[1]).replace(',','.')) : 0;
+}
+
+// ─── Listener: al cambiar mp-mod en el modal de persona ─
+function onChangeModalidad(){
+  var sel = document.getElementById('mp-mod');
+  var imp = document.getElementById('mp-imp');
+  if(!sel || !imp) return;
+  var origMod = sel.getAttribute('data-orig-mod') || '';
+  var newMod = sel.value || '';
+  if(!origMod || origMod === newMod) return;
+  var pOld = precioDeModalidad(origMod);
+  var pNew = precioDeModalidad(newMod);
+  if(!pOld && !pNew) return;
+  var diff = pNew - pOld;
+  if(diff === 0) return;
+  var actual = Number(imp.value || 0);
+  var nuevoImp = actual + diff;
+  var msg = 'La modalidad ha cambiado:\n\n' +
+    '  Antes: ' + origMod + '\n' +
+    '  Ahora: ' + newMod + '\n\n' +
+    'Diferencia: ' + (diff > 0 ? '+' : '') + diff.toFixed(2) + '\u20ac\n\n' +
+    '\u00bfActualizar el importe total de ' + actual.toFixed(2) + '\u20ac a ' + nuevoImp.toFixed(2) + '\u20ac?';
+  if(confirm(msg)){
+    imp.value = nuevoImp.toFixed(2);
+    sel.setAttribute('data-orig-mod', newMod); // evitar re-prompts
+  }
+}
+
+
 async function guardarPersona(){
   const id=document.getElementById('mp-id').value||uid('P_');
   const p={
