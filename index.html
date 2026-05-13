@@ -1708,7 +1708,7 @@ async function loginInscrito(){
   const passOk = cod === CFG.INSCRITO_PASS
               || cod.toLowerCase() === CFG.INSCRITO_PASS.toLowerCase();
   if(!passOk){
-    showErr('err-i', 'Contraseña incorrecta. La contraseña es: ' + CFG.INSCRITO_PASS);
+    showErr('err-i', 'Contraseña incorrecta.');
     return;
   }
 
