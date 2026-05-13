@@ -3289,21 +3289,50 @@ async function asignarHabInscrito(habId, personaId, nombre){
     }
     const actual=DB.asignaciones[personaId];
     if(actual===habId){
-      // Desasignar
+      // Desasignar (solo a la persona, no al grupo)
       delete DB.asignaciones[personaId];
       toast(`${nombre} eliminado/a de la habitación`);
     } else {
+      // ─── Asignación con lógica de grupo ─────────────────
+      const persona=DB.personas.find(x=>(x.ID||x.id||'')===personaId);
+      const grupoId=persona?.GrupoID||'';
+      // Si pertenece a un grupo, asignar a TODO el grupo
+      let aAsignar=[personaId];
+      let nombresGrupo=[nombre];
+      if(grupoId){
+        const miembros=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador&&p.GrupoID===grupoId&&(p.ID||p.id||'')!==personaId);
+        if(miembros.length>0){
+          aAsignar=[personaId,...miembros.map(p=>p.ID||p.id||'')];
+          nombresGrupo=[nombre,...miembros.map(p=>p.NombreCompleto||p.Nombre||'?')];
+        }
+      }
       // Verificar capacidad con datos frescos
       const h=DB.habitaciones.find(x=>(x.ID||x.id||'')===habId);
       const cap=Number(h?.Capacidad||h?.cap||2);
-      const ocupados=DB.personas.filter(p=>(DB.asignaciones[p.ID||p.id||''])===habId);
-      if(ocupados.length>=cap){
-        toast('⚠ Habitación llena — alguien se adelantó. Elige otra.','err');
+      const ocupadosOtros=DB.personas.filter(p=>{
+        const pid=p.ID||p.id||'';
+        return DB.asignaciones[pid]===habId && !aAsignar.includes(pid);
+      });
+      const sitiosLibres=cap-ocupadosOtros.length;
+      if(sitiosLibres<aAsignar.length){
+        toast('⚠ No cabe todo el grupo ('+aAsignar.length+' personas, '+sitiosLibres+' sitios libres). Elige otra habitación.','err');
         if(ROLE==='inscrito') renderMiAloj(); else renderAlojamiento();
         return;
       }
-      DB.asignaciones[personaId]=habId;
-      toast(`${nombre} asignado/a ✓`,'ok');
+      // Si es un grupo de >1 y hay otros previos en diferentes habs, confirmar
+      if(aAsignar.length>1){
+        const previos=aAsignar.filter(pid=>DB.asignaciones[pid]&&DB.asignaciones[pid]!==habId);
+        const confirmMsg=previos.length>0
+          ? 'Vas a asignar a TODO el grupo ('+aAsignar.length+' personas) a esta habitación:\n\n  • '+nombresGrupo.join('\n  • ')+'\n\n'+previos.length+' miembro(s) cambiarán de habitación.\n\n¿Continuar?'
+          : 'Vas a asignar a TODO el grupo ('+aAsignar.length+' personas) a esta habitación:\n\n  • '+nombresGrupo.join('\n  • ')+'\n\n¿Continuar?';
+        if(!confirm(confirmMsg)){
+          if(ROLE==='inscrito') renderMiAloj(); else renderAlojamiento();
+          return;
+        }
+      }
+      // Asignar a todos
+      aAsignar.forEach(pid=>{ DB.asignaciones[pid]=habId; });
+      toast(aAsignar.length>1?('Grupo de '+aAsignar.length+' asignado/a ✓'):(nombre+' asignado/a ✓'),'ok');
     }
     log('ASIGNAR_HAB',`${personaId}→${habId}`);
     await saveRemote();
