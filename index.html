@@ -1505,8 +1505,14 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
-        // Re-inyectar personajes fijos en memoria
-        DB.personas=(DB.personas||[]).filter(p=>!p._esInvitado&&!p._esOrganizador);
+        // Re-inyectar personajes fijos en memoria (limpieza robusta)
+        DB.personas=(DB.personas||[]).filter(p=>{
+          if(p._esInvitado||p._esOrganizador) return false;
+          if(p.ID==='P_INVITADO'||p.ID==='ORG_DANI'||p.ID==='ORG_ALEX') return false;
+          var em=String(p.Email||'').toLowerCase();
+          if(em==='invitado@asturludicas.es') return false;
+          return true;
+        });
         DB.personas.push({ID:'P_INVITADO',id:'P_INVITADO',Nombre:'Invitado',
           Apellidos:'',NombreCompleto:'Invitado',Nick:'invitado',
           Email:'invitado@asturludicas.es',Modalidad:'Jueves (270€)',
@@ -1550,7 +1556,13 @@ async function loadRemote(){
     CFG.ACCESO_ABIERTO = DB.config.acceso_abierto;
   }
   // Re-inyectar invitado en memoria (nunca persiste en JSONBin)
-  DB.personas=DB.personas.filter(p=>!p._esInvitado);
+  DB.personas=DB.personas.filter(function(p){
+    if(p._esInvitado||p._esOrganizador) return false;
+    if(p.ID==='P_INVITADO'||p.ID==='ORG_DANI'||p.ID==='ORG_ALEX') return false;
+    var em=String(p.Email||'').toLowerCase();
+    if(em==='invitado@asturludicas.es') return false;
+    return true;
+  });
   DB.personas.push({
     ID:'P_INVITADO',id:'P_INVITADO',Nombre:'Invitado',Apellidos:'',
     NombreCompleto:'Invitado',Nick:'invitado',Email:'invitado@asturludicas.es',
@@ -2038,14 +2050,20 @@ function renderPersonas(){
 
   // Llenar selector modalidades
   const mSel=document.getElementById('f-mod');
-  if(mSel&&mSel.options.length<=1){
-    [...new Set(DB.personas.map(p=>p.Modalidad||'').filter(Boolean))].sort()
+  if(mSel){
+    const cur=mSel.value;
+    mSel.innerHTML='<option value="">— Modalidad —</option>';
+    [...new Set(DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador).map(p=>p.Modalidad||'').filter(Boolean))].sort()
       .forEach(m=>{ const o=new Option(m,m); mSel.add(o); });
+    if(cur) mSel.value=cur;
   }
   const mpMod=document.getElementById('mp-mod');
-  if(mpMod&&mpMod.options.length<=1){
-    [...new Set(DB.personas.map(p=>p.Modalidad||'').filter(Boolean))].sort()
+  if(mpMod){
+    const cur2=mpMod.value;
+    mpMod.innerHTML='<option value="">—</option>';
+    [...new Set(DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador).map(p=>p.Modalidad||'').filter(Boolean))].sort()
       .forEach(m=>{ const o=new Option(m,m); mpMod.add(o); });
+    if(cur2) mpMod.value=cur2;
   }
 
   let lista=DB.personas.filter(p=>!p._esInvitado).filter(p=>{
@@ -3512,8 +3530,20 @@ function renderCalendario(){
           ${partidasHTML}
           ${partHora.length===0?`<div class="cal-hora-empty">+ partida</div>`:''}
         </div>
-      </div>`;
-    }).join('');
+      </div>`;    }).join('') + (diaid==='dom' ? (
+      '<div class="cal-hora-row cal-hora-comer" style="margin-top:8px">'+
+        '<div class="cal-hora-label" style="color:#fff;font-weight:800">14h</div>'+
+        '<div class="cal-hora-partidas" style="background:linear-gradient(135deg,#C0392B,#9b2418);border-radius:10px;padding:14px 12px;cursor:default;box-shadow:0 4px 12px rgba(192,57,43,.3)">'+
+          '<div style="display:flex;align-items:center;gap:10px;color:#fff;font-weight:800">'+
+            '<span style="font-size:24px">🍽️</span>'+
+            '<div>'+
+              '<div style="font-size:14px;letter-spacing:.5px">COMIDA DE DESPEDIDA</div>'+
+              '<div style="font-size:11px;font-weight:600;opacity:.9;margin-top:2px">A las 14:00 — Fin del evento</div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'
+    ) : '');
     return `<div class="cal-dia">
       <div class="cal-dia-hd">
         <div class="cal-dia-nombre">${DIA_LABEL[diaid]}</div>
