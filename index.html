@@ -2086,8 +2086,9 @@ function renderPersonas(){
     const pct=tot>0?Math.round(Math.min(100,pag/tot*100)):0;
     const naloj=noches(p);
     const alojChip=naloj==='jueves-domingo'?'<span class="chip chip-purple">Jue→Dom</span>':naloj==='viernes-domingo'?'<span class="chip chip-blue">Vie→Dom</span>':'<span class="chip chip-gray">Sin aloj.</span>';
-    return `<tr>
-      <td><div style="display:flex;align-items:center;gap:7px">
+    const inactivo=p.Activo==='FALSE';
+    return `<tr style="${inactivo?'opacity:.45':''}">
+      <td><div style="display:flex;align-items:center;gap:7px">${inactivo?'<span class="chip" style="background:var(--amber);color:#fff;font-size:9px">BAJA</span>':''}
         <span class="gdot" style="background:${gc}"></span>
         <div class="av" style="width:28px;height:28px;font-size:11px;flex-shrink:0">${av(p.Nombre||p.NombreCompleto||'')}</div>
         <div>
@@ -2101,6 +2102,9 @@ function renderPersonas(){
         ${!p.Codigo?`<button class="btn btn-xs" onclick="genCodigoPersona('${pid}')" style="margin-left:4px">🔑</button>`:''}</td>
       <td><div style="display:flex;gap:4px">
         <button class="btn btn-xs" onclick="editarPersona('${pid}')">✏</button>
+        ${p.Activo==='FALSE'
+          ? `<button class="btn btn-xs" style="background:var(--green);color:#fff" onclick="reactivarPersona('${pid}')" title="Reactivar">↻</button>`
+          : `<button class="btn btn-xs" style="background:var(--amber);color:#fff" onclick="darBaja('${pid}')" title="Dar de baja">⏸</button>`}
         <button class="btn btn-xs btn-danger" onclick="eliminarPersona('${pid}')">✕</button>
       </div></td>
     </tr>`;
@@ -2234,6 +2238,60 @@ async function guardarPersona(){
   log('SAVE_PERSONA',p.Email);
   await saveRemote(); closeModal('mo-persona'); renderPersonas(); toast('Guardado','ok');
 }
+
+// ─── BAJAS Y REACTIVACIONES ─────────────────────────────
+async function darBaja(pid){
+  var p=DB.personas.find(function(x){return (x.ID||x.id||'')===pid;});
+  if(!p) return;
+  var nombre=p.NombreCompleto||p.Nombre||'esta persona';
+  // Detectar si es titular de un grupo con acompañantes
+  var miembrosGrupo=[];
+  if(p.GrupoID&&p.EsTitular==='SI'){
+    miembrosGrupo=DB.personas.filter(function(x){
+      return (x.GrupoID||'')===p.GrupoID && (x.ID||x.id||'')!==pid && !x._esInvitado && !x._esOrganizador;
+    });
+  }
+  var msg='¿Dar de baja a '+nombre+'?\n\n';
+  if(miembrosGrupo.length>0){
+    msg+='⚠️ Es titular de un grupo con '+miembrosGrupo.length+' acompañante(s).\n';
+    msg+='Se dará de baja SOLO a '+nombre+', no a su grupo.\n\n';
+  }
+  msg+='Quedará fuera de comidas, habitaciones, calendario y mercadillo, pero se conserva su histórico (pago, datos). Podrás reactivarla.';
+  if(!confirm(msg)) return;
+
+  p.Activo='FALSE';
+  p.FechaBaja=new Date().toISOString().split('T')[0];
+  // Sacarlo de su habitación
+  if(DB.asignaciones&&DB.asignaciones[pid]) delete DB.asignaciones[pid];
+  // Sacarlo de las partidas donde esté apuntado o sea creador
+  (DB.partidas||[]).forEach(function(par){
+    if(par.jugadores) par.jugadores=par.jugadores.filter(function(j){return j.id!==pid;});
+  });
+  // Quitar su opt-in de comidas
+  if(DB.comidas_optin){
+    Object.keys(DB.comidas_optin).forEach(function(k){
+      if(DB.comidas_optin[k]&&DB.comidas_optin[k][pid]!==undefined) delete DB.comidas_optin[k][pid];
+    });
+  }
+  // Sacarlo de confra
+  if(DB.confra_apuntados) DB.confra_apuntados=DB.confra_apuntados.filter(function(id){return id!==pid;});
+  await saveRemote();
+  toast(nombre+' dada de baja','ok');
+  renderPersonas();
+}
+
+async function reactivarPersona(pid){
+  var p=DB.personas.find(function(x){return (x.ID||x.id||'')===pid;});
+  if(!p) return;
+  var nombre=p.NombreCompleto||p.Nombre||'esta persona';
+  if(!confirm('¿Reactivar a '+nombre+'?\n\nVolverá a aparecer en comidas, habitaciones, calendario y mercadillo. (Tendrá que volver a apuntarse a partidas y comidas).')) return;
+  p.Activo='TRUE';
+  delete p.FechaBaja;
+  await saveRemote();
+  toast(nombre+' reactivada','ok');
+  renderPersonas();
+}
+
 async function eliminarPersona(id){
   if(!confirm('¿Eliminar esta persona?')) return;
   DB.personas=DB.personas.filter(x=>(x.ID||x.id||'')!==id);
@@ -2251,9 +2309,9 @@ function renderAlojamiento(){
   if(lbl){ lbl.textContent=DB.modulos.alojamiento?'ABIERTO':'CERRADO'; lbl.style.color=DB.modulos.alojamiento?'var(--green)':'var(--red)'; }
 
   // Resumen
-  const jue=DB.personas.filter(p=>noches(p)==='jueves-domingo');
-  const vie=DB.personas.filter(p=>noches(p)==='viernes-domingo');
-  const sin=DB.personas.filter(p=>noches(p)==='sin-alojamiento');
+  const jue=DB.personas.filter(p=>noches(p)==='jueves-domingo'&&p.Activo!=='FALSE'&&!p._esInvitado&&!p._esOrganizador);
+  const vie=DB.personas.filter(p=>noches(p)==='viernes-domingo'&&p.Activo!=='FALSE'&&!p._esInvitado&&!p._esOrganizador);
+  const sin=DB.personas.filter(p=>noches(p)==='sin-alojamiento'&&p.Activo!=='FALSE'&&!p._esInvitado&&!p._esOrganizador);
   document.getElementById('aloj-resumen').innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
       <div class="stat"><div class="stat-n" style="color:var(--purple)">${jue.length}</div><div class="stat-l">Jue→Dom</div></div>
@@ -2452,9 +2510,9 @@ function renderComidasAdmin(){
     let personas;
     if(c.optin){
       const ids=DB.comidas_optin[c.id]||[];
-      personas=DB.personas.filter(p=>ids.includes(p.ID||p.id||''));
+      personas=DB.personas.filter(p=>ids.includes(p.ID||p.id||'')&&p.Activo!=='FALSE');
     } else {
-      personas=DB.personas.filter(p=>c.todos&&c.todos(p));
+      personas=DB.personas.filter(p=>c.todos&&c.todos(p)&&p.Activo!=='FALSE'&&!p._esInvitado);
     }
     const conAlerg=personas.filter(p=>p.Alergenos);
     const sinAlerg=personas.filter(p=>!p.Alergenos);
@@ -2505,8 +2563,8 @@ function toggleComida(id){
 function exportComida(cid, label){
   const c=CFG.COMIDAS.find(x=>x.id===cid); if(!c) return;
   let personas;
-  if(c.optin){ const ids=DB.comidas_optin[cid]||[]; personas=DB.personas.filter(p=>ids.includes(p.ID||p.id||'')); }
-  else { personas=DB.personas.filter(p=>c.todos&&c.todos(p)); }
+  if(c.optin){ const ids=DB.comidas_optin[cid]||[]; personas=DB.personas.filter(p=>ids.includes(p.ID||p.id||'')&&p.Activo!=='FALSE'); }
+  else { personas=DB.personas.filter(p=>c.todos&&c.todos(p)&&p.Activo!=='FALSE'&&!p._esInvitado); }
   const lines=[`Nombre,Nick,Email,Modalidad,Alergenos`];
   personas.forEach(p=>lines.push(`"${p.NombreCompleto||p.Nombre||''}","${p.Nick||''}","${p.Email||''}","${p.Modalidad||''}","${p.Alergenos||''}"`));
   dlCSV(lines.join('\n'),`comida_${cid}.csv`);
@@ -2950,15 +3008,8 @@ async function ejecutarImport(){
 
       const {_nuevo, ...pLimpio}=p; // quitar campo interno
       if(idx>=0){
-        // Actualizar sin pisar: solo campos vacíos en el existente
-        const existente=DB.personas[idx];
-        const campos=['Nombre','Apellidos','NombreCompleto','Nick','Telefono','Ciudad',
-                      'Modalidad','TallaCamiseta','Alergenos','Observaciones','ImporteTotal',
-                      'Alojamiento','EsTitular','GrupoID'];
-        campos.forEach(k=>{ if(pLimpio[k] && !existente[k]) existente[k]=pLimpio[k]; });
-        // Modalidad e ImporteTotal siempre actualizamos si están en el CSV
-        if(pLimpio.Modalidad) existente.Modalidad=pLimpio.Modalidad;
-        if(pLimpio.ImporteTotal) existente.ImporteTotal=pLimpio.ImporteTotal;
+        // Ya existe → NO tocar NADA. Preserva todos los cambios manuales
+        // (importe, modalidad, bajas, notas...). Solo se añaden personas nuevas.
         act++;
       } else {
         DB.personas.push(pLimpio);
@@ -2979,7 +3030,7 @@ async function ejecutarImport(){
       }
     });
 
-    log('IMPORTAR_FORMS',`+${crea} ~${act} grupos:${stats.grupos}`);
+    log('IMPORTAR_FORMS',`nuevos:${crea} ya-existian:${act} grupos:${stats.grupos}`);
     await saveRemote();
 
     const res=document.getElementById('csv-res');
@@ -4938,6 +4989,9 @@ function renderMercadillo(){
   var pid=ROLE==='admin'?('ADMIN_'+( lsGet('confra_admin_nick','Admin')||'Admin')):(ME?ME.ID||ME.id||'':'');
   if(!ME&&ROLE!=='admin') return;
   var items=DB.mercadillo||[];
+  // Ocultar anuncios de vendedores dados de baja
+  var _idsInactivos=new Set(DB.personas.filter(function(p){return p.Activo==='FALSE';}).map(function(p){return p.ID||p.id||'';}));
+  items=items.filter(function(it){return !_idsInactivos.has(it.vendedorId);});
 
   var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
     +'<div style="font-size:13px;color:var(--ink3)">'+items.length+' juego'+(items.length!==1?'s':'')+' en venta</div>'
@@ -5137,6 +5191,9 @@ function renderMercadilloAdmin(){
   var el=document.getElementById('mercadillo-admin-content');
   if(!el) return;
   var items=DB.mercadillo||[];
+  // Ocultar anuncios de vendedores dados de baja
+  var _idsInactivos=new Set(DB.personas.filter(function(p){return p.Activo==='FALSE';}).map(function(p){return p.ID||p.id||'';}));
+  items=items.filter(function(it){return !_idsInactivos.has(it.vendedorId);});
   var html='<div class="card"><div class="card-hd"><span class="card-title">Mercadillo ('+items.length+' juegos)</span>'
     +'<button class="btn btn-xs btn-danger" onclick="if(confirm(\'¿Borrar todo el mercadillo?\')){ DB.mercadillo=[]; saveRemote(); renderMercadilloAdmin(); toast(\'Mercadillo vaciado\',\'ok\'); }">Vaciar</button></div>';
   if(!items.length){
@@ -5165,6 +5222,9 @@ function renderMercadilloEnFicha(){
   if(!ME) return;
   var pid=ME.ID||ME.id||'';
   var items=DB.mercadillo||[];
+  // Ocultar anuncios de vendedores dados de baja
+  var _idsInactivos=new Set(DB.personas.filter(function(p){return p.Activo==='FALSE';}).map(function(p){return p.ID||p.id||'';}));
+  items=items.filter(function(it){return !_idsInactivos.has(it.vendedorId);});
   var vendidos=items.filter(function(x){return x.vendedorId===pid&&x.estado==='reservado';});
   var comprados=items.filter(function(x){return x.compradorId===pid;});
   // Limpiar tarjeta anterior siempre
