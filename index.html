@@ -818,6 +818,10 @@ tbody tr:hover td{background:var(--paper)}
             Las habitaciones y configuración se conservan. Personas, pagos y partidas se borran.
           </p>
           <button class="btn btn-danger" onclick="nuevaEdicion()">🗑 Iniciar nueva edición</button>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <button class="btn" onclick="diagnostico()" style="font-size:12px">🔍 Diagnóstico de datos</button>
+            <div style="font-size:11px;color:var(--ink3);margin-top:8px">Versión app: <strong>v80</strong></div>
+          </div>
         </div>
 
         <div class="card" style="margin-bottom:14px;border:2px solid #f97316">
@@ -1477,9 +1481,12 @@ async function jbSet(data){
         body:JSON.stringify(payload)
       });
       if(r.ok) return true;
-    }catch(e){ console.error('Firebase PUT:',e); }
+      // Si Firebase responde pero con error (reglas caducadas, auth...), NO fingir éxito
+      console.error('Firebase PUT no-ok:', r.status);
+      return false;
+    }catch(e){ console.error('Firebase PUT:',e); return false; }
   }
-  // Fallback JSONBin
+  // Fallback JSONBin (solo si Firebase no está configurado)
   if(CFG.JSONBIN_BIN_ID.startsWith('PON_')){ lsSet('jdb',data); return true; }
   try{
     const r=await fetch(JB,{method:'PUT',headers:JH,body:JSON.stringify(data)});
@@ -1489,6 +1496,7 @@ async function jbSet(data){
 
 // ─── TIEMPO REAL: Firebase SSE ─────────────────────────
 let _fbListener=null;
+var _ultimoGuardadoOk=true;
 function iniciarListenerFirebase(){
   if(CFG.FIREBASE_URL.startsWith('PON_')) return;
   if(_fbListener){ try{_fbListener.close();}catch(e){} }
@@ -1606,7 +1614,14 @@ async function saveRemote(){
     const pFilt=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador);
     const dbG={...DB,personas:pFilt};
     lsSet('jdb',dbG);
-    await jbSet({_jornadas:dbG});
+    const ok=await jbSet({_jornadas:dbG});
+    if(ok===false){
+      // El guardado remoto FALLÓ. Avisar en vez de fingir que todo va bien.
+      _ultimoGuardadoOk=false;
+      toast('⚠️ NO se pudo guardar en el servidor. Revisa tu conexión o las reglas de Firebase. Los cambios NO están sincronizados.','err');
+    } else {
+      _ultimoGuardadoOk=true;
+    }
   } finally {
     _saving=false;
     btns.forEach(b=>{ b.disabled=false; });
@@ -3538,6 +3553,7 @@ async function toggleComidaOptin(cid, val){
 // ─── CALENDARIO DE PARTIDAS ────────────────────────────
 
 const FRANJAS = [
+  { id:'jue_09', dia:'Jueves',  label:'09:00', diaid:'jue' },
   { id:'jue_10', dia:'Jueves',  label:'10:00', diaid:'jue' },
   { id:'jue_11', dia:'Jueves',  label:'11:00', diaid:'jue' },
   { id:'jue_12', dia:'Jueves',  label:'12:00', diaid:'jue' },
@@ -3552,6 +3568,7 @@ const FRANJAS = [
   { id:'jue_21', dia:'Jueves',  label:'21:00', diaid:'jue' },
   { id:'jue_22', dia:'Jueves',  label:'22:00', diaid:'jue' },
   { id:'jue_23', dia:'Jueves',  label:'23:00', diaid:'jue' },
+  { id:'vie_09', dia:'Viernes', label:'09:00', diaid:'vie' },
   { id:'vie_10', dia:'Viernes', label:'10:00', diaid:'vie' },
   { id:'vie_11', dia:'Viernes', label:'11:00', diaid:'vie' },
   { id:'vie_12', dia:'Viernes', label:'12:00', diaid:'vie' },
@@ -3566,6 +3583,7 @@ const FRANJAS = [
   { id:'vie_21', dia:'Viernes', label:'21:00', diaid:'vie' },
   { id:'vie_22', dia:'Viernes', label:'22:00', diaid:'vie' },
   { id:'vie_23', dia:'Viernes', label:'23:00', diaid:'vie' },
+  { id:'sab_09', dia:'Sábado',  label:'09:00', diaid:'sab' },
   { id:'sab_10', dia:'Sábado',  label:'10:00', diaid:'sab' },
   { id:'sab_11', dia:'Sábado',  label:'11:00', diaid:'sab' },
   { id:'sab_12', dia:'Sábado',  label:'12:00', diaid:'sab' },
@@ -3580,6 +3598,7 @@ const FRANJAS = [
   { id:'sab_21', dia:'Sábado',  label:'21:00', diaid:'sab' },
   { id:'sab_22', dia:'Sábado',  label:'22:00', diaid:'sab' },
   { id:'sab_23', dia:'Sábado',  label:'23:00', diaid:'sab' },
+  { id:'dom_09', dia:'Domingo', label:'09:00', diaid:'dom' },
   { id:'dom_10', dia:'Domingo', label:'10:00', diaid:'dom' },
   { id:'dom_11', dia:'Domingo', label:'11:00', diaid:'dom' },
   { id:'dom_12', dia:'Domingo', label:'12:00', diaid:'dom' },
@@ -4562,6 +4581,35 @@ function renderMiAgenda(){
 }
 
 // ─── NUEVA EDICIÓN ──────────────────────────────────────
+
+// ─── DIAGNÓSTICO DE DATOS ───────────────────────────────
+async function diagnostico(){
+  toast('Comprobando servidor…');
+  var remoto=null;
+  try{ remoto=await jbGet(); }catch(e){}
+  var rPersonas=(remoto&&remoto._jornadas&&remoto._jornadas.personas)?remoto._jornadas.personas.length:0;
+  var rConfig=(remoto&&remoto._jornadas&&remoto._jornadas.config)?(remoto._jornadas.config.nombre||'(sin nombre)'):'(no hay config)';
+  var localPersonas=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador;}).length;
+  var acompSinTalla=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador&&p.EsTitular==='NO'&&!p.TallaCamiseta;}).length;
+  var titulares=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador&&p.EsTitular==='SI';}).length;
+  var acomp=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador&&p.EsTitular==='NO';}).length;
+  var msg='🔍 DIAGNÓSTICO\n\n';
+  msg+='── EN EL SERVIDOR (Firebase) ──\n';
+  msg+='Edición: '+rConfig+'\n';
+  msg+='Personas guardadas: '+rPersonas+'\n\n';
+  msg+='── EN ESTA PANTALLA (memoria) ──\n';
+  msg+='Edición: '+(DB.config&&DB.config.nombre||'(sin nombre)')+'\n';
+  msg+='Personas: '+localPersonas+' ('+titulares+' titulares + '+acomp+' acompañantes)\n';
+  msg+='Acompañantes sin talla: '+acompSinTalla+'\n\n';
+  msg+='Último guardado remoto: '+(_ultimoGuardadoOk?'✅ OK':'❌ FALLÓ')+'\n\n';
+  if(rPersonas!==localPersonas){
+    msg+='⚠️ El servidor y la pantalla NO coinciden. Puede que un guardado fallara o que haya datos viejos en el servidor.';
+  } else {
+    msg+='✅ Servidor y pantalla coinciden.';
+  }
+  alert(msg);
+}
+
 async function nuevaEdicion(){
   var nombre=prompt('Nombre de la nueva edición (ej: AsturLúdicas 10ª):');
   if(!nombre) return;
