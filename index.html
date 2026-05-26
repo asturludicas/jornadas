@@ -2738,6 +2738,8 @@ const FORMS_MAP = {
   acomp2_mod:   ['modalidad acompañante 2','modalidad acomp 2'],
   acomp3_nombre:['nombre acompañante 3','acompañante 3 nombre'],
   acomp3_mod:   ['modalidad acompañante 3','modalidad acomp 3'],
+  grupoid:      ['grupoid','grupo id','grupo','group'],
+  estitular:    ['estitular','es titular','titular','rol'],
 };
 
 function parseLine(l){
@@ -2861,11 +2863,79 @@ function previsualizarImport(){
     </div>`;
 }
 
+function procesarCSVPorPersona(mapeo, headers, lines){
+  const personas=[];
+  let nuevas=0, grupos=0;
+  const gruposVistos={};
+
+  // Próximo ID de persona libre
+  const idsExistentes=DB.personas.map(p=>parseInt((p.ID||'').replace('P_',''))||0);
+  let nextId=Math.max(0,...idsExistentes)+1;
+
+  const getVal=(row,col)=>{
+    if(!col) return '';
+    const idx=headers.indexOf(col);
+    return idx>=0?(row[idx]||'').trim():'';
+  };
+
+  lines.slice(1).forEach(line=>{
+    const row=parseLine(line);
+    const email=getVal(row,mapeo.email).toLowerCase();
+    const nombreCompleto=getVal(row,mapeo.nombre);
+    if(!email && !nombreCompleto) return; // fila vacía
+    if(CFG.ADMINS.some(a=>a.email===email)) return; // ignorar admins
+
+    const nick=getVal(row,mapeo.nick);
+    const partes=nombreCompleto.split(' ');
+    const nombre=partes[0]||nombreCompleto;
+    const apellidos=partes.slice(1).join(' ');
+    const modalidad=getVal(row,mapeo.modalidad);
+    const esTitularRaw=getVal(row,mapeo.estitular).toUpperCase();
+    const esTitular=(esTitularRaw==='SI'||esTitularRaw==='SÍ'||esTitularRaw==='TRUE'||esTitularRaw==='1'||esTitularRaw==='TITULAR')?'SI':'NO';
+    let gid=getVal(row,mapeo.grupoid);
+
+    if(gid && !gruposVistos[gid]){ gruposVistos[gid]=true; grupos++; }
+
+    const persona={
+      ID:'P_'+nextId, id:'P_'+nextId,
+      Nombre:nombre, Apellidos:apellidos,
+      NombreCompleto:nombreCompleto||(nombre+' '+apellidos).trim(),
+      Nick:nick||nombre,
+      Email:email,
+      Telefono:getVal(row,mapeo.telefono),
+      Ciudad:getVal(row,mapeo.ciudad),
+      Modalidad:modalidad,
+      TallaCamiseta:getVal(row,mapeo.talla),
+      Alergenos:getVal(row,mapeo.alergenos),
+      Observaciones:getVal(row,mapeo.observaciones),
+      EsTitular:esTitular,
+      GrupoID:gid||'',
+      Alojamiento:(modalidad.toLowerCase().includes('sin aloj')||modalidad.toLowerCase().includes('sin hospedaje'))?'NO':'SI',
+      ImporteTotal:calcularImporte(modalidad),
+      Activo:'TRUE',
+      FechaInscripcion:new Date().toISOString().split('T')[0],
+      _nuevo:true,
+    };
+    nextId++;
+    personas.push(persona);
+    nuevas++;
+  });
+
+  return {personas, stats:{nuevas, actualizar:0, grupos}};
+}
+
 function procesarCSV(mapeo, soloPreview=false){
   const lines=csvRaw.trim().split('\n').filter(l=>l.trim());
   const headers=parseLine(lines[0]);
   const personas=[];
   let nuevas=0, actualizar=0, grupos=0;
+
+  // ─── MODO "UNA FILA POR PERSONA" ──────────────────────────
+  // Si el CSV tiene columna EsTitular, cada fila es una persona
+  // independiente (titular o acompañante). Se respeta GrupoID/EsTitular del CSV.
+  if(mapeo.estitular){
+    return procesarCSVPorPersona(mapeo, headers, lines);
+  }
 
   // Calcular el próximo número de grupo libre
   const gruposExistentes=DB.grupos.map(g=>parseInt((g.id||'').replace('G_',''))||0);
@@ -2999,11 +3069,9 @@ async function ejecutarImport(){
       const nombre=p.NombreCompleto||p.Nombre||'';
       const idx=DB.personas.findIndex(x=>{
         const em=String(x.Email||'').toLowerCase();
-        const nm=x.NombreCompleto||x.Nombre||'';
-        // Para acompañantes: mismo email Y mismo nombre
-        if(p.EsTitular==='NO') return em===email && nm.toLowerCase()===nombre.toLowerCase();
-        // Para titular: solo email
-        return em===email && x.EsTitular==='SI';
+        const nm=(x.NombreCompleto||x.Nombre||'').toLowerCase();
+        // Identificar por email + nombre (robusto para grupos con email compartido)
+        return em===email && nm===nombre.toLowerCase();
       });
 
       const {_nuevo, ...pLimpio}=p; // quitar campo interno
