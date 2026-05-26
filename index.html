@@ -820,7 +820,7 @@ tbody tr:hover td{background:var(--paper)}
           <button class="btn btn-danger" onclick="nuevaEdicion()">🗑 Iniciar nueva edición</button>
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             <button class="btn" onclick="diagnostico()" style="font-size:12px">🔍 Diagnóstico de datos</button>
-            <div style="font-size:11px;color:var(--ink3);margin-top:8px">Versión app: <strong>v80</strong></div>
+            <div style="font-size:11px;color:var(--ink3);margin-top:8px">Versión app: <strong>v81</strong></div>
           </div>
         </div>
 
@@ -2830,7 +2830,7 @@ function mostrarMapeoForms(headers){
         ${sel('observaciones','Observaciones')}
       </div>
       <div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;letter-spacing:.05em">Acompañantes (opcional)</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;letter-spacing:.05em">Acompañantes (formato Forms)</div>
         ${sel('acomp1_nombre','Nombre acompañante 1')}
         ${sel('acomp1_mod','Modalidad acompañante 1')}
         ${sel('acomp2_nombre','Nombre acompañante 2')}
@@ -2839,6 +2839,22 @@ function mostrarMapeoForms(headers){
         ${sel('acomp3_mod','Modalidad acompañante 3')}
       </div>
     </div>
+    ${(auto.estitular||auto.grupoid) ? `
+    <div style="background:var(--green-l);border:1px solid var(--green);border-radius:var(--rs);padding:12px;margin-top:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">✓ Formato detectado: UNA PERSONA POR FILA</div>
+      <div style="font-size:12px;color:var(--ink2);margin-bottom:10px">Tu CSV tiene columnas de grupo. Cada fila es una persona (titular o acompañante) con su propia talla y alergias. <strong>Este formato conserva las tallas de los acompañantes.</strong></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+        ${sel('grupoid','Columna GrupoID')}
+        ${sel('estitular','Columna EsTitular (SI/NO)')}
+      </div>
+    </div>` : `
+    <div style="background:var(--amber-l);border:1px solid var(--amber);border-radius:var(--rs);padding:12px;margin-top:14px;font-size:12px;color:var(--ink2)">
+      <strong>ℹ️ Formato clásico (Forms).</strong> Si tu CSV tiene una columna <strong>EsTitular</strong> y otra <strong>GrupoID</strong> (una persona por fila), asegúrate de que el archivo las incluye para conservar las tallas de los acompañantes. Ahora mismo no se han detectado.
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;margin-top:8px">
+        ${sel('grupoid','Columna GrupoID (si la tienes)')}
+        ${sel('estitular','Columna EsTitular (si la tienes)')}
+      </div>
+    </div>`}
     <button class="btn btn-sm" onclick="previsualizarImport()" style="margin-top:8px">👁 Previsualizar (${csvRaw.trim().split('\n').length-1} filas)</button>
     <div id="import-preview" style="margin-top:10px"></div>`;
 }
