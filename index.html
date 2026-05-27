@@ -3345,8 +3345,8 @@ function renderPortal(){
       </div>
       <div style="background:rgba(255,255,255,.08);border-radius:10px;padding:12px;font-size:13px;color:#e2e8f0;line-height:1.6">
         <div style="font-weight:700;color:#fff;margin-bottom:6px">📱 Realiza la transferencia:</div>
-        <div>🏦 Cuenta: <strong style="color:#fbbf24;font-family:monospace;letter-spacing:.05em">5351 2033 3313 7010</strong></div>
-        <div>📝 Concepto: <strong style="color:#fbbf24">AsturLúdicas ${ME?.Nick||ME?.Nombre||''}</strong></div>
+        <div>🏦 IBAN: <strong style="color:#fbbf24;font-family:monospace;letter-spacing:.05em">ES18 1465 0360 19 1760177551</strong></div>
+        <div>📝 Concepto: <strong style="color:#fbbf24">AsturLúdicas ${ME?.NombreCompleto || ((ME?.Nombre||'')+' '+(ME?.Apellidos||'')).trim() || ME?.Nick || ''}</strong></div>
         <div>👤 Titular: <strong style="color:#fbbf24">Daniel Méndez-Bonito</strong></div>
       </div>
     </div>`;
@@ -3607,7 +3607,7 @@ function renderMisComidas(){
         </div>
       </div>
       ${puedeToggle?`<div style="font-size:11px;color:var(--ink3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-        Activa el toggle si vas a quedarte a comer el domingo. Nos ayuda a calcular el número real de comensales. (COMIDA INCLUIDA)
+        Activa el toggle si vas a quedarte a comer el domingo. Nos ayuda a calcular el número real de comensales.
       </div>`:''}
     </div>`;
   }).join('');
@@ -3704,11 +3704,13 @@ function normalizarFranja(fid){
 
 function renderCalendario(){
   const pid=miId();
+  // Inscritos que NO vienen el jueves no ven el día jueves del calendario (admin ve todo)
+  const diasMostrar = (ROLE==='inscrito' && ME && !tieneJueves(ME)) ? DIAS.filter(d=>d!=='jue') : DIAS;
   // Horas únicas por día (ordenadas)
   const horasDia={};
-  DIAS.forEach(d=>{ horasDia[d]=[...new Set(FRANJAS.filter(f=>f.diaid===d).map(f=>f.label))].sort(); });
+  diasMostrar.forEach(d=>{ horasDia[d]=[...new Set(FRANJAS.filter(f=>f.diaid===d).map(f=>f.label))].sort(); });
 
-  document.getElementById('cal-dias').innerHTML=DIAS.map(diaid=>{
+  document.getElementById('cal-dias').innerHTML=diasMostrar.map(diaid=>{
     const partDia=DB.partidas.filter(p=>{ const fn=normalizarFranja(p.franja); const f=FRANJAS.find(x=>x.id===fn); return f&&f.diaid===diaid; });
     // Si el día es jue/vie/sab y existe el bloque de comer (14-15h)
     // → unir las franjas 14 y 15 en un bloque especial "A COMER"
@@ -4966,7 +4968,13 @@ function renderConfra(){
   // Boton apuntarse (si no es admin ADMIN sin perfil)
   var estoy = pid&&pid!='ADMIN' ? apuntados.includes(pid) : false;
   var btnHTML='';
-  if(pid && pid!=='ADMIN'){
+  // Los que no vienen el jueves no pueden apuntarse a la comida del jueves
+  var vieneJueves = ROLE==='admin' || (ME && tieneJueves(ME));
+  if(pid && pid!=='ADMIN' && !vieneJueves){
+    btnHTML='<div style="background:var(--surface);border-radius:var(--rs);padding:12px 16px;font-size:13px;color:var(--ink2);margin-bottom:12px;border:1.5px dashed var(--border2)">'
+      +'ℹ Esta comida es el <strong>jueves</strong>, y según tu modalidad empiezas el viernes — no aplica para ti. Si crees que es un error, escribe a la organización.'
+      +'</div>';
+  } else if(pid && pid!=='ADMIN'){
     // Detectar grupo
     var grupo=ME&&ME.GrupoID?DB.personas.filter(function(x){
       return (x.GrupoID===ME.GrupoID||(x.ID||x.id||'')===(ME.ID||ME.id||''))&&!x._esInvitado&&x.Activo!=='FALSE';
@@ -5017,6 +5025,11 @@ function confraApuntarseGrupoModal(){
 
 async function confraApuntarse(apuntar){
   if(!ME||_saving) return;
+  // No permitir apuntarse si la modalidad no incluye jueves
+  if(apuntar && ROLE!=='admin' && !tieneJueves(ME)){
+    toast('Tu modalidad no incluye el jueves — la comida es ese día. Habla con la organización si crees que es un error.','err');
+    return;
+  }
   if(!DB.confra_apuntados) DB.confra_apuntados=[];
   // Detectar grupo
   var grupo=ME.GrupoID?DB.personas.filter(function(x){
@@ -5101,6 +5114,21 @@ function renderConfraAdmin(){
   var c=DB.confra||{};
   var apuntados=DB.confra_apuntados||[];
 
+  // Acceso rápido a las vistas del inscrito (donde el admin puede ver/borrar
+  // peticiones de juegos, juegos que traen, y mercadillo).
+  var nPet=(DB.confra_peticiones||[]).length;
+  var nLlev=(DB.confra_llevar||[]).length;
+  var nMerc=(DB.mercadillo||[]).length;
+  var navHTML='<div class="card" style="margin-bottom:14px">'
+    +'<div class="card-hd"><span class="card-title">Ver vistas de inscritos</span></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'
+    +'<button class="btn btn-sm" onclick="_confraTab=\'peticiones\';nav(\'confra\')">🎲 Peticiones'+(nPet?' ('+nPet+')':'')+'</button>'
+    +'<button class="btn btn-sm" onclick="_confraTab=\'llevar\';nav(\'confra\')">🎒 Traigo'+(nLlev?' ('+nLlev+')':'')+'</button>'
+    +'<button class="btn btn-sm" onclick="_confraTab=\'mercadillo\';nav(\'confra\')">🏷 Mercadillo'+(nMerc?' ('+nMerc+')':'')+'</button>'
+    +'</div>'
+    +'<p style="font-size:11px;color:var(--ink3);margin-top:8px">Como admin, en estas vistas puedes borrar cualquier item. Para volver, pulsa "AsturL" en la barra inferior.</p>'
+    +'</div>';
+
   // Formulario editable
   var formHTML='<div class="card" style="margin-bottom:14px">'
     +'<div class="card-hd"><span class="card-title">Informacion del evento</span></div>'
@@ -5143,7 +5171,7 @@ function renderConfraAdmin(){
     +'<button class="btn btn-primary btn-sm" onclick="confraAdminAnadir()">Añadir</button>'
     +'</div></div>';
 
-  el.innerHTML=formHTML+listaCard;
+  el.innerHTML=navHTML+formHTML+listaCard;
 }
 
 
@@ -5734,10 +5762,11 @@ async function enviarRecordatoriosPago(){
     var deb=Number(p.ImporteTotal)||0;
     var pag=pagados[p.ID||p.id||'']||0;
     var falta=deb-pag;
+    var nombreCompleto=p.NombreCompleto || ((p.Nombre||'')+' '+(p.Apellidos||'')).trim() || p.Nick || '';
     DB.mensajes.unshift({
       id:uid('MSG_'),
       asunto:'Recordatorio: pago pendiente',
-      cuerpo:'Hola '+(p.Nick||p.Nombre||'')+',\nTienes un pago pendiente de '+falta.toFixed(2)+'€ para las jornadas. Cuando puedas, ponte al día con la organización. ¡Gracias!',
+      cuerpo:'Hola '+(p.Nick||p.Nombre||'')+',\nTienes un pago pendiente de '+falta.toFixed(2)+'€ para las jornadas.\n\nDatos de la transferencia:\n• IBAN: ES18 1465 0360 19 1760177551\n• Titular: Daniel Méndez-Bonito\n• Concepto: AsturLúdicas '+nombreCompleto+'\n\n¡Gracias!',
       seg:'PERSONA', segV:p.ID||p.id||'',
       ts:new Date().toISOString(), _auto:true
     });
