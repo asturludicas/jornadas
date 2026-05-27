@@ -52,15 +52,21 @@ const CFG = {
 function tieneJueves(p) {
   return String(p.Modalidad||'').toLowerCase().includes('jueves');
 }
+// "sin aloj" cubre "sin alojamiento"; "sin hosp" cubre "sin hospedaje"
+function sinAlojamientoModalidad(m){
+  m = String(m||'').toLowerCase();
+  return m.includes('sin aloj') || m.includes('sin hosp');
+}
 function tieneAlojamiento(p) {
   const m = String(p.Modalidad||'').toLowerCase();
-  return m.includes('jueves') && !m.includes('sin hospedaje') && !m.includes('sin alojamiento')
-      || (m.includes('viernes') && !m.includes('sin hospedaje') && !m.includes('sin alojamiento'));
+  if (sinAlojamientoModalidad(m)) return false;
+  return m.includes('jueves') || m.includes('viernes');
 }
 function noches(p) {
   const m = String(p.Modalidad||'').toLowerCase();
-  if (m.includes('jueves') && !m.includes('sin hospedaje')) return 'jueves-domingo';
-  if (m.includes('viernes') && !m.includes('sin hospedaje')) return 'viernes-domingo';
+  if (sinAlojamientoModalidad(m)) return 'sin-alojamiento';
+  if (m.includes('jueves')) return 'jueves-domingo';
+  if (m.includes('viernes')) return 'viernes-domingo';
   return 'sin-alojamiento';
 }
 </script>
@@ -1603,13 +1609,14 @@ function saveOptimista(renderFn){
 }
 
 async function saveRemote(){
-  if(_saving){ _saveQueue=true; return; }
+  if(_saving){ _saveQueue=true; return true; }
   _saving=true;
   // Deshabilitar botones de acción mientras guarda
   const btns=[];
   document.querySelectorAll('button.btn-primary,button.btn-danger,button.btn-success').forEach(b=>{
     if(!b.disabled&&!b.dataset.nospin){ b.disabled=true; btns.push(b); }
   });
+  let okFinal=true;
   try{
     const pFilt=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador);
     const dbG={...DB,personas:pFilt};
@@ -1618,6 +1625,7 @@ async function saveRemote(){
     if(ok===false){
       // El guardado remoto FALLÓ. Avisar en vez de fingir que todo va bien.
       _ultimoGuardadoOk=false;
+      okFinal=false;
       toast('⚠️ NO se pudo guardar en el servidor. Revisa tu conexión o las reglas de Firebase. Los cambios NO están sincronizados.','err');
     } else {
       _ultimoGuardadoOk=true;
@@ -1627,6 +1635,7 @@ async function saveRemote(){
     btns.forEach(b=>{ b.disabled=false; });
     if(_saveQueue){ _saveQueue=false; setTimeout(saveRemote,300); }
   }
+  return okFinal;
 }
 
 // ─── HELPERS ───────────────────────────────────────────
@@ -2611,13 +2620,63 @@ function renderSolicitudes(){
 
 async function gestionarSol(id,estado){
   const s=DB.solicitudes.find(x=>x.id===id); if(!s) return;
-  s.estado=estado; s.tsRes=new Date().toISOString();
-  if(estado==='APROBADA'){
-    const p=DB.personas.find(x=>(x.ID||x.id||'')===s.personaId);
-    if(p){ if(s.tipo==='ALERGENOS') p.Alergenos=s.datosSolicitados; else if(s.tipo==='OBSERVACIONES') p.Observaciones=s.datosSolicitados; }
+
+  // Rechazo: simple, no toca a nadie
+  if(estado!=='APROBADA'){
+    s.estado=estado; s.tsRes=new Date().toISOString();
+    log('SOL_'+estado,s.nombrePersona);
+    const ok=await saveRemote();
+    renderSolicitudes();
+    toast(ok?'Rechazada':'Rechazo NO guardado, reintenta', ok?'ok':'err');
+    if(!ok){ s.estado='PENDIENTE'; s.tsRes=''; renderSolicitudes(); }
+    return;
   }
-  log('SOL_'+estado,s.nombrePersona);
-  await saveRemote(); renderSolicitudes(); toast(estado==='APROBADA'?'Aprobada y aplicada':'Rechazada','ok');
+
+  // Aprobación: localizar a la persona de forma robusta.
+  // Tras reimportar una lista los IDs (P_N) cambian, así que el ID guardado
+  // en la solicitud puede ya no existir. Probamos ID → nombre exacto → email.
+  const nombreSol=(s.nombrePersona||s.personaNombre||'').trim().toLowerCase();
+  const reales=DB.personas.filter(x=>!x._esInvitado&&!x._esOrganizador);
+  let p=reales.find(x=>(x.ID||x.id||'')===s.personaId);
+  if(!p && nombreSol){
+    const porNombre=reales.filter(x=>((x.NombreCompleto||x.Nombre||'').trim().toLowerCase())===nombreSol);
+    if(porNombre.length===1) p=porNombre[0];
+  }
+  if(!p && s.email){
+    const porEmail=reales.filter(x=>(x.Email||'').trim().toLowerCase()===String(s.email).trim().toLowerCase());
+    if(porEmail.length===1) p=porEmail[0];
+  }
+
+  if(!p){
+    // No se puede aplicar el cambio: NO marcar como aprobada (sería un falso éxito).
+    toast('⚠️ No encuentro a "'+(s.nombrePersona||'?')+'" en la lista actual (quizá es de una edición anterior o se reimportó la lista). El cambio NO se ha aplicado. Si la solicitud ya no procede, recházala.','err');
+    return;
+  }
+
+  // Guardar valor previo por si hay que revertir
+  const campo=s.tipo==='ALERGENOS'?'Alergenos':(s.tipo==='OBSERVACIONES'?'Observaciones':null);
+  if(!campo){
+    toast('Tipo de solicitud desconocido: '+s.tipo,'err');
+    return;
+  }
+  const prevValor=p[campo];
+  const prevEstado=s.estado;
+
+  p[campo]=s.datosSolicitados;
+  s.estado='APROBADA'; s.tsRes=new Date().toISOString();
+  log('SOL_APROBADA',s.nombrePersona);
+
+  const ok=await saveRemote();
+  if(ok){
+    renderSolicitudes();
+    toast('Aprobada y aplicada a '+(p.NombreCompleto||p.Nombre||''),'ok');
+  } else {
+    // El guardado falló: revertir TODO para que el estado en memoria coincida con el servidor.
+    p[campo]=prevValor;
+    s.estado=prevEstado; s.tsRes='';
+    renderSolicitudes();
+    toast('⚠️ No se pudo guardar. El cambio se ha revertido, reinténtalo cuando vuelva la conexión.','err');
+  }
 }
 
 // ─── PAGOS ─────────────────────────────────────────────
@@ -2941,7 +3000,7 @@ function procesarCSVPorPersona(mapeo, headers, lines){
       Observaciones:getVal(row,mapeo.observaciones),
       EsTitular:esTitular,
       GrupoID:gid||'',
-      Alojamiento:(modalidad.toLowerCase().includes('sin aloj')||modalidad.toLowerCase().includes('sin hospedaje'))?'NO':'SI',
+      Alojamiento:sinAlojamientoModalidad(modalidad)?'NO':'SI',
       ImporteTotal:calcularImporte(modalidad),
       Activo:'TRUE',
       FechaInscripcion:new Date().toISOString().split('T')[0],
@@ -3019,7 +3078,7 @@ function procesarCSV(mapeo, soloPreview=false){
       Alergenos:getVal(row,mapeo.alergenos),
       Observaciones:getVal(row,mapeo.observaciones),
       EsTitular:'SI',
-      Alojamiento:modalidad.toLowerCase().includes('sin hospedaje')||modalidad.toLowerCase().includes('sin aloj')?'NO':'SI',
+      Alojamiento:sinAlojamientoModalidad(modalidad)?'NO':'SI',
       ImporteTotal:importeBase,
       Activo:'TRUE',
       FechaInscripcion:new Date().toISOString().split('T')[0],
@@ -3056,7 +3115,7 @@ function procesarCSV(mapeo, soloPreview=false){
           Alergenos:'', Observaciones:'',
           EsTitular:'NO',
           GrupoID:gid,
-          Alojamiento:ac.modalidad.toLowerCase().includes('sin hospedaje')?'NO':'SI',
+          Alojamiento:sinAlojamientoModalidad(ac.modalidad)?'NO':'SI',
           ImporteTotal:calcularImporte(ac.modalidad),
           Activo:'TRUE',
           FechaInscripcion:new Date().toISOString().split('T')[0],
@@ -3286,7 +3345,7 @@ function renderPortal(){
       </div>
       <div style="background:rgba(255,255,255,.08);border-radius:10px;padding:12px;font-size:13px;color:#e2e8f0;line-height:1.6">
         <div style="font-weight:700;color:#fff;margin-bottom:6px">📱 Realiza la transferencia:</div>
-        <div>🏦 Cuenta: <strong style="color:#fbbf24;font-family:monospace;letter-spacing:.05em">IBAN: ES18 1465 0360 19 1760177551</strong></div>
+        <div>🏦 Cuenta: <strong style="color:#fbbf24;font-family:monospace;letter-spacing:.05em">5351 2033 3313 7010</strong></div>
         <div>📝 Concepto: <strong style="color:#fbbf24">AsturLúdicas ${ME?.Nick||ME?.Nombre||''}</strong></div>
         <div>👤 Titular: <strong style="color:#fbbf24">Daniel Méndez-Bonito</strong></div>
       </div>
@@ -4651,6 +4710,8 @@ async function nuevaEdicion(){
   DB.mercadillo=[];
   DB.confra=null;
   DB.confra_apuntados=[];
+  DB.confra_peticiones=[];
+  DB.confra_llevar=[];
   DB.modulos={ alojamiento:false };
   DB.config={ nombre:nombre, fechas:'', aviso:'' };
   DB.logs=[];
@@ -5458,7 +5519,7 @@ function renderConfraPeticiones(){
         +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
         +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
         +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">'+( item.nick?'@'+item.nick:item.pid)+'</div></div>'
-        +(esMio?'<button class="btn btn-xs btn-danger" onclick="borrarPeticion(\''+item.id+'\')" >X</button>':'')
+        +(esMio||ROLE==='admin'?'<button class="btn btn-xs btn-danger" onclick="borrarPeticion(\''+item.id+'\')" >X</button>':'')
         +'</div>';
     });
     html+='</div>';
@@ -5515,7 +5576,7 @@ function renderConfraLlevar(){
         +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
         +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
         +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">Lo trae '+(item.nick?'@'+item.nick:item.pid)+'</div></div>'
-        +(esMio?'<button class="btn btn-xs btn-danger" onclick="borrarLlevar(\''+item.id+'\')" >X</button>':'')
+        +(esMio||ROLE==='admin'?'<button class="btn btn-xs btn-danger" onclick="borrarLlevar(\''+item.id+'\')" >X</button>':'')
         +'</div>';
     });
     html+='</div>';
