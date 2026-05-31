@@ -5745,22 +5745,25 @@ function exportarHotel(tipo){
 
 // ─── ENVIAR RECORDATORIOS DE PAGO PENDIENTE ────────────
 async function enviarRecordatoriosPago(){
-  var pagados={};
-  (DB.pagos||[]).forEach(function(p){
-    pagados[p.PersonaID||p.personaId||'']=(pagados[p.PersonaID||p.personaId||'']||0)+(Number(p.Importe)||0);
-  });
+  // Usar la función canónica pagadoPor(pid) que sí lee bien los campos de DB.pagos
+  // (personas en CSV e importe en minúscula). Antes leía PersonaID/Importe que no
+  // existen → contaba a TODOS como impagados y mandaba a todo el mundo.
   var pendientes=DB.personas.filter(function(p){
     if(p._esInvitado||p._esOrganizador||p.Activo==='FALSE') return false;
     var deb=Number(p.ImporteTotal)||0;
-    var pag=pagados[p.ID||p.id||'']||0;
-    return deb>pag;
+    if(deb<=0) return false; // sin cuota asignada, no molestar
+    var pag=pagadoPor(p.ID||p.id||'');
+    return (deb-pag) > 0.01; // margen para redondeo
   });
   if(!pendientes.length){ toast('No hay pagos pendientes ✓','ok'); return; }
-  if(!confirm('¿Enviar recordatorio a '+pendientes.length+' persona'+(pendientes.length>1?'s':'')+' con pago pendiente?')) return;
+  // Confirmación con muestra de los primeros nombres para que veas a quién va
+  var muestra=pendientes.slice(0,5).map(function(p){return p.NombreCompleto||p.Nombre||p.Nick||p.Email||'?';}).join(', ');
+  var resto=pendientes.length>5?(' y '+(pendientes.length-5)+' más'):'';
+  if(!confirm('Enviar recordatorio de pago a '+pendientes.length+' persona'+(pendientes.length>1?'s':'')+':\n\n'+muestra+resto+'\n\n¿Continuar?')) return;
   if(!DB.mensajes) DB.mensajes=[];
   pendientes.forEach(function(p){
     var deb=Number(p.ImporteTotal)||0;
-    var pag=pagados[p.ID||p.id||'']||0;
+    var pag=pagadoPor(p.ID||p.id||'');
     var falta=deb-pag;
     var nombreCompleto=p.NombreCompleto || ((p.Nombre||'')+' '+(p.Apellidos||'')).trim() || p.Nick || '';
     DB.mensajes.unshift({
