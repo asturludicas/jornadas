@@ -1353,10 +1353,14 @@ tbody tr:hover td{background:var(--paper)}
           <label>Duración aproximada</label>
           <select id="pt-duracion">
             <option value="1h">1 hora</option>
+            <option value="1.5h">1,5 horas</option>
             <option value="2h" selected>2 horas</option>
             <option value="2.5h">2,5 horas</option>
             <option value="3h">3 horas</option>
-            <option value="4h+">4 horas o más</option>
+            <option value="3.5h">3,5 horas</option>
+            <option value="4h">4 horas</option>
+            <option value="4.5h">4,5 horas</option>
+            <option value="5h+">5 horas o más</option>
           </select>
         </div>
       </div>
@@ -1960,7 +1964,7 @@ function renderDashboard(){
     +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
     +'<button class="btn btn-primary" style="flex:1;min-width:120px" onclick="abrirModalIngreso()">+ Ingreso</button>'
     +'<button class="btn" style="flex:1;min-width:120px;background:var(--red);color:#fff;border-color:var(--red)" onclick="abrirModalGasto()">+ Gasto</button>'
-    +'<button class="btn" style="flex:1;min-width:120px" onclick="enviarRecordatoriosPago()">Recordar pagos</button>'
+    +'<button class="btn" style="flex:1;min-width:120px" onclick="enviarRecordatoriosPago()">✉ Recordar pagos (email)</button>'
     +'</div></div>';
 
   // Solo solicitudes muestran badge (son pendientes reales)
@@ -3771,7 +3775,8 @@ function renderCalendario(){
 
 function durMin(dur){
   // Convierte duración a minutos para calcular solapamiento
-  const map={'1h':60,'2h':120,'2.5h':150,'3h':180,'4h+':240,
+  const map={'1h':60,'1.5h':90,'2h':120,'2.5h':150,'3h':180,'3.5h':210,'4h':240,'4.5h':270,'5h+':300,
+             '4h+':240,
              '1 hora':60,'2 horas':120,'1.5 horas':90,'3 horas':180,'4+ horas':240};
   return map[dur]||120;
 }
@@ -5743,40 +5748,74 @@ function exportarHotel(tipo){
 }
 
 
-// ─── ENVIAR RECORDATORIOS DE PAGO PENDIENTE ────────────
+// ─── ENVIAR RECORDATORIOS DE PAGO PENDIENTE (POR EMAIL) ────
 async function enviarRecordatoriosPago(){
-  // Usar la función canónica pagadoPor(pid) que sí lee bien los campos de DB.pagos
-  // (personas en CSV e importe en minúscula). Antes leía PersonaID/Importe que no
-  // existen → contaba a TODOS como impagados y mandaba a todo el mundo.
+  // Detectar pendientes con la función canónica pagadoPor()
   var pendientes=DB.personas.filter(function(p){
     if(p._esInvitado||p._esOrganizador||p.Activo==='FALSE') return false;
     var deb=Number(p.ImporteTotal)||0;
-    if(deb<=0) return false; // sin cuota asignada, no molestar
+    if(deb<=0) return false;
     var pag=pagadoPor(p.ID||p.id||'');
-    return (deb-pag) > 0.01; // margen para redondeo
+    return (deb-pag) > 0.01;
   });
   if(!pendientes.length){ toast('No hay pagos pendientes ✓','ok'); return; }
-  // Confirmación con muestra de los primeros nombres para que veas a quién va
+
+  // Recoger emails únicos (los acompañantes suelen compartir email con el titular).
+  var emails=[]; var sinEmail=[];
+  pendientes.forEach(function(p){
+    var e=String(p.Email||'').trim().toLowerCase();
+    if(e && e.includes('@')){
+      if(!emails.includes(e)) emails.push(e);
+    } else {
+      sinEmail.push(p.NombreCompleto||p.Nombre||p.Nick||'?');
+    }
+  });
+  if(!emails.length){
+    toast('Ninguno de los pendientes tiene email registrado','err');
+    return;
+  }
+
+  // Confirmación con muestra de nombres
   var muestra=pendientes.slice(0,5).map(function(p){return p.NombreCompleto||p.Nombre||p.Nick||p.Email||'?';}).join(', ');
   var resto=pendientes.length>5?(' y '+(pendientes.length-5)+' más'):'';
-  if(!confirm('Enviar recordatorio de pago a '+pendientes.length+' persona'+(pendientes.length>1?'s':'')+':\n\n'+muestra+resto+'\n\n¿Continuar?')) return;
-  if(!DB.mensajes) DB.mensajes=[];
-  pendientes.forEach(function(p){
-    var deb=Number(p.ImporteTotal)||0;
-    var pag=pagadoPor(p.ID||p.id||'');
-    var falta=deb-pag;
-    var nombreCompleto=p.NombreCompleto || ((p.Nombre||'')+' '+(p.Apellidos||'')).trim() || p.Nick || '';
-    DB.mensajes.unshift({
-      id:uid('MSG_'),
-      asunto:'Recordatorio: pago pendiente',
-      cuerpo:'Hola '+(p.Nick||p.Nombre||'')+',\nTienes un pago pendiente de '+falta.toFixed(2)+'€ para las jornadas.\n\nDatos de la transferencia:\n• IBAN: ES18 1465 0360 19 1760177551\n• Titular: Daniel Méndez-Bonito\n• Concepto: AsturLúdicas '+nombreCompleto+'\n\n¡Gracias!',
-      seg:'PERSONA', segV:p.ID||p.id||'',
-      ts:new Date().toISOString(), _auto:true
-    });
-  });
+  var avisoSinEmail = sinEmail.length ? ('\n\n⚠ '+sinEmail.length+' sin email (no recibirán nada): '+sinEmail.slice(0,3).join(', ')+(sinEmail.length>3?'...':'')) : '';
+  if(!confirm(
+    'Se abrirá tu cliente de correo con un email a '+emails.length+' destinatario'+(emails.length>1?'s en BCC':'')+
+    ' (correspondientes a '+pendientes.length+' inscritos pendientes):\n\n'+
+    muestra+resto+avisoSinEmail+
+    '\n\nRevisa el contenido en tu cliente de correo y pulsa Enviar allí. ¿Continuar?'
+  )) return;
+
+  var asunto=encodeURIComponent('AsturLúdicas — Recordatorio de pago pendiente');
+  var cuerpo=encodeURIComponent(
+    'Hola,\n\n'+
+    'Te escribimos desde la organización de las Jornadas AsturLúdicas. Según nuestros registros tu inscripción aún tiene pago pendiente. '+
+    'Puedes consultar el importe exacto que falta entrando en la app (apartado "Estado de pago" de tu ficha).\n\n'+
+    'Datos para la transferencia:\n'+
+    '• IBAN: ES18 1465 0360 19 1760177551\n'+
+    '• Titular: Daniel Méndez-Bonito\n'+
+    '• Concepto: AsturLúdicas + tu nombre y apellidos\n\n'+
+    'Si has hecho la transferencia en los últimos días puede que aún no se haya registrado: en ese caso ignora este aviso, ¡gracias!\n\n'+
+    'Un saludo,\nLa organización de AsturLúdicas'
+  );
+  // "to:" al propio admin para tener copia; los pendientes van en BCC para que no se vean entre sí.
+  var miEmail=(ME&&ME.Email)?ME.Email:'asturludicas@gmail.com';
+  var mailtoUrl='mailto:'+encodeURIComponent(miEmail)+'?bcc='+emails.join(',')+'&subject='+asunto+'&body='+cuerpo;
+
+  // Aviso si la URL es muy larga (algunos clientes truncan a ~2000 chars)
+  if(mailtoUrl.length>1900){
+    if(!confirm('La lista de destinatarios es muy larga ('+mailtoUrl.length+' caracteres). Algunos clientes de correo pueden truncarla. ¿Intentar abrirla igualmente?')) return;
+  }
+
+  // Abrir en cliente de correo. Usamos un <a> efímero para máxima compatibilidad.
+  var a=document.createElement('a');
+  a.href=mailtoUrl; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){a.remove();},100);
+
+  log('RECORDATORIO_EMAIL', emails.length+' destinatarios ('+pendientes.length+' pendientes)');
   await saveRemote();
-  toast(pendientes.length+' recordatorios enviados ✓','ok');
-  renderDashboard();
+  toast('Abriendo tu cliente de correo con '+emails.length+' destinatario'+(emails.length>1?'s en BCC':''),'ok');
 }
 
 
