@@ -2125,7 +2125,7 @@ function renderPersonas(){
           ${p.GrupoID&&p.EsTitular!=='SI'?`<div style="font-size:10px;color:var(--ink3);font-style:italic">Acomp. de: ${(()=>{const t=DB.personas.find(x=>(x.ID||x.id||'')!==pid&&(x.GrupoID||'')===p.GrupoID&&x.EsTitular==='SI');return t?(t.NombreCompleto||t.Nombre||'titular'):p.GrupoID;})()}</div>`:''}
         </div></div></td>
       <td style="font-size:12px"><div>${p.Modalidad||'—'}</div><div style="margin-top:2px">${alojChip}</div></td>
-      <td><div style="display:flex;align-items:center;gap:6px">${chipPago(ep)}<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--ink3)" title="Marcar como pagado completamente"><input type="checkbox" ${ep==='pagado'?'checked':''} onchange="togglePagadoAdmin('${pid}',this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--green)"></label></div>${tot>0?`<div class="pbar" style="width:70px;margin-top:3px"><div class="pbar-f ${ep==='pagado'?'':ep==='parcial'?'p':'z'}" style="width:${pct}%"></div></div><div style="font-size:10px;color:var(--ink3)">${fmt(pag)}€/${fmt(tot)}€</div>`:''}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">${chipPago(ep)}<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--ink3)" title="Marcar como pagado completamente"><input type="checkbox" ${ep==='pagado'?'checked':''} onchange="togglePagadoAdmin('${pid}',this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--green)"></label><button class="btn btn-xs" onclick="registrarPagoParcialAdmin('${pid}')" title="Registrar un pago de un importe concreto (parcial o de menos)" style="padding:2px 7px;font-size:11px;line-height:1.2">+€</button></div>${tot>0?`<div class="pbar" style="width:70px;margin-top:3px"><div class="pbar-f ${ep==='pagado'?'':ep==='parcial'?'p':'z'}" style="width:${pct}%"></div></div><div style="font-size:10px;color:var(--ink3)">${fmt(pag)}€/${fmt(tot)}€</div>`:''}</td>
       <td><code style="background:var(--paper);padding:2px 6px;border-radius:4px;font-size:11px">${p.Codigo||'—'}</code>
         ${!p.Codigo?`<button class="btn btn-xs" onclick="genCodigoPersona('${pid}')" style="margin-left:4px">🔑</button>`:''}</td>
       <td><div style="display:flex;gap:4px">
@@ -6241,6 +6241,59 @@ async function togglePagadoAdmin(pid, checked){
   }
   log('PAGO_QUICK',`${pid} → ${checked?'PAGADO':'DESMARCADO'}`);
   await saveRemote(); renderPersonas(); toast(checked?'Marcado como pagado':'Pagos eliminados','ok');
+}
+
+// ─── REGISTRAR PAGO PARCIAL (solo admin) ───────────────
+async function registrarPagoParcialAdmin(pid){
+  if(ROLE!=='admin'){ toast('Solo administradores','err'); return; }
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===pid); if(!p) return;
+  const tot=Number(p.ImporteTotal||0);
+  const yaPagado=pagadoPor(pid);
+  const falta=Math.max(0,tot-yaPagado);
+  const nombre=p.NombreCompleto||p.Nombre||p.Nick||'persona';
+  const txt=prompt(
+    '💶 Registrar pago — '+nombre+'\n\n'+
+    'Total: '+tot.toFixed(2)+'€\n'+
+    'Ya pagado: '+yaPagado.toFixed(2)+'€\n'+
+    'Pendiente: '+falta.toFixed(2)+'€\n\n'+
+    '¿Cuánto importe quieres registrar ahora? (€)',
+    falta>0?falta.toFixed(2):''
+  );
+  if(txt===null) return; // canceló
+  const importe=Number(String(txt).replace(',','.'));
+  if(!isFinite(importe) || importe<=0){
+    toast('Importe no válido','err'); return;
+  }
+  // Aviso si supera lo debido
+  if(yaPagado+importe > tot+0.01){
+    const total2=yaPagado+importe;
+    if(!confirm('Con este pago, el total cobrado ('+total2.toFixed(2)+'€) supera el importe debido ('+tot.toFixed(2)+'€). ¿Continuar de todas formas?')) return;
+  }
+  const obs=prompt('Nota / método (opcional):','Transferencia');
+  if(obs===null) return; // canceló en este paso
+  const pg={
+    id:uid('PAG_'),
+    personas:pid,
+    importe:importe,
+    metodo:'transferencia',
+    fecha:new Date().toISOString().split('T')[0],
+    obs:obs||'Pago parcial registrado desde panel admin',
+    ts:new Date().toISOString()
+  };
+  pg.ID=pg.id;
+  if(!DB.pagos) DB.pagos=[];
+  DB.pagos.push(pg);
+  log('PAGO_PARCIAL',pid+' +'+importe.toFixed(2)+'€');
+  const ok=await saveRemote();
+  if(ok){
+    renderPersonas();
+    const nuevoTotal=yaPagado+importe;
+    const restante=Math.max(0,tot-nuevoTotal);
+    toast('Pago de '+importe.toFixed(2)+'€ registrado. '+(restante>0?'Falta '+restante.toFixed(2)+'€':'PAGADO COMPLETO ✓'),'ok');
+  } else {
+    DB.pagos.pop(); // revertir si falló el guardado remoto
+    renderPersonas();
+  }
 }
 
 // ─── EXPORT CSV ────────────────────────────────────────
