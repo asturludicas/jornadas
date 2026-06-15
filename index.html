@@ -3156,7 +3156,8 @@ async function ejecutarImport(){
 
   try{
     const {personas, stats}=procesarCSV(m);
-    let crea=0, act=0;
+    let crea=0, act=0, vinc=0;
+    const nombresActualizados=[];
 
     personas.forEach(p=>{
       const email=String(p.Email||'').toLowerCase();
@@ -3170,8 +3171,25 @@ async function ejecutarImport(){
 
       const {_nuevo, ...pLimpio}=p; // quitar campo interno
       if(idx>=0){
-        // Ya existe → NO tocar NADA. Preserva todos los cambios manuales
-        // (importe, modalidad, bajas, notas...). Solo se añaden personas nuevas.
+        // Ya existe → preserva pagos, notas, importes, etc.
+        // PERO actualiza GrupoID y EsTitular SI el actual está vacío y el CSV trae uno.
+        // Esto permite que una re-importación vincule a un titular ya existente con su grupo,
+        // sin romper la regla de "no tocar nada".
+        const existente=DB.personas[idx];
+        let cambios=[];
+        if(p.GrupoID && !String(existente.GrupoID||'').trim()){
+          existente.GrupoID=p.GrupoID;
+          cambios.push('GrupoID='+p.GrupoID);
+        }
+        if(p.EsTitular && !String(existente.EsTitular||'').trim()){
+          existente.EsTitular=p.EsTitular;
+          cambios.push('EsTitular='+p.EsTitular);
+        }
+        if(cambios.length){
+          log('IMPORT_VINCULA', (existente.NombreCompleto||existente.Nombre||'?')+': '+cambios.join(', '));
+          vinc++;
+        }
+        nombresActualizados.push(existente.NombreCompleto||existente.Nombre||'?');
         act++;
       } else {
         DB.personas.push(pLimpio);
@@ -3192,23 +3210,26 @@ async function ejecutarImport(){
       }
     });
 
-    log('IMPORTAR_FORMS',`nuevos:${crea} ya-existian:${act} grupos:${stats.grupos}`);
+    log('IMPORTAR_FORMS',`nuevos:${crea} ya-existian:${act} vinc:${vinc} grupos:${stats.grupos}`);
     await saveRemote();
 
     const res=document.getElementById('csv-res');
     res.style.display='block';
+    const listaAct=nombresActualizados.length?'<div style="margin-top:6px;font-size:11px;color:var(--ink3)">Ya existían (no modificadas): '+nombresActualizados.slice(0,8).join(', ')+(nombresActualizados.length>8?` y ${nombresActualizados.length-8} más`:'')+'</div>':'';
     res.innerHTML=`<div style="background:var(--green-l);border:1px solid var(--green);border-radius:var(--rs);padding:14px">
       <div style="font-weight:700;color:var(--green);font-size:14px;margin-bottom:6px">✓ Importación completada</div>
       <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap">
         <span>👤 Personas nuevas: <strong>${crea}</strong></span>
         <span>🔄 Actualizadas: <strong>${act}</strong></span>
+        ${vinc?`<span>🔗 Vinculadas a grupo: <strong>${vinc}</strong></span>`:''}
         <span>👥 Grupos creados: <strong>${stats.grupos}</strong></span>
       </div>
+      ${listaAct}
       <div style="margin-top:8px;font-size:12px;color:var(--ink3)">
-        Los datos existentes (pagos, notas internas, códigos) no han sido modificados.
+        Las personas que ya existían no han sido modificadas (pagos, notas, importes intactos). Sólo se actualiza GrupoID/EsTitular si estaban vacíos.
       </div>
     </div>`;
-    renderPersonas(); toast(`${crea} nuevas · ${act} actualizadas`,'ok');
+    renderPersonas(); toast(`${crea} nuevas · ${act} actualizadas${vinc?` · ${vinc} vinculadas`:''}`,'ok');
   } finally {
     if(btn){ btn.disabled=false; btn.textContent='Importar'; }
   }
