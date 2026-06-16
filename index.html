@@ -2329,9 +2329,77 @@ async function reactivarPersona(pid){
 }
 
 async function eliminarPersona(id){
-  if(!confirm('¿Eliminar esta persona?')) return;
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===id);
+  if(!p) return;
+  const nombre=p.NombreCompleto||p.Nombre||'esta persona';
+
+  // ─── 1) Detectar pagos (bloquean el borrado) ──────────────────
+  const pagosSuyos=(DB.pagos||[]).filter(pg=>String(pg.personas||'').split(',').map(x=>x.trim()).includes(id));
+  if(pagosSuyos.length){
+    const totalPag=pagosSuyos.reduce((s,pg)=>s+Number(pg.importe||0),0);
+    alert('⛔ No puedo eliminar a '+nombre+' porque tiene '+pagosSuyos.length+' pago'+(pagosSuyos.length>1?'s':'')+' registrado'+(pagosSuyos.length>1?'s':'')+' por un total de '+totalPag.toFixed(2)+'€.\n\nBorrarla dejaría ese dinero huérfano en la contabilidad. Mejor dale de baja (botón ⏸), así su ficha y sus pagos quedan registrados pero deja de aparecer en listas operativas.');
+    return;
+  }
+
+  // ─── 2) Detectar otras referencias (informativo, no bloquean) ──
+  const refs=[];
+  if(DB.asignaciones&&DB.asignaciones[id]) refs.push('asignación de habitación');
+  const enPartidas=(DB.partidas||[]).filter(par=>(par.creadorId===id)||(par.jugadores||[]).some(j=>j.id===id));
+  if(enPartidas.length) refs.push(enPartidas.length+' partida'+(enPartidas.length>1?'s':''));
+  const enMercado=(DB.mercadillo||[]).filter(m=>m.vendedorId===id||m.compradorId===id);
+  if(enMercado.length) refs.push(enMercado.length+' anuncio'+(enMercado.length>1?'s':'')+' en el mercadillo');
+  const enConfraPet=(DB.confra_peticiones||[]).filter(c=>c.pid===id);
+  const enConfraLlev=(DB.confra_llevar||[]).filter(c=>c.pid===id);
+  const enConfraApt=(DB.confra_apuntados||[]).includes(id);
+  if(enConfraPet.length||enConfraLlev.length||enConfraApt) refs.push('items en AsturL');
+  const solsSuyas=(DB.solicitudes||[]).filter(s=>s.personaId===id);
+  if(solsSuyas.length) refs.push(solsSuyas.length+' solicitud'+(solsSuyas.length>1?'es':''));
+  let enComidas=0;
+  Object.keys(DB.comidas_optin||{}).forEach(k=>{ if(DB.comidas_optin[k] && DB.comidas_optin[k][id]!==undefined) enComidas++; });
+  if(enComidas) refs.push('opt-in en '+enComidas+' comida'+(enComidas>1?'s':''));
+
+  // ─── 3) Aviso si es titular con acompañantes ──────────────────
+  let avisoGrupo='';
+  if(p.GrupoID&&p.EsTitular==='SI'){
+    const acomps=DB.personas.filter(x=>(x.GrupoID||'')===p.GrupoID && (x.ID||x.id||'')!==id && !x._esInvitado && !x._esOrganizador);
+    if(acomps.length) avisoGrupo='\n\n⚠ Es titular del grupo '+p.GrupoID+' con '+acomps.length+' acompañante'+(acomps.length>1?'s':'')+'. Quedarán sin titular asociado (puedes vincularlos a otro titular después o borrarlos también).';
+  }
+
+  // ─── 4) Confirmación final ────────────────────────────────────
+  let msg='¿Eliminar PERMANENTEMENTE a '+nombre+'?\n\n';
+  msg+='Sin pagos registrados, así que la contabilidad queda intacta.';
+  if(refs.length){
+    msg+='\n\nSe limpiarán también: '+refs.join(', ')+'.';
+  }
+  msg+=avisoGrupo;
+  msg+='\n\nEsta acción NO se puede deshacer. Si dudas, usa "Dar de baja" (⏸) en su lugar.';
+  if(!confirm(msg)) return;
+
+  // ─── 5) Limpiar referencias menores ───────────────────────────
+  if(DB.asignaciones&&DB.asignaciones[id]) delete DB.asignaciones[id];
+  (DB.partidas||[]).forEach(par=>{
+    if(par.jugadores) par.jugadores=par.jugadores.filter(j=>j.id!==id);
+  });
+  // Si creó partidas, las dejamos pero blanqueamos creador para no perderlas
+  (DB.partidas||[]).forEach(par=>{
+    if(par.creadorId===id){ par.creadorId=''; par.creadorNick=(par.creadorNick||'')+' (borrado)'; }
+  });
+  DB.mercadillo=(DB.mercadillo||[]).filter(m=>m.vendedorId!==id&&m.compradorId!==id);
+  DB.confra_apuntados=(DB.confra_apuntados||[]).filter(x=>x!==id);
+  DB.confra_peticiones=(DB.confra_peticiones||[]).filter(c=>c.pid!==id);
+  DB.confra_llevar=(DB.confra_llevar||[]).filter(c=>c.pid!==id);
+  DB.solicitudes=(DB.solicitudes||[]).filter(s=>s.personaId!==id);
+  Object.keys(DB.comidas_optin||{}).forEach(k=>{
+    if(DB.comidas_optin[k]&&DB.comidas_optin[k][id]!==undefined) delete DB.comidas_optin[k][id];
+  });
+  if(DB.mensajes_leidos&&DB.mensajes_leidos[id]) delete DB.mensajes_leidos[id];
+
+  // ─── 6) Borrar la persona ─────────────────────────────────────
   DB.personas=DB.personas.filter(x=>(x.ID||x.id||'')!==id);
-  log('DEL_PERSONA',id); await saveRemote(); renderPersonas(); toast('Eliminada');
+  log('DEL_PERSONA',nombre+' ('+id+')');
+  const ok=await saveRemote();
+  if(ok){ renderPersonas(); toast(nombre+' eliminada permanentemente','ok'); }
+  else { toast('No se pudo guardar; recarga para verificar','err'); renderPersonas(); }
 }
 
 // ─── ALOJAMIENTO ADMIN ─────────────────────────────────
