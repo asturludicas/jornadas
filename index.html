@@ -1528,7 +1528,10 @@ function iniciarListenerFirebase(){
         const n=msg.data;
         ['personas','partidas','habitaciones','asignaciones','solicitudes',
          'pagos','gastos','cobros','mensajes','mensajes_leidos',
-         'comidas_optin','comidas_info','suministros_stock'].forEach(k=>{
+         'comidas_optin','comidas_info','suministros_stock',
+         'camisetas_extra','mercadillo','confra','confra_apuntados',
+         'confra_peticiones','confra_llevar','modulos','config',
+         'sum_consumos','sum_sobrantes','sum_historial','logs'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
