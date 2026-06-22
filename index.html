@@ -1479,8 +1479,9 @@ const DB = {
   confra_llevar:[],    // [{id,pid,nick,juego,desc,ts}] juegos que traen
   camisetas_extra:[],  // [{id,talla,motivo,ts}] camisetas sueltas (organizadores, regalos, repuestos)
   // ─── CONTROL DE CONCURRENCIA Y SNAPSHOTS ───────────────
-  _version:0,          // se incrementa en cada save; protege contra clientes desactualizados
-  _snapLast:0,         // timestamp del último snapshot tomado (auto cada N horas)
+  _version:0,            // se incrementa en cada save; protege contra clientes desactualizados
+  _snapLast:0,           // timestamp del último snapshot tomado (auto cada N horas)
+  _minClientVersion:0,   // versión mínima de APP_VERSION permitida para escribir
 };
 
 let ROLE=null, ME=null;
@@ -1554,7 +1555,7 @@ function iniciarListenerFirebase(){
          'camisetas_extra','mercadillo','confra','confra_apuntados',
          'confra_peticiones','confra_llevar','modulos','config',
          'sum_consumos','sum_sobrantes','sum_historial','logs',
-         '_version','_snapLast'].forEach(k=>{
+         '_version','_snapLast','_minClientVersion'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
@@ -1598,11 +1599,37 @@ function iniciarListenerFirebase(){
 function lsGet(k,d=null){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 
+// ─── BLOQUEO POR VERSIÓN DESACTUALIZADA ────────────────
+function mostrarBloqueoActualizar(local, requerido){
+  // Pinta un overlay que cubre toda la pantalla y no se puede saltar.
+  // Único modo de salir: recargar con caché limpia.
+  let ov = document.getElementById('overlay-actualizar');
+  if(ov) return; // ya está mostrado
+  ov = document.createElement('div');
+  ov.id='overlay-actualizar';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(26,26,46,.96);z-index:999999;display:flex;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,sans-serif';
+  ov.innerHTML = '<div style="background:#FAF6F0;border-radius:18px;padding:36px 28px;max-width:480px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.5)">'
+    +'<div style="font-size:54px;margin-bottom:8px">🔄</div>'
+    +'<h1 style="color:#B87A52;margin:0 0 12px 0;font-size:24px">App desactualizada</h1>'
+    +'<p style="color:#1A1A2E;font-size:15px;line-height:1.5;margin:0 0 18px 0">Tu app es la versión <strong>'+local+'</strong> y el servidor requiere la <strong>'+requerido+'</strong> o superior.</p>'
+    +'<p style="color:#666;font-size:13px;margin:0 0 22px 0">Para evitar daños en los datos compartidos, esta sesión está bloqueada hasta que actualices. Pulsa el botón y se recargará con la versión actual.</p>'
+    +'<button style="background:#B87A52;color:#fff;border:0;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer" onclick="location.reload(true)">Recargar y actualizar</button>'
+    +'<p style="color:#999;font-size:11px;margin-top:18px">Si tras pulsar sigues viendo este mensaje, prueba con <strong>Ctrl+Shift+R</strong> (PC) o cerrar y volver a abrir la pestaña.</p>'
+    +'</div>';
+  document.body.appendChild(ov);
+}
+
 // ─── SYNC ──────────────────────────────────────────────
 async function loadRemote(){
   const r=await jbGet();
   if(r&&r._jornadas){ Object.assign(DB,r._jornadas); lsSet('jdb',DB); }
   else { const l=lsGet('jdb'); if(l) Object.assign(DB,l); }
+  // Si el servidor requiere una versión más nueva, BLOQUEAR la app aquí.
+  const remoteMin = Number(DB._minClientVersion)||0;
+  if(remoteMin && APP_VERSION < remoteMin){
+    mostrarBloqueoActualizar(APP_VERSION, remoteMin);
+    throw new Error('App desactualizada (v'+APP_VERSION+', requiere v'+remoteMin+')');
+  }
   // Restaurar setting de acceso desde DB.config (si fue cambiado desde la app)
   if(DB.config && DB.config.acceso_abierto !== undefined){
     CFG.ACCESO_ABIERTO = DB.config.acceso_abierto;
@@ -1636,6 +1663,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
+const APP_VERSION = 92; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -1706,6 +1734,25 @@ async function saveRemote(){
   });
   let okFinal=true;
   try{
+    // ─── 0) CHECK DE VERSIÓN MÍNIMA DE CLIENTE ──────────
+    // Si el servidor exige una versión mínima del cliente y la nuestra es
+    // anterior, REFUSE. Protege contra clientes con HTML antiguo cacheado.
+    let remoteMinClient = 0;
+    try{
+      const peekMin = await fetch(CFG.FIREBASE_URL+'/jornadas/_minClientVersion.json?auth='+CFG.FIREBASE_SECRET);
+      if(peekMin.ok){
+        const v = await peekMin.json();
+        remoteMinClient = Number(v)||0;
+      }
+    }catch{ /* si no se puede leer, continuamos al siguiente check */ }
+    if(remoteMinClient && APP_VERSION < remoteMinClient){
+      okFinal=false;
+      _syncOK=false;
+      actualizarSyncBadge();
+      toast('⚠ Tu app está desactualizada (v'+APP_VERSION+'). El servidor requiere v'+remoteMinClient+'+. Recarga la página (Ctrl+Shift+R) para actualizar. Tus cambios NO se han guardado.','err',15000);
+      return false;
+    }
+
     // ─── 1) CHECK DE VERSIÓN — anti-clientes-zombi ─────
     // Lee la versión actual del servidor. Si está MÁS ADELANTADA que la nuestra,
     // significa que otro dispositivo ya guardó cambios que no hemos visto y
@@ -1738,6 +1785,11 @@ async function saveRemote(){
 
     // ─── 2) Incrementar versión y preparar payload ─────
     DB._version = localVersion + 1;
+    // Subir _minClientVersion automáticamente si nuestra APP_VERSION es mayor.
+    // Así los clientes con versiones anteriores quedarán bloqueados de raíz.
+    if((Number(DB._minClientVersion)||0) < APP_VERSION){
+      DB._minClientVersion = APP_VERSION;
+    }
     const pFilt=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador);
     const dbG={...DB,personas:pFilt};
     lsSet('jdb',dbG);
@@ -6273,54 +6325,55 @@ function actualizarBadgeHoy(){
 
 
 
-// ─── SINCRONIZACIÓN OFFLINE ────────────────────────────
-let _offlineQueue = lsGet('offline_queue', []);
+// ─── DETECCIÓN ONLINE/OFFLINE (sin auto-save peligroso) ────
+// PROBLEMA HISTÓRICO RESUELTO: el código anterior tenía un wrapper de
+// "sincronización offline" que, al recuperar conexión, llamaba automáticamente
+// a saveRemote() con el DB en memoria. Si el dispositivo llevaba mucho tiempo
+// suspendido (PC dormido, pestaña olvidada, móvil con red flaky), el DB en
+// memoria estaba desactualizado — y al despertarse, machacaba Firebase con
+// estado antiguo. Era exactamente la causa de los rollbacks repetidos.
+//
+// AHORA: al volver la conexión NO se sincroniza nada automáticamente.
+// Solo se hace un loadRemote() para refrescar el estado del servidor.
+// Si el usuario quiere guardar cambios, tiene que hacer alguna acción
+// explícita — y ahí entra el check de versión de saveRemote, que rechaza
+// escrituras con estado desactualizado.
 let _online = navigator.onLine;
 
 window.addEventListener('online', async function(){
-  _online=true;
-  toast('Conexión restablecida — sincronizando...','ok');
-  await procesarColaOffline();
-});
-window.addEventListener('offline', function(){
-  _online=false;
-  toast('Sin conexión — los cambios se guardarán al reconectar','err');
-});
-
-async function procesarColaOffline(){
-  if(!_offlineQueue.length) return;
+  _online = true;
+  toast('Conexión restablecida — recargando estado del servidor…','ok');
   try{
-    // Solo necesitamos un saveRemote final con el estado actual
-    await saveRemote();
-    _offlineQueue=[];
-    lsSet('offline_queue',[]);
-    toast(_offlineQueue.length+' cambios sincronizados ✓','ok');
-  }catch(e){
-    console.warn('Error sincronizando:',e);
-  }
-}
+    await loadRemote();
+    // Re-render página actual con datos frescos
+    const pg = HIST[HIST.length-1];
+    if(pg) try{ nav(pg,false); }catch{}
+    _syncOK = true;
+    actualizarSyncBadge();
+  }catch(e){ console.warn('Error recargando tras volver online:', e); }
+});
 
-// Wrapper de saveRemote con detección offline
+window.addEventListener('offline', function(){
+  _online = false;
+  toast('⚠ Sin conexión. Cualquier cambio que hagas NO se guardará hasta que vuelva la red.','err',8000);
+});
+
+// Wrapper de saveRemote: si no hay conexión, AVISA y NO escribe nada.
+// Esto sustituye al wrapper anterior que ponía cosas en una cola peligrosa.
 const _origSaveRemote = saveRemote;
 saveRemote = async function(){
   if(!navigator.onLine){
-    // Guardar estado en localStorage como respaldo
-    lsSet('jdb_pending', DB);
-    _offlineQueue.push({ts:Date.now()});
-    lsSet('offline_queue', _offlineQueue);
-    return;
+    toast('⚠ Sin conexión. El cambio NO se ha guardado. Espera a recuperar red y reintenta.','err',6000);
+    return false;
   }
-  try{
-    await _origSaveRemote();
-  }catch(e){
-    if(!navigator.onLine){
-      lsSet('jdb_pending', DB);
-      _offlineQueue.push({ts:Date.now()});
-      lsSet('offline_queue', _offlineQueue);
-    }
-    throw e;
-  }
+  return await _origSaveRemote();
 };
+
+// Limpiar restos de la cola antigua del localStorage (si existían)
+try{
+  localStorage.removeItem('offline_queue');
+  localStorage.removeItem('jdb_pending');
+}catch{}
 
 // Indicador visual de estado de conexión
 function actualizarIndicadorConexion(){
