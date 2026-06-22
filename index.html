@@ -631,6 +631,7 @@ tbody tr:hover td{background:var(--paper)}
       <button class="topbar-back" id="btn-back" onclick="goBack()">←</button>
       <div class="topbar-title" id="page-title">—</div>
       <div class="topbar-right">
+        <span id="sync-badge" style="display:none;background:var(--red);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:12px;cursor:pointer" onclick="window.location.reload()">⚠ Desfasado</span>
         <button class="btn btn-sm" onclick="reloadData()" title="Sincronizar">↺</button>
         <button class="btn btn-sm" onclick="logout()" id="btn-logout-top" style="display:none">Salir</button>
       </div>
@@ -880,6 +881,24 @@ tbody tr:hover td{background:var(--paper)}
               <tbody id="tb-logs"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <!-- Snapshots / copias de seguridad -->
+      <div id="page-snapshots" class="page">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Snapshots automáticos</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-sm" onclick="crearSnapshotManual()">+ Crear ahora</button>
+              <button class="btn btn-sm" onclick="renderSnapshots()">↺</button>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--ink3);margin-bottom:12px">
+            La app guarda una copia de seguridad automática cada <strong>3 horas</strong> en Firebase (con cualquier cambio).
+            Se mantienen las últimas <strong>40 copias</strong>. Si pasara algo raro, restaura una copia previa con un click.
+          </p>
+          <div id="snapshots-content">Cargando…</div>
         </div>
       </div>
 
@@ -1459,6 +1478,9 @@ const DB = {
   confra_peticiones:[],// [{id,pid,nick,juego,desc,ts}] juegos que quieren jugar
   confra_llevar:[],    // [{id,pid,nick,juego,desc,ts}] juegos que traen
   camisetas_extra:[],  // [{id,talla,motivo,ts}] camisetas sueltas (organizadores, regalos, repuestos)
+  // ─── CONTROL DE CONCURRENCIA Y SNAPSHOTS ───────────────
+  _version:0,          // se incrementa en cada save; protege contra clientes desactualizados
+  _snapLast:0,         // timestamp del último snapshot tomado (auto cada N horas)
 };
 
 let ROLE=null, ME=null;
@@ -1531,7 +1553,8 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock',
          'camisetas_extra','mercadillo','confra','confra_apuntados',
          'confra_peticiones','confra_llevar','modulos','config',
-         'sum_consumos','sum_sobrantes','sum_historial','logs'].forEach(k=>{
+         'sum_consumos','sum_sobrantes','sum_historial','logs',
+         '_version','_snapLast'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
@@ -1614,6 +1637,9 @@ async function loadRemote(){
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
 let _saving=false, _saveQueue=false;
+const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
+const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
+let _syncOK = true;                 // indicador visible de "estoy sincronizado"
 
 // Guardado optimista: actualiza UI al instante, sync en background
 function saveOptimista(renderFn){
@@ -1621,6 +1647,53 @@ function saveOptimista(renderFn){
   lsSet('jdb',{...DB,personas:pFilt});
   if(renderFn) try{ renderFn(); }catch(e){}
   saveRemote().catch(()=>{});
+}
+
+// Toma un snapshot del estado actual en /snapshots/<ts> si han pasado >N horas.
+// Limita el coste: solo cuando merece la pena. NO bloquea el save si falla.
+async function tomarSnapshotSiToca(estadoActual){
+  const ahora = Date.now();
+  const ult = Number(DB._snapLast||0);
+  if(ahora - ult < SNAPSHOT_INTERVAL_HOURS*3600*1000) return; // todavía no toca
+  try{
+    const url = CFG.FIREBASE_URL+'/snapshots/'+ahora+'.json?auth='+CFG.FIREBASE_SECRET;
+    const meta = {
+      ts: ahora,
+      fechaLegible: new Date(ahora).toISOString(),
+      personas: (estadoActual.personas||[]).length,
+      pagos: (estadoActual.pagos||[]).length,
+      grupos: (estadoActual.grupos||[]).length,
+      version: estadoActual._version || 0,
+      data: estadoActual
+    };
+    const r = await fetch(url,{method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(meta)});
+    if(r.ok){
+      DB._snapLast = ahora;
+      console.log('📦 Snapshot creado:', new Date(ahora).toLocaleString());
+      // Limpieza: borrar snapshots más viejos del límite
+      podaSnapshots().catch(()=>{});
+    }
+  }catch(e){
+    console.warn('Snapshot fallido (no bloquea):', e);
+  }
+}
+
+async function podaSnapshots(){
+  try{
+    const r = await fetch(CFG.FIREBASE_URL+'/snapshots.json?shallow=true&auth='+CFG.FIREBASE_SECRET);
+    if(!r.ok) return;
+    const keys = await r.json();
+    if(!keys || typeof keys!=='object') return;
+    const ts = Object.keys(keys).map(k=>Number(k)).filter(n=>!isNaN(n)).sort((a,b)=>b-a);
+    if(ts.length <= SNAPSHOT_KEEP) return;
+    const aBorrar = ts.slice(SNAPSHOT_KEEP);
+    for(const t of aBorrar){
+      try{
+        await fetch(CFG.FIREBASE_URL+'/snapshots/'+t+'.json?auth='+CFG.FIREBASE_SECRET, {method:'DELETE'});
+      }catch{}
+    }
+    console.log('🧹 Snapshots viejos borrados:', aBorrar.length);
+  }catch(e){ /* silencioso */ }
 }
 
 async function saveRemote(){
@@ -1633,18 +1706,60 @@ async function saveRemote(){
   });
   let okFinal=true;
   try{
+    // ─── 1) CHECK DE VERSIÓN — anti-clientes-zombi ─────
+    // Lee la versión actual del servidor. Si está MÁS ADELANTADA que la nuestra,
+    // significa que otro dispositivo ya guardó cambios que no hemos visto y
+    // nuestro save los borraría. Abortamos.
+    let remoteVersion = 0;
+    try{
+      const peek = await fetch(CFG.FIREBASE_URL+'/jornadas/_version.json?auth='+CFG.FIREBASE_SECRET);
+      if(peek.ok){
+        const v = await peek.json();
+        remoteVersion = Number(v)||0;
+      }
+    }catch(e){
+      // Si no podemos verificar, mejor abortar que escribir a ciegas
+      okFinal=false;
+      _syncOK=false;
+      actualizarSyncBadge();
+      toast('⚠ No se pudo verificar versión con el servidor. Cambios NO guardados. Revisa conexión y reintenta.','err');
+      return false;
+    }
+    const localVersion = Number(DB._version)||0;
+    if(remoteVersion > localVersion){
+      // CONFLICTO: hay cambios más recientes en el servidor
+      okFinal=false;
+      _syncOK=false;
+      actualizarSyncBadge();
+      const diff = remoteVersion - localVersion;
+      toast('⚠ Hay '+diff+' cambio'+(diff>1?'s':'')+' más recientes en el servidor que no tienes. Tus cambios NO se han guardado. RECARGA la página (Ctrl+Shift+R) para ver lo último.','err',12000);
+      return false;
+    }
+
+    // ─── 2) Incrementar versión y preparar payload ─────
+    DB._version = localVersion + 1;
     const pFilt=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador);
     const dbG={...DB,personas:pFilt};
     lsSet('jdb',dbG);
+
+    // ─── 3) Snapshot automático si toca (antes del PUT, captura estado pre-cambio) ─
+    // De esta forma el snapshot conserva un punto bueno conocido si algo sale mal
+    await tomarSnapshotSiToca(dbG);
+
+    // ─── 4) PUT ────────────────────────────────────────
     const ok=await jbSet({_jornadas:dbG});
     if(ok===false){
-      // El guardado remoto FALLÓ. Avisar en vez de fingir que todo va bien.
+      // El guardado remoto FALLÓ. Revertir versión local para no quedar desfasados
+      DB._version = localVersion;
       _ultimoGuardadoOk=false;
+      _syncOK=false;
       okFinal=false;
-      toast('⚠️ NO se pudo guardar en el servidor. Revisa tu conexión o las reglas de Firebase. Los cambios NO están sincronizados.','err');
+      toast('⚠ NO se pudo guardar en el servidor. Revisa tu conexión. Los cambios NO están sincronizados.','err');
     } else {
       _ultimoGuardadoOk=true;
+      _syncOK=true;
     }
+    actualizarSyncBadge();
   } finally {
     _saving=false;
     btns.forEach(b=>{ b.disabled=false; });
@@ -1652,6 +1767,49 @@ async function saveRemote(){
   }
   return okFinal;
 }
+
+// ─── INDICADOR VISUAL DE SINCRONIZACIÓN ────────────────
+function actualizarSyncBadge(){
+  const el = document.getElementById('sync-badge');
+  if(!el) return;
+  if(_syncOK){
+    el.style.display='none';
+  } else {
+    el.style.display='inline-block';
+    el.textContent = '⚠ Desfasado — recarga';
+    el.title = 'Hay cambios en el servidor que no tienes. Recarga (Ctrl+Shift+R) para verlos antes de seguir.';
+  }
+}
+
+// ─── REFRESH AL VOLVER AL FOCO ─────────────────────────
+// Si una pestaña queda olvidada y otro admin guarda cambios, al volver
+// recargamos del servidor ANTES de permitir más escrituras. Esto mata el
+// "stale-client overwrite" en su raíz.
+let _lastFocusRefresh = Date.now();
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState !== 'visible') return;
+  // Throttling: máximo una recarga cada 30s
+  const ahora = Date.now();
+  if(ahora - _lastFocusRefresh < 30000) return;
+  _lastFocusRefresh = ahora;
+  if(_saving) return;
+  try{
+    const peek = await fetch(CFG.FIREBASE_URL+'/jornadas/_version.json?auth='+CFG.FIREBASE_SECRET);
+    if(!peek.ok) return;
+    const remoteV = Number(await peek.json())||0;
+    const localV = Number(DB._version)||0;
+    if(remoteV > localV){
+      console.log('🔄 Versión remota más nueva ('+remoteV+' vs local '+localV+'). Recargando...');
+      await loadRemote();
+      _syncOK = true;
+      actualizarSyncBadge();
+      // Re-render página actual
+      const pg=HIST[HIST.length-1];
+      if(pg) try{ nav(pg,false); }catch{}
+      toast('🔄 Cambios nuevos cargados del servidor','ok');
+    }
+  }catch{ /* silencioso */ }
+});
 
 // ─── HELPERS ───────────────────────────────────────────
 function uid(p=''){ return p+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase(); }
@@ -1850,7 +2008,7 @@ const NAV_ADMIN=[
   {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
   {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
-  {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
+  {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'snapshots',ico:'📦',label:'Snapshots'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
   {id:'_salir',ico:'↩',label:'Cerrar sesión', action:'logout()'},
 ];
 const NAV_INSCRITO=[
@@ -1916,7 +2074,7 @@ function nav(page, pushHist=true){
     dashboard:renderDashboard, personas:renderPersonas,
     solicitudes:renderSolicitudes, pagos:renderPagos,
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
-    logs:renderLogs, config:renderConfig,
+    logs:renderLogs, config:renderConfig, snapshots:renderSnapshots,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
     'confra':function(){ confraTab(_confraTab||'info'); }, 'mercadillo':renderMercadillo,
     'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
@@ -3358,6 +3516,169 @@ async function saveConfig(){
 // ─── LOGS ──────────────────────────────────────────────
 function log(a,d=''){ DB.logs.unshift({ts:new Date().toISOString(),accion:a,usuario:ROLE==='admin'?'Admin':ME?.Email||'?',detalle:d}); if(DB.logs.length>200) DB.logs=DB.logs.slice(0,200); }
 function renderLogs(){ document.getElementById('tb-logs').innerHTML=DB.logs.slice(0,100).map(l=>`<tr><td style="font-size:11px;white-space:nowrap">${fmtD(l.ts)} ${l.ts?new Date(l.ts).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</td><td><span class="chip chip-blue">${l.accion||'—'}</span></td><td style="font-size:12px;color:var(--ink2)">${l.detalle||'—'}</td></tr>`).join('')||'<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--ink3)">Sin actividad.</td></tr>'; }
+
+// ─── SNAPSHOTS / COPIAS DE SEGURIDAD ───────────────────
+async function renderSnapshots(){
+  const el = document.getElementById('snapshots-content');
+  if(!el) return;
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:var(--ink3)">Cargando snapshots…</p>';
+  try{
+    const r = await fetch(CFG.FIREBASE_URL+'/snapshots.json?auth='+CFG.FIREBASE_SECRET);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    if(!data || typeof data!=='object' || Object.keys(data).length===0){
+      el.innerHTML = '<p style="text-align:center;padding:20px;color:var(--ink3)">Aún no hay snapshots. Pulsa "+ Crear ahora" para hacer el primero.</p>';
+      return;
+    }
+    const items = Object.entries(data)
+      .map(([ts,snap])=>({ts:Number(ts), ...snap}))
+      .filter(x=>!isNaN(x.ts))
+      .sort((a,b)=>b.ts-a.ts);
+    el.innerHTML = '<div class="tbl-wrap"><table>'
+      +'<thead><tr><th>Fecha</th><th>Personas</th><th>Pagos</th><th>Grupos</th><th>Ver.</th><th></th></tr></thead>'
+      +'<tbody>'
+      +items.map(s=>{
+        const f = new Date(s.ts);
+        const fechaStr = f.toLocaleDateString('es-ES')+' '+f.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+        const hace = tiempoRelativo(s.ts);
+        return `<tr>
+          <td style="font-size:12px"><div style="font-weight:600">${fechaStr}</div><div style="color:var(--ink3);font-size:11px">${hace}</div></td>
+          <td style="text-align:center;font-weight:700">${s.personas||0}</td>
+          <td style="text-align:center">${s.pagos||0}</td>
+          <td style="text-align:center">${s.grupos||0}</td>
+          <td style="text-align:center;font-size:11px;color:var(--ink3)">${s.version||0}</td>
+          <td style="text-align:right"><div style="display:flex;gap:4px;justify-content:flex-end">
+            <button class="btn btn-xs" onclick="descargarSnapshot(${s.ts})" title="Descargar JSON">⬇</button>
+            <button class="btn btn-xs" style="background:var(--amber);color:#fff" onclick="restaurarSnapshot(${s.ts})" title="Restaurar este punto">↻</button>
+            <button class="btn btn-xs btn-danger" onclick="borrarSnapshot(${s.ts})">✕</button>
+          </div></td>
+        </tr>`;
+      }).join('')
+      +'</tbody></table></div>';
+  }catch(e){
+    el.innerHTML = '<p style="color:var(--red);padding:12px">Error al cargar snapshots: '+e.message+'</p>';
+  }
+}
+
+function tiempoRelativo(ts){
+  const ms = Date.now()-ts;
+  const min = Math.floor(ms/60000);
+  if(min<60) return 'hace '+min+' min';
+  const h = Math.floor(min/60);
+  if(h<24) return 'hace '+h+' h';
+  const d = Math.floor(h/24);
+  return 'hace '+d+' día'+(d>1?'s':'');
+}
+
+async function crearSnapshotManual(){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  if(!confirm('¿Crear un snapshot manual del estado ACTUAL?\n\nSe guardará en Firebase con la fecha y hora de ahora.')) return;
+  const ahora = Date.now();
+  toast('Creando snapshot…');
+  try{
+    const pFilt = DB.personas.filter(p=>!p._esInvitado && !p._esOrganizador);
+    const dbG = {...DB, personas:pFilt};
+    const meta = {
+      ts: ahora,
+      fechaLegible: new Date(ahora).toISOString(),
+      personas: pFilt.length,
+      pagos: (DB.pagos||[]).length,
+      grupos: (DB.grupos||[]).length,
+      version: DB._version || 0,
+      manual: true,
+      data: dbG
+    };
+    const r = await fetch(CFG.FIREBASE_URL+'/snapshots/'+ahora+'.json?auth='+CFG.FIREBASE_SECRET,
+      {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(meta)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    DB._snapLast = ahora;
+    log('SNAPSHOT_MANUAL', 'v'+meta.version+' · '+pFilt.length+' personas');
+    await saveRemote();
+    toast('✓ Snapshot creado','ok');
+    renderSnapshots();
+  }catch(e){
+    toast('Error: '+e.message,'err');
+  }
+}
+
+async function descargarSnapshot(ts){
+  try{
+    const r = await fetch(CFG.FIREBASE_URL+'/snapshots/'+ts+'.json?auth='+CFG.FIREBASE_SECRET);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const snap = await r.json();
+    const blob = new Blob([JSON.stringify(snap,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'snapshot_'+new Date(ts).toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('Descargado','ok');
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+async function restaurarSnapshot(ts){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  const fecha = new Date(ts).toLocaleString('es-ES');
+  if(!confirm('⚠ RESTAURAR a snapshot de '+fecha+'?\n\nEsto SOBREESCRIBE el estado actual de Firebase con el contenido de ese snapshot. Cualquier cambio hecho desde entonces se perderá.\n\nLa app creará automáticamente un snapshot del estado actual ANTES de restaurar (para poder volver atrás).\n\n¿Continuar?')) return;
+  if(!confirm('CONFIRMACIÓN FINAL.\n\nVas a restaurar Firebase a la versión de '+fecha+'.\n¿Seguro?')) return;
+  toast('Restaurando…');
+  try{
+    // 1) Crear snapshot del estado ACTUAL antes de restaurar (red de seguridad)
+    const ahora = Date.now();
+    const pFiltAhora = DB.personas.filter(p=>!p._esInvitado && !p._esOrganizador);
+    const dbAhora = {...DB, personas:pFiltAhora};
+    const metaAhora = {
+      ts: ahora,
+      fechaLegible: new Date(ahora).toISOString(),
+      personas: pFiltAhora.length,
+      pagos: (DB.pagos||[]).length,
+      grupos: (DB.grupos||[]).length,
+      version: DB._version || 0,
+      manual: true,
+      motivo: 'Auto-snapshot antes de restaurar a '+ts,
+      data: dbAhora
+    };
+    await fetch(CFG.FIREBASE_URL+'/snapshots/'+ahora+'.json?auth='+CFG.FIREBASE_SECRET,
+      {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(metaAhora)});
+
+    // 2) Descargar el snapshot a restaurar
+    const r = await fetch(CFG.FIREBASE_URL+'/snapshots/'+ts+'.json?auth='+CFG.FIREBASE_SECRET);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const snap = await r.json();
+    if(!snap || !snap.data) throw new Error('Snapshot vacío o corrupto');
+
+    // 3) Incrementar version para evitar conflicto con la versión que se va a sobreescribir
+    const datosRestaurados = {...snap.data};
+    const verActual = Number(DB._version)||0;
+    datosRestaurados._version = verActual + 1;
+
+    // 4) PUT
+    const put = await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET,
+      {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(datosRestaurados)});
+    if(!put.ok) throw new Error('HTTP '+put.status);
+
+    log('SNAPSHOT_RESTORE','de '+fecha);
+    toast('✓ Restaurado. Recargando…','ok');
+    setTimeout(()=>window.location.reload(), 1500);
+  }catch(e){
+    toast('Error: '+e.message,'err');
+  }
+}
+
+async function borrarSnapshot(ts){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  const fecha = new Date(ts).toLocaleString('es-ES');
+  if(!confirm('¿Borrar snapshot de '+fecha+'?\n\nNo se puede deshacer.')) return;
+  try{
+    const r = await fetch(CFG.FIREBASE_URL+'/snapshots/'+ts+'.json?auth='+CFG.FIREBASE_SECRET, {method:'DELETE'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    log('SNAPSHOT_DEL', new Date(ts).toISOString());
+    await saveRemote();
+    toast('Borrado','ok');
+    renderSnapshots();
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
 
 // ─── PORTAL INSCRITO ───────────────────────────────────
 function renderPortal(){
