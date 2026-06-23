@@ -26,6 +26,11 @@ const CFG = {
   // ── Firebase Realtime Database ──────────────────────────
   FIREBASE_URL:    'https://asturludicas-2016-default-rtdb.europe-west1.firebasedatabase.app',
   FIREBASE_SECRET: 'LDCqU3RPA97rRC6QraKwdaiL3BEREZlbUSM2jams',
+  // Rama actual de la base de datos. Si se cambia, los clientes con código viejo
+  // (cacheado en algún navegador) quedan automáticamente aislados a la rama
+  // anterior, que pasa a estar abandonada. Es la única defensa BULLETPROOF
+  // contra clientes desactualizados que pisan datos.
+  FIREBASE_PATH:   '/jornadas_v2',
 
   // JSONBin (mantenido como fallback de lectura inicial para migrar datos)
   JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
@@ -1490,13 +1495,13 @@ const HIST=[]; // pila de navegación
 // ─── JSONBIN ───────────────────────────────────────────
 const JB=`https://api.jsonbin.io/v3/b/${CFG.JSONBIN_BIN_ID}`;
 const JH={'Content-Type':'application/json','X-Master-Key':CFG.JSONBIN_API_KEY};
-const FB=()=>CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET;
+const FB=()=>CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET;
 
 async function jbGet(){
   // Firebase primero (más rápido)
   if(!CFG.FIREBASE_URL.startsWith('PON_')){
     try{
-      const r=await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET);
+      const r=await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET);
       if(!r.ok) return null;
       const d=await r.json();
       return d?{_jornadas:d}:null;
@@ -1516,7 +1521,7 @@ async function jbSet(data){
   // Firebase primero
   if(!CFG.FIREBASE_URL.startsWith('PON_')){
     try{
-      const r=await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET,{
+      const r=await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET,{
         method:'PUT',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
@@ -1541,7 +1546,7 @@ var _ultimoGuardadoOk=true;
 function iniciarListenerFirebase(){
   if(CFG.FIREBASE_URL.startsWith('PON_')) return;
   if(_fbListener){ try{_fbListener.close();}catch(e){} }
-  const url=CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET;
+  const url=CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET;
   try{
     _fbListener=new EventSource(url);
     _fbListener.addEventListener('put',e=>{
@@ -1599,6 +1604,90 @@ function iniciarListenerFirebase(){
 function lsGet(k,d=null){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 
+// ─── MIGRACIÓN INICIAL DE RAMA ─────────────────────────
+// La primera vez que se carga v93 (o cualquier versión que cambie FIREBASE_PATH),
+// la nueva rama estará vacía. Esta pantalla guía al admin para copiar
+// los datos de la rama anterior a la nueva. Una vez hecho, la rama vieja
+// queda abandonada y los zombis con código viejo no pueden tocar la nueva.
+function mostrarMigracionInicial(datosViejos){
+  let ov = document.getElementById('overlay-migracion');
+  if(ov) return;
+  ov = document.createElement('div');
+  ov.id = 'overlay-migracion';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(26,26,46,.96);z-index:999999;display:flex;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;overflow-y:auto';
+  const personasN = (datosViejos.personas||[]).length;
+  const pagosN = (datosViejos.pagos||[]).length;
+  const gruposN = (datosViejos.grupos||[]).length;
+  const verN = datosViejos._version || '?';
+  ov.innerHTML = '<div style="background:#FAF6F0;border-radius:18px;padding:36px 28px;max-width:540px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.5)">'
+    +'<div style="font-size:54px;margin-bottom:8px">🚚</div>'
+    +'<h1 style="color:#B87A52;margin:0 0 12px 0;font-size:24px">Migración a rama segura</h1>'
+    +'<p style="color:#1A1A2E;font-size:14px;line-height:1.5;margin:0 0 14px 0">Esta versión usa una nueva rama de Firebase, <strong>aislada</strong> de los clientes con código antiguo. Una vez migrados los datos, los zombis no podrán tocar nada.</p>'
+    +'<div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;margin:14px 0;text-align:left;font-size:13px">'
+    +'<div style="color:#666;font-size:11px;text-transform:uppercase;margin-bottom:6px">Datos a migrar (rama vieja)</div>'
+    +'<div>Personas: <strong>'+personasN+'</strong></div>'
+    +'<div>Pagos: <strong>'+pagosN+'</strong></div>'
+    +'<div>Grupos: <strong>'+gruposN+'</strong></div>'
+    +'<div>Versión actual: <strong>'+verN+'</strong></div>'
+    +'</div>'
+    +'<p style="color:#a96a00;font-size:12px;line-height:1.4;margin:0 0 14px 0">⚠ Solo el <strong>admin</strong> debe pulsar este botón, y <strong>solo una vez</strong>. El resto de admins e inscritos deben esperar a que termine la migración (~5 segundos).</p>'
+    +'<button id="btn-migrar" style="background:#B87A52;color:#fff;border:0;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;width:100%" onclick="ejecutarMigracionInicial()">🚚 Migrar a la rama nueva</button>'
+    +'<p style="color:#999;font-size:11px;margin-top:14px">Si NO eres admin, simplemente <strong>espera</strong> y recarga en 1 minuto.</p>'
+    +'<div id="migr-log" style="background:#f5f5f5;border-radius:6px;padding:10px;margin-top:14px;font-size:11px;font-family:monospace;max-height:120px;overflow-y:auto;text-align:left;display:none"></div>'
+    +'</div>';
+  document.body.appendChild(ov);
+  // Guardar referencia para usar en ejecutarMigracionInicial
+  window._datosMigracion = datosViejos;
+}
+
+async function ejecutarMigracionInicial(){
+  const datos = window._datosMigracion;
+  if(!datos) { alert('Error: datos no disponibles. Recarga la página.'); return; }
+  const btn = document.getElementById('btn-migrar');
+  const logEl = document.getElementById('migr-log');
+  if(btn){ btn.disabled = true; btn.textContent = 'Migrando…'; }
+  if(logEl) logEl.style.display = 'block';
+  const log = (msg, color)=>{
+    if(!logEl) return;
+    const d = document.createElement('div');
+    d.textContent = '['+new Date().toLocaleTimeString()+'] '+msg;
+    if(color) d.style.color = color;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+  try{
+    log('Comprobando que la rama nueva sigue vacía…');
+    const check = await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET);
+    const checkData = await check.json();
+    if(checkData && checkData.personas){
+      log('⚠ La rama nueva YA tiene datos. Otro admin migró primero. Recargando…','#a96a00');
+      setTimeout(()=>location.reload(true), 2000);
+      return;
+    }
+    log('Rama nueva vacía. Preparando datos…');
+    // Preparar payload: copia exacta + _version = 1 (la rama es nueva)
+    const payload = {...datos};
+    payload._version = 1;
+    payload._minClientVersion = APP_VERSION;
+    payload._snapLast = Date.now();
+    payload._migradoDe = '/jornadas';
+    payload._migradoTs = new Date().toISOString();
+    log('Subiendo a '+CFG.FIREBASE_PATH+'… ('+((JSON.stringify(payload).length/1024).toFixed(1))+' KB)');
+    const put = await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET,
+      {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if(!put.ok){
+      const errText = await put.text();
+      throw new Error('PUT falló: '+put.status+' — '+errText.slice(0,200));
+    }
+    log('✓ Migración completada','#4A7C59');
+    log('Recargando app en 2s…','#4A7C59');
+    setTimeout(()=>location.reload(true), 2000);
+  }catch(e){
+    log('✗ Error: '+e.message,'#C0392B');
+    if(btn){ btn.disabled = false; btn.textContent = '🚚 Reintentar migración'; }
+  }
+}
+
 // ─── BLOQUEO POR VERSIÓN DESACTUALIZADA ────────────────
 function mostrarBloqueoActualizar(local, requerido){
   // Pinta un overlay que cubre toda la pantalla y no se puede saltar.
@@ -1622,8 +1711,34 @@ function mostrarBloqueoActualizar(local, requerido){
 // ─── SYNC ──────────────────────────────────────────────
 async function loadRemote(){
   const r=await jbGet();
-  if(r&&r._jornadas){ Object.assign(DB,r._jornadas); lsSet('jdb',DB); }
-  else { const l=lsGet('jdb'); if(l) Object.assign(DB,l); }
+  if(r&&r._jornadas){
+    Object.assign(DB,r._jornadas);
+    lsSet('jdb',DB);
+  } else {
+    // jbGet devolvió null → la rama nueva (FIREBASE_PATH) está VACÍA.
+    // Esto pasa la primera vez que se ejecuta v93 tras el cambio de rama.
+    // Hay que migrar los datos de la rama anterior /jornadas a /jornadas_v2.
+    if(!CFG.FIREBASE_URL.startsWith('PON_')){
+      // Comprobar si existen datos en la rama anterior
+      try{
+        const old = await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET);
+        if(old.ok){
+          const oldData = await old.json();
+          if(oldData && oldData.personas && oldData.personas.length){
+            // Hay datos en la rama vieja. Mostrar pantalla de migración.
+            mostrarMigracionInicial(oldData);
+            throw new Error('Migración pendiente');
+          }
+        }
+      }catch(e){
+        if(e.message==='Migración pendiente') throw e;
+        console.warn('No se pudo comprobar rama anterior:',e);
+      }
+    }
+    // Si no hay rama vieja con datos, fallback a localStorage
+    const l=lsGet('jdb');
+    if(l) Object.assign(DB,l);
+  }
   // Si el servidor requiere una versión más nueva, BLOQUEAR la app aquí.
   const remoteMin = Number(DB._minClientVersion)||0;
   if(remoteMin && APP_VERSION < remoteMin){
@@ -1663,7 +1778,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 92; // se incrementa con cada versión desplegada
+const APP_VERSION = 93; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -1739,7 +1854,7 @@ async function saveRemote(){
     // anterior, REFUSE. Protege contra clientes con HTML antiguo cacheado.
     let remoteMinClient = 0;
     try{
-      const peekMin = await fetch(CFG.FIREBASE_URL+'/jornadas/_minClientVersion.json?auth='+CFG.FIREBASE_SECRET);
+      const peekMin = await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'/_minClientVersion.json?auth='+CFG.FIREBASE_SECRET);
       if(peekMin.ok){
         const v = await peekMin.json();
         remoteMinClient = Number(v)||0;
@@ -1759,7 +1874,7 @@ async function saveRemote(){
     // nuestro save los borraría. Abortamos.
     let remoteVersion = 0;
     try{
-      const peek = await fetch(CFG.FIREBASE_URL+'/jornadas/_version.json?auth='+CFG.FIREBASE_SECRET);
+      const peek = await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'/_version.json?auth='+CFG.FIREBASE_SECRET);
       if(peek.ok){
         const v = await peek.json();
         remoteVersion = Number(v)||0;
@@ -1846,7 +1961,7 @@ document.addEventListener('visibilitychange', async ()=>{
   _lastFocusRefresh = ahora;
   if(_saving) return;
   try{
-    const peek = await fetch(CFG.FIREBASE_URL+'/jornadas/_version.json?auth='+CFG.FIREBASE_SECRET);
+    const peek = await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'/_version.json?auth='+CFG.FIREBASE_SECRET);
     if(!peek.ok) return;
     const remoteV = Number(await peek.json())||0;
     const localV = Number(DB._version)||0;
@@ -3706,7 +3821,7 @@ async function restaurarSnapshot(ts){
     datosRestaurados._version = verActual + 1;
 
     // 4) PUT
-    const put = await fetch(CFG.FIREBASE_URL+'/jornadas.json?auth='+CFG.FIREBASE_SECRET,
+    const put = await fetch(CFG.FIREBASE_URL+CFG.FIREBASE_PATH+'.json?auth='+CFG.FIREBASE_SECRET,
       {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(datosRestaurados)});
     if(!put.ok) throw new Error('HTTP '+put.status);
 
