@@ -1778,7 +1778,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 93; // se incrementa con cada versión desplegada
+const APP_VERSION = 94; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -1976,6 +1976,79 @@ document.addEventListener('visibilitychange', async ()=>{
       toast('🔄 Cambios nuevos cargados del servidor','ok');
     }
   }catch{ /* silencioso */ }
+});
+
+// ─── AUTO-UPDATE DEL HTML ──────────────────────────────
+// Comprueba periódicamente si hay una versión nueva del HTML desplegada en
+// GitHub Pages. Si la hay, muestra un banner discreto para que el usuario
+// actualice. Así no hace falta avisar a nadie ni cambiar enlaces — la propia
+// app se mantiene siempre al día.
+const AUTO_UPDATE_CHECK_MS = 5 * 60 * 1000; // cada 5 minutos
+let _ultimaComprobacionVersion = 0;
+let _bannerActualizarMostrado = false;
+
+async function comprobarVersionRemota(){
+  // Throttling y skip si ya hay banner
+  if(_bannerActualizarMostrado) return;
+  const ahora = Date.now();
+  if(ahora - _ultimaComprobacionVersion < 60000) return; // mínimo 1 min entre checks
+  _ultimaComprobacionVersion = ahora;
+  // Skip en file:// (desarrollo local)
+  if(location.protocol === 'file:') return;
+  try{
+    // Cache-busting con timestamp para sortear cualquier caché del navegador
+    const url = location.pathname + '?_av=' + ahora;
+    const r = await fetch(url, {cache: 'no-store', credentials: 'omit'});
+    if(!r.ok) return;
+    const html = await r.text();
+    // Buscar 'const APP_VERSION = NN' o variantes en el HTML remoto
+    const m = html.match(/APP_VERSION\s*=\s*(\d+)/);
+    if(!m) return;
+    const remoteVersion = parseInt(m[1], 10);
+    if(remoteVersion > APP_VERSION){
+      console.log('🆕 Nueva versión disponible:', remoteVersion, '(tienes la', APP_VERSION+')');
+      mostrarBannerActualizacion(remoteVersion);
+    }
+  }catch(e){
+    console.warn('Auto-update: error al comprobar versión remota:', e);
+  }
+}
+
+function mostrarBannerActualizacion(nuevaVersion){
+  if(_bannerActualizarMostrado) return;
+  if(document.getElementById('banner-actualizar')) return;
+  _bannerActualizarMostrado = true;
+
+  const banner = document.createElement('div');
+  banner.id = 'banner-actualizar';
+  banner.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1A1A2E;color:#fff;padding:14px 18px;border-radius:14px;font-size:14px;z-index:99998;box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;align-items:center;gap:14px;max-width:92vw;flex-wrap:wrap;justify-content:center;animation:slideUp .3s ease-out';
+  banner.innerHTML = ''
+    + '<style>@keyframes slideUp{from{transform:translate(-50%,40px);opacity:0}to{transform:translate(-50%,0);opacity:1}}</style>'
+    + '<span style="font-weight:600">🆕 Nueva versión de la app disponible</span>'
+    + '<button onclick="forzarActualizacionApp()" style="background:#D4956A;color:#fff;border:0;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">Actualizar</button>'
+    + '<button onclick="document.getElementById(\'banner-actualizar\').remove();window._bannerActualizarMostrado=false" style="background:transparent;color:#aaa;border:0;padding:8px 12px;font-size:13px;cursor:pointer">Después</button>';
+  document.body.appendChild(banner);
+}
+
+function forzarActualizacionApp(){
+  // Forzar carga limpia añadiendo timestamp a la URL.
+  // El navegador no puede usar caché porque la URL es distinta.
+  try{
+    const u = new URL(location.href);
+    u.searchParams.set('v', Date.now());
+    location.replace(u.toString());
+  }catch{
+    location.reload();
+  }
+}
+
+// Comprobar al cargar (con retraso para no competir con loadRemote)
+setTimeout(comprobarVersionRemota, 8000);
+// Comprobar periódicamente
+setInterval(comprobarVersionRemota, AUTO_UPDATE_CHECK_MS);
+// Comprobar al volver al foco
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') comprobarVersionRemota();
 });
 
 // ─── HELPERS ───────────────────────────────────────────
