@@ -46,7 +46,7 @@ const CFG = {
   // Servicios de comida en orden. todos=automático según modalidad, optin=el inscrito se apunta
   COMIDAS: [
     { id:'cena_jue',   label:'Cena jueves',     icono:'🌙', todos: p => tieneJueves(p) },
-    { id:'comida_vie', label:'Comida viernes',   icono:'☀️', todos: p => true },
+    { id:'comida_vie', label:'Comida viernes',   icono:'☀️', todos: p => puedeComerViernesMediodia(p) },
     { id:'cena_vie',   label:'Cena viernes',     icono:'🌙', todos: p => true },
     { id:'comida_sab', label:'Comida sábado',    icono:'☀️', todos: p => true },
     { id:'cena_sab',   label:'Cena sábado',      icono:'🌙', todos: p => true },
@@ -56,6 +56,12 @@ const CFG = {
 
 function tieneJueves(p) {
   return String(p.Modalidad||'').toLowerCase().includes('jueves');
+}
+// Los que llegan el viernes por la TARDE no pueden comer al mediodía del viernes.
+// El resto (viernes mañana, jueves y sus variantes) sí.
+function puedeComerViernesMediodia(p) {
+  const m = String(p.Modalidad||'').toLowerCase();
+  return !m.includes('viernes tarde');
 }
 // "sin aloj" cubre "sin alojamiento"; "sin hosp" cubre "sin hospedaje"
 function sinAlojamientoModalidad(m){
@@ -1188,6 +1194,18 @@ tbody tr:hover td{background:var(--paper)}
         </div>
       </div>
 
+      <!-- PREMIOS (inscrito) -->
+      <div id="page-premios" class="page">
+        <div class="portal">
+          <div id="premios-content"></div>
+        </div>
+      </div>
+
+      <!-- PREMIOS (admin) -->
+      <div id="page-premios-admin" class="page">
+        <div id="premios-admin-content"></div>
+      </div>
+
     </div><!-- /content -->
 
     <!-- BOTTOM NAV mobile -->
@@ -1483,6 +1501,12 @@ const DB = {
   confra_peticiones:[],// [{id,pid,nick,juego,desc,ts}] juegos que quieren jugar
   confra_llevar:[],    // [{id,pid,nick,juego,desc,ts}] juegos que traen
   camisetas_extra:[],  // [{id,talla,motivo,ts}] camisetas sueltas (organizadores, regalos, repuestos)
+  comida_dom_confirmado:{},  // {pid: 'SI'|'NO'} respuesta explícita al popup del domingo
+  premios_votos:{},          // {pidVotante: {AP:pidVotado, COMEOREJAS:pidVotado, LLORON:pidVotado}}
+  premios_config:{           // ventana de votación (la configura el admin)
+    inicio:'',               // ISO string, p.ej. '2026-09-04T10:00'
+    fin:''                   // ISO string, p.ej. '2026-09-05T21:00'
+  },
   // ─── CONTROL DE CONCURRENCIA Y SNAPSHOTS ───────────────
   _version:0,            // se incrementa en cada save; protege contra clientes desactualizados
   _snapLast:0,           // timestamp del último snapshot tomado (auto cada N horas)
@@ -1560,7 +1584,8 @@ function iniciarListenerFirebase(){
          'camisetas_extra','mercadillo','confra','confra_apuntados',
          'confra_peticiones','confra_llevar','modulos','config',
          'sum_consumos','sum_sobrantes','sum_historial','logs',
-         '_version','_snapLast','_minClientVersion'].forEach(k=>{
+         '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
+         'premios_votos','premios_config'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
@@ -1778,7 +1803,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 94; // se incrementa con cada versión desplegada
+const APP_VERSION = 95; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -2138,7 +2163,23 @@ async function loginAdmin(){
   lsSet('admin_email', emailA);
   lsSet('session_ts', Date.now() + 365*24*3600*1000);
   await loadRemote();
+  // Asignar ME al organizador correspondiente para que el admin pueda votar
+  // premios, apuntarse a comidas, etc. como una persona más.
+  asignarMeAdmin();
   bootApp();
+}
+
+// Asigna la ficha del organizador correspondiente al admin logueado.
+// Debe llamarse tras loadRemote (que asegura que las personas están cargadas).
+function asignarMeAdmin(){
+  const emailA = String(lsGet('admin_email','')||'').toLowerCase();
+  if(!emailA) return;
+  // Buscar por email si es admin conocido
+  if(emailA === 'asturludicas@gmail.com'){
+    ME = DB.personas.find(p => p.ID === 'ORG_DANI') || null;
+  } else if(emailA === 'admin2@asturludicas.es'){
+    ME = DB.personas.find(p => p.ID === 'ORG_ALEX') || null;
+  }
 }
 async function loginInscrito(){
   const emailRaw = document.getElementById('l-email').value;
@@ -2235,6 +2276,7 @@ function bootApp(){
     nav('mi-ficha');
     renderPortal();
     setTimeout(mostrarNotificaciones, 800); // pequeño delay para que cargue la UI
+    setTimeout(mostrarPopupComidaDomingoSiToca, 1200);
   }
   updateBadge();
 }
@@ -2246,7 +2288,7 @@ const NAV_ADMIN=[
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'personas',ico:'👥',label:'Personas'},
   {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
-  {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},
+  {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},{id:'premios-admin',ico:'🏆',label:'Premios'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'snapshots',ico:'📦',label:'Snapshots'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
   {id:'_salir',ico:'↩',label:'Cerrar sesión', action:'logout()'},
@@ -2258,6 +2300,7 @@ const NAV_INSCRITO=[
   {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
   {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
   {id:'mi-comidas',ico:'🍽',label:'Comidas'},
+  {id:'premios',ico:'🏆',label:'Premios'},
   {id:'_salir',ico:'↩',label:'Salir', action:'logout()'},
 ];
 
@@ -2315,6 +2358,7 @@ function nav(page, pushHist=true){
     solicitudes:renderSolicitudes, pagos:renderPagos,
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig, snapshots:renderSnapshots,
+    premios:renderPremios, 'premios-admin':renderPremiosAdmin,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
     'confra':function(){ confraTab(_confraTab||'info'); }, 'mercadillo':renderMercadillo,
     'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
@@ -6513,6 +6557,329 @@ function actualizarBadgeHoy(){
 
 
 
+// ═══════════════════════════════════════════════════════
+// ─── SISTEMA DE PREMIOS ────────────────────────────────
+// 3 categorías, un voto por votante en cada categoría, no se puede cambiar,
+// misma persona no puede recibir 2 votos del mismo votante en categorías
+// distintas. Ventana temporal configurable por admin.
+// ═══════════════════════════════════════════════════════
+
+const PREMIOS_CATS = [
+  { id:'AP', ico:'🐢', nombre:'Mr "AP"',
+    desc:'Ese jugador que piensa, y sobre piensa su turno, olvidando que el resto tiene familia y un gato que le está esperando en casa.' },
+  { id:'COMEOREJAS', ico:'👂', nombre:'Comeorejas',
+    desc:'A quien no le va a gustar que le digan un piropo de vez en cuando, sobretodo cuando viene seguido de una petición en la que sabes que vas a perder la partida en el momento que aceptes ese trato totalmente asimétrico.' },
+  { id:'LLORON', ico:'😭', nombre:'Llorón',
+    desc:'La playa de Candás tiene una pleamar a las 9:32 y otra a las 22:10, pero está sujeta a ese jugador que no para de hablar en una partida, pero el traductor Google lo traduce por "BuaaBuaaaBuaaa".' },
+];
+
+function estadoVotacionPremios(){
+  // Devuelve 'CERRADA_NO_CONFIG' | 'PRE' | 'ABIERTA' | 'POST'
+  const cfg = DB.premios_config || {};
+  if(!cfg.inicio || !cfg.fin) return {estado:'CERRADA_NO_CONFIG'};
+  const ahora = Date.now();
+  const ini = new Date(cfg.inicio).getTime();
+  const fin = new Date(cfg.fin).getTime();
+  if(isNaN(ini) || isNaN(fin)) return {estado:'CERRADA_NO_CONFIG'};
+  if(ahora < ini) return {estado:'PRE', ini, fin};
+  if(ahora > fin) return {estado:'POST', ini, fin};
+  return {estado:'ABIERTA', ini, fin};
+}
+
+function formatearCuentaAtras(ms){
+  if(ms <= 0) return 'terminada';
+  const h = Math.floor(ms/3600000);
+  const m = Math.floor((ms%3600000)/60000);
+  const s = Math.floor((ms%60000)/1000);
+  const d = Math.floor(h/24);
+  if(d > 0) return d+'d '+(h%24)+'h '+m+'min';
+  if(h > 0) return h+'h '+m+'min '+s+'s';
+  return m+'min '+s+'s';
+}
+
+// ─── VISTA INSCRITO ────────────────────────────────────
+let _tickPremios = null;
+function renderPremios(){
+  const el = document.getElementById('premios-content');
+  if(!el) return;
+  if(_tickPremios){ clearInterval(_tickPremios); _tickPremios=null; }
+
+  const st = estadoVotacionPremios();
+  const pid = ME ? (ME.ID||ME.id) : null;
+
+  // Header con estado
+  let cabecera = '<div class="card"><div class="card-hd"><span class="card-title">🏆 Premios AsturLúdicas</span></div>';
+  if(st.estado === 'CERRADA_NO_CONFIG'){
+    cabecera += '<p style="text-align:center;color:var(--ink3);padding:16px 8px">La votación aún no está abierta. La organización avisará cuando esté disponible.</p></div>';
+    el.innerHTML = cabecera;
+    return;
+  }
+  if(st.estado === 'PRE'){
+    cabecera += '<p style="text-align:center;padding:8px">La votación abre el <strong>'+new Date(st.ini).toLocaleString('es-ES',{weekday:'long',hour:'2-digit',minute:'2-digit'})+'</strong>.</p>';
+    cabecera += '<p style="text-align:center;color:var(--ink3);font-size:13px" id="pre-tick">Empieza en <strong>'+formatearCuentaAtras(st.ini-Date.now())+'</strong></p></div>';
+    el.innerHTML = cabecera;
+    _tickPremios = setInterval(()=>{
+      const now = Date.now();
+      const t = document.getElementById('pre-tick');
+      if(!t){ clearInterval(_tickPremios); return; }
+      if(now >= st.ini){ renderPremios(); return; }
+      t.innerHTML = 'Empieza en <strong>'+formatearCuentaAtras(st.ini-now)+'</strong>';
+    }, 1000);
+    return;
+  }
+  if(st.estado === 'POST'){
+    cabecera += '<p style="text-align:center;padding:12px 8px">🔒 La votación se cerró el <strong>'+new Date(st.fin).toLocaleString('es-ES',{weekday:'long',hour:'2-digit',minute:'2-digit'})+'</strong>. Gracias por participar.</p></div>';
+    el.innerHTML = cabecera;
+    return;
+  }
+
+  // ABIERTA
+  cabecera += '<p style="text-align:center;padding:8px">La votación cierra el <strong>'+new Date(st.fin).toLocaleString('es-ES',{weekday:'long',hour:'2-digit',minute:'2-digit'})+'</strong></p>';
+  cabecera += '<p style="text-align:center;background:var(--surface);border-radius:8px;padding:10px;margin:8px 0;font-size:14px" id="post-tick">⏳ Queda <strong>'+formatearCuentaAtras(st.fin-Date.now())+'</strong></p>';
+  cabecera += '<p style="font-size:12px;color:var(--ink3);text-align:center;padding:0 8px">Un voto por categoría. Una vez emitido, <strong>no se puede cambiar</strong>. La misma persona no puede recibir tus votos en categorías distintas.</p></div>';
+
+  // Bloques por categoría
+  const misVotos = ((DB.premios_votos||{})[pid]) || {};
+  const cards = PREMIOS_CATS.map(cat=>{
+    const votadoPid = misVotos[cat.id];
+    let contenido;
+    if(votadoPid){
+      const p = DB.personas.find(x=>(x.ID||x.id)===votadoPid);
+      const nick = p ? (p.Nick || p.NombreCompleto || p.Nombre || '?') : '(persona no encontrada)';
+      contenido = '<div style="background:var(--green-l);color:var(--green);border-radius:8px;padding:12px;text-align:center;font-weight:700">✓ Votaste a @'+nick+'</div>';
+    } else {
+      contenido = '<button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px" onclick="abrirVotoPremio(\''+cat.id+'\')">Votar</button>';
+    }
+    return '<div class="card">'
+      +'<div class="card-hd"><span class="card-title">'+cat.ico+' '+cat.nombre+'</span></div>'
+      +'<p style="font-size:13px;color:var(--ink2);padding:0 0 12px 0;font-style:italic">"'+cat.desc+'"</p>'
+      +contenido
+      +'</div>';
+  }).join('');
+
+  el.innerHTML = cabecera + cards;
+
+  // Cuenta atrás en vivo
+  _tickPremios = setInterval(()=>{
+    const now = Date.now();
+    const t = document.getElementById('post-tick');
+    if(!t){ clearInterval(_tickPremios); return; }
+    if(now >= st.fin){ renderPremios(); return; }
+    t.innerHTML = '⏳ Queda <strong>'+formatearCuentaAtras(st.fin-now)+'</strong>';
+  }, 1000);
+}
+
+// ─── MODAL DE VOTACIÓN ─────────────────────────────────
+function abrirVotoPremio(catId){
+  const cat = PREMIOS_CATS.find(c=>c.id===catId);
+  if(!cat) return;
+  const st = estadoVotacionPremios();
+  if(st.estado !== 'ABIERTA'){ toast('La votación no está abierta','err'); return; }
+  const pid = ME ? (ME.ID||ME.id) : null;
+  if(!pid){ toast('Sin sesión','err'); return; }
+
+  const misVotos = ((DB.premios_votos||{})[pid]) || {};
+  if(misVotos[catId]){ toast('Ya has votado en esta categoría','err'); return; }
+  const yaVotados = Object.values(misVotos).filter(Boolean);
+
+  // Lista candidatos: personas reales, excluidos self y ya-votados
+  const candidatos = DB.personas.filter(p=>{
+    if(p._esInvitado) return false;
+    if(p.Activo==='FALSE') return false;
+    const cid = p.ID || p.id;
+    if(cid === pid) return false;                // no auto-voto
+    if(yaVotados.includes(cid)) return false;    // no repetir persona
+    return true;
+  }).map(p=>({
+    id: p.ID||p.id,
+    nick: p.Nick || '',
+    nombre: p.NombreCompleto || p.Nombre || '',
+    display: (p.Nick?'@'+p.Nick+' — ':'')+(p.NombreCompleto||p.Nombre||''),
+  })).sort((a,b)=>(a.nick||a.nombre).toLowerCase().localeCompare((b.nick||b.nombre).toLowerCase()));
+
+  // Modal
+  let ov = document.getElementById('modal-premio');
+  if(ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'modal-premio';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(26,26,46,.85);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = '<div style="background:#FAF6F0;border-radius:16px;padding:20px;max-width:520px;width:100%;max-height:88vh;display:flex;flex-direction:column">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+    +'<h3 style="margin:0;color:#B87A52;font-size:18px">'+cat.ico+' Votar '+cat.nombre+'</h3>'
+    +'<button onclick="document.getElementById(\'modal-premio\').remove()" style="background:none;border:0;font-size:24px;cursor:pointer;color:#666;line-height:1">×</button>'
+    +'</div>'
+    +'<input id="premio-buscador" placeholder="Buscar por nick o nombre…" style="width:100%;padding:11px;border:2px solid #ddd;border-radius:10px;font-size:15px;margin-bottom:10px" oninput="filtrarCandidatosPremio()">'
+    +'<div id="premio-lista" style="overflow-y:auto;flex:1;min-height:200px"></div>'
+    +'<p style="font-size:11px;color:#888;text-align:center;margin:10px 0 0 0">Solo aparecen quienes aún no has votado en otras categorías. No incluye a ti mismo.</p>'
+    +'</div>';
+  document.body.appendChild(ov);
+  ov.dataset.catId = catId;
+  ov._candidatos = candidatos;
+  filtrarCandidatosPremio();
+}
+
+function filtrarCandidatosPremio(){
+  const ov = document.getElementById('modal-premio');
+  if(!ov) return;
+  const q = String(document.getElementById('premio-buscador').value||'').toLowerCase().trim();
+  const cats = ov._candidatos.filter(c=>{
+    if(!q) return true;
+    return c.nick.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q);
+  });
+  const catId = ov.dataset.catId;
+  const html = cats.length
+    ? cats.map(c=>'<button style="width:100%;text-align:left;background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer;font-size:14px" onclick="confirmarVotoPremio(\''+catId+'\',\''+c.id+'\')">'
+        +(c.nick?'<strong>@'+c.nick+'</strong><br><span style="color:#666;font-size:12px">'+c.nombre+'</span>':'<strong>'+c.nombre+'</strong>')
+        +'</button>').join('')
+    : '<p style="text-align:center;color:#888;padding:30px 0">Sin resultados.</p>';
+  document.getElementById('premio-lista').innerHTML = html;
+}
+
+async function confirmarVotoPremio(catId, votadoPid){
+  const cat = PREMIOS_CATS.find(c=>c.id===catId);
+  const votado = DB.personas.find(x=>(x.ID||x.id)===votadoPid);
+  if(!cat || !votado){ toast('Error','err'); return; }
+  const nick = votado.Nick || votado.NombreCompleto || votado.Nombre || '?';
+  if(!confirm('¿Confirmas tu voto para "'+cat.nombre+'"?\n\nVotado: '+(votado.Nick?'@'+votado.Nick:votado.NombreCompleto||votado.Nombre)+'\n\n⚠ Este voto NO se puede cambiar después. Y ya no podrás votar a esta persona en otras categorías.')) return;
+
+  const pid = ME ? (ME.ID||ME.id) : null;
+  if(!pid){ toast('Sin sesión','err'); return; }
+
+  // Revalidar (por si otro dispositivo cambió algo)
+  const st = estadoVotacionPremios();
+  if(st.estado !== 'ABIERTA'){ toast('La votación ya no está abierta','err'); return; }
+
+  if(!DB.premios_votos) DB.premios_votos = {};
+  if(!DB.premios_votos[pid]) DB.premios_votos[pid] = {};
+  if(DB.premios_votos[pid][catId]){ toast('Ya habías votado en esta categoría','err'); return; }
+  // Doble check: no repetir persona entre categorías
+  const yaVotados = Object.values(DB.premios_votos[pid]).filter(Boolean);
+  if(yaVotados.includes(votadoPid)){ toast('Ya has votado a esa persona en otra categoría','err'); return; }
+
+  DB.premios_votos[pid][catId] = votadoPid;
+  log('VOTO_PREMIO', cat.nombre+' → '+nick);
+  const ok = await saveRemote();
+  if(ok){
+    const ov = document.getElementById('modal-premio');
+    if(ov) ov.remove();
+    toast('Voto registrado para '+cat.nombre+' ✓','ok');
+    renderPremios();
+  } else {
+    // Revertir
+    delete DB.premios_votos[pid][catId];
+  }
+}
+
+// ─── VISTA ADMIN ───────────────────────────────────────
+let _tickPremiosAdmin = null;
+function renderPremiosAdmin(){
+  const el = document.getElementById('premios-admin-content');
+  if(!el) return;
+  if(_tickPremiosAdmin){ clearInterval(_tickPremiosAdmin); _tickPremiosAdmin=null; }
+
+  const cfg = DB.premios_config || {inicio:'', fin:''};
+  const st = estadoVotacionPremios();
+
+  let estadoLabel = '';
+  if(st.estado==='CERRADA_NO_CONFIG') estadoLabel='<span style="color:var(--red)">⚠ Ventana no configurada — votación cerrada</span>';
+  else if(st.estado==='PRE') estadoLabel='<span style="color:var(--amber)">🕓 Aún no abierta (empieza en '+formatearCuentaAtras(st.ini-Date.now())+')</span>';
+  else if(st.estado==='ABIERTA') estadoLabel='<span style="color:var(--green)">🟢 Abierta (cierra en '+formatearCuentaAtras(st.fin-Date.now())+')</span>';
+  else if(st.estado==='POST') estadoLabel='<span style="color:var(--ink3)">🔒 Cerrada desde '+new Date(st.fin).toLocaleString('es-ES')+'</span>';
+
+  // Ventana de configuración
+  let out = '<div class="card">'
+    +'<div class="card-hd"><span class="card-title">🏆 Sistema de Premios</span></div>'
+    +'<p style="font-size:13px;color:var(--ink2);margin-bottom:16px">3 categorías: Mr AP, Comeorejas, Llorón. Los inscritos votan a otros nicks. Un voto por categoría, sin cambio, sin repetir persona.</p>'
+    +'<div style="background:var(--surface);border-radius:10px;padding:14px;margin-bottom:14px">'
+    +'<div style="font-size:12px;color:var(--ink3);text-transform:uppercase;font-weight:700;margin-bottom:8px">Estado</div>'
+    +'<div id="premios-estado" style="font-size:14px">'+estadoLabel+'</div>'
+    +'</div>'
+    +'<div class="form-grid">'
+    +'<div class="fg"><label>Inicio votación</label><input type="datetime-local" id="pr-inicio" value="'+(cfg.inicio||'')+'"></div>'
+    +'<div class="fg"><label>Fin votación</label><input type="datetime-local" id="pr-fin" value="'+(cfg.fin||'')+'"></div>'
+    +'</div>'
+    +'<button class="btn btn-primary" onclick="guardarConfigPremios()" style="margin-top:8px">Guardar configuración</button>'
+    +' <button class="btn" onclick="document.getElementById(\'pr-inicio\').value=\'\';document.getElementById(\'pr-fin\').value=\'\';guardarConfigPremios()">Cerrar votación</button>'
+    +'</div>';
+
+  // Recuento
+  const votos = DB.premios_votos || {};
+  const totalVotantes = Object.keys(votos).length;
+  out += '<div class="card">'
+    +'<div class="card-hd"><span class="card-title">📊 Recuento</span> <span style="font-size:12px;color:var(--ink3);margin-left:auto">'+totalVotantes+' votantes</span></div>';
+  PREMIOS_CATS.forEach(cat=>{
+    const cnt = {};
+    Object.keys(votos).forEach(pidV=>{
+      const votado = votos[pidV] && votos[pidV][cat.id];
+      if(votado) cnt[votado] = (cnt[votado]||0)+1;
+    });
+    const ranking = Object.keys(cnt).map(pid=>{
+      const p = DB.personas.find(x=>(x.ID||x.id)===pid);
+      return {
+        pid, cnt:cnt[pid],
+        nick: p ? (p.Nick||'') : '',
+        nombre: p ? (p.NombreCompleto||p.Nombre||'?') : '(borrada)'
+      };
+    }).sort((a,b)=>b.cnt-a.cnt);
+
+    out += '<div style="margin-bottom:16px">'
+      +'<h4 style="margin:0 0 8px 0;color:var(--accent);font-size:16px">'+cat.ico+' '+cat.nombre+' <span style="color:var(--ink3);font-size:12px;font-weight:400">('+ranking.reduce((s,r)=>s+r.cnt,0)+' votos)</span></h4>';
+    if(!ranking.length){
+      out += '<p style="color:var(--ink3);font-size:13px;padding:8px 0">Sin votos aún.</p>';
+    } else {
+      const maxV = ranking[0].cnt;
+      out += '<div style="display:flex;flex-direction:column;gap:4px">'
+        + ranking.map((r,i)=>{
+          const pct = Math.round((r.cnt/maxV)*100);
+          const medalla = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+(i===0?'#FEF9E7':'var(--surface)')+';border-radius:8px">'
+            +'<span style="min-width:28px;text-align:center;font-size:16px">'+(medalla||'#'+(i+1))+'</span>'
+            +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">'+(r.nick?'@'+r.nick:'')+'</div>'
+            +'<div style="font-size:11px;color:var(--ink3)">'+r.nombre+'</div></div>'
+            +'<div style="text-align:right"><strong style="font-size:18px">'+r.cnt+'</strong> <span style="color:var(--ink3);font-size:11px">voto'+(r.cnt>1?'s':'')+'</span></div>'
+            +'</div>';
+        }).join('')
+        +'</div>';
+    }
+    out += '</div>';
+  });
+  out += '</div>';
+
+  el.innerHTML = out;
+
+  // Refresco del estado cada segundo si la votación está en curso
+  if(st.estado === 'PRE' || st.estado === 'ABIERTA'){
+    _tickPremiosAdmin = setInterval(()=>{
+      const nuevoSt = estadoVotacionPremios();
+      const d = document.getElementById('premios-estado');
+      if(!d){ clearInterval(_tickPremiosAdmin); return; }
+      if(nuevoSt.estado !== st.estado){ renderPremiosAdmin(); return; }
+      if(nuevoSt.estado==='PRE') d.innerHTML='<span style="color:var(--amber)">🕓 Aún no abierta (empieza en '+formatearCuentaAtras(nuevoSt.ini-Date.now())+')</span>';
+      else if(nuevoSt.estado==='ABIERTA') d.innerHTML='<span style="color:var(--green)">🟢 Abierta (cierra en '+formatearCuentaAtras(nuevoSt.fin-Date.now())+')</span>';
+    }, 1000);
+  }
+}
+
+async function guardarConfigPremios(){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  const ini = String(document.getElementById('pr-inicio').value||'').trim();
+  const fin = String(document.getElementById('pr-fin').value||'').trim();
+  if(ini && fin){
+    if(new Date(ini).getTime() >= new Date(fin).getTime()){
+      toast('El fin debe ser posterior al inicio','err'); return;
+    }
+  }
+  if(!DB.premios_config) DB.premios_config = {inicio:'', fin:''};
+  DB.premios_config.inicio = ini;
+  DB.premios_config.fin = fin;
+  log('PREMIOS_CONFIG', ini+' → '+fin);
+  const ok = await saveRemote();
+  if(ok){
+    toast('Configuración guardada ✓','ok');
+    renderPremiosAdmin();
+  }
+}
+
 // ─── DETECCIÓN ONLINE/OFFLINE (sin auto-save peligroso) ────
 // PROBLEMA HISTÓRICO RESUELTO: el código anterior tenía un wrapper de
 // "sincronización offline" que, al recuperar conexión, llamaba automáticamente
@@ -6871,6 +7238,70 @@ function mostrarNotificaciones(){
   mostrarBanner(msgs[0], msgs.length);
 }
 
+// ─── POPUP CONFIRMAR COMIDA DOMINGO ────────────────────
+// Se muestra en cada login mientras la persona no haya elegido explícitamente
+// SÍ o NO a la comida del domingo. Sale con "No" pre-seleccionado pero les
+// obliga a pulsar para dejar clara su intención.
+function mostrarPopupComidaDomingoSiToca(){
+  if(!ME) return;
+  const pid = ME.ID || ME.id;
+  if(!pid) return;
+  // Solo mostrar si NO ha respondido explícitamente
+  const resp = (DB.comida_dom_confirmado||{})[pid];
+  if(resp === 'SI' || resp === 'NO') return;
+  // Evitar duplicado si ya hay uno abierto
+  if(document.getElementById('popup-com-dom')) return;
+
+  const ov = document.createElement('div');
+  ov.id = 'popup-com-dom';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(26,26,46,.85);z-index:99997;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .2s ease';
+  ov.innerHTML = '<style>@keyframes fadeIn{from{opacity:0}to{opacity:1}}</style>'
+    +'<div style="background:#FAF6F0;border-radius:18px;padding:28px 24px;max-width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+    +'<div style="font-size:52px;margin-bottom:8px">🍽</div>'
+    +'<h2 style="color:#B87A52;margin:0 0 6px 0;font-size:22px">Comida del domingo</h2>'
+    +'<p style="color:#1A1A2E;margin:0 0 18px 0;font-size:15px;line-height:1.4">La comida del domingo es opcional. Necesitamos saber si te quedas para reservar mesa.</p>'
+    +'<p style="color:#666;font-size:12px;margin:0 0 20px 0"><em>Puedes cambiar tu respuesta después en tu ficha si te lo replanteas.</em></p>'
+    +'<div style="display:flex;gap:10px;justify-content:center">'
+    +'<button onclick="responderComidaDomingo(\'NO\')" style="background:#F2EBE0;color:#1A1A2E;border:2px solid #B87A52;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-width:120px">No, gracias</button>'
+    +'<button onclick="responderComidaDomingo(\'SI\')" style="background:#4A7C59;color:#fff;border:0;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-width:120px">Sí, me apunto</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(ov);
+}
+
+async function responderComidaDomingo(resp){
+  if(!ME) return;
+  const pid = ME.ID || ME.id;
+  if(!pid) return;
+  const ov = document.getElementById('popup-com-dom');
+  const btns = ov ? ov.querySelectorAll('button') : [];
+  btns.forEach(b => b.disabled = true);
+  if(!DB.comida_dom_confirmado) DB.comida_dom_confirmado = {};
+  DB.comida_dom_confirmado[pid] = resp;
+  // Actualizar también DB.comidas_optin.comida_dom para coherencia con el resto de la app
+  if(!DB.comidas_optin) DB.comidas_optin = {};
+  if(!Array.isArray(DB.comidas_optin.comida_dom)) DB.comidas_optin.comida_dom = [];
+  const arr = DB.comidas_optin.comida_dom;
+  const idx = arr.indexOf(pid);
+  if(resp === 'SI'){
+    if(idx < 0) arr.push(pid);
+  } else {
+    if(idx >= 0) arr.splice(idx, 1);
+  }
+  log('COMIDA_DOM_RESP', resp);
+  const ok = await saveRemote();
+  if(ok){
+    if(ov) ov.remove();
+    toast(resp==='SI' ? 'Genial, apuntado al domingo ✓' : 'Anotado — no vienes el domingo','ok');
+  } else {
+    // Revertir en memoria si falló el guardado
+    delete DB.comida_dom_confirmado[pid];
+    if(resp==='SI' && idx<0) arr.pop();
+    if(resp==='NO' && idx<0) arr.push(pid);
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
 let _bannerTimer=null;
 function mostrarBanner(msg, total){
   const cont=document.getElementById('notif-container');
@@ -7077,7 +7508,7 @@ function logout(){ ['role','persona_id','session_ts','admin_email','persona_emai
     if(savedRole==='admin'){
       const savedAdminEmail = lsGet('admin_email','');
       const esAdmin = savedAdminEmail && CFG.ADMINS.some(a=>a.email===savedAdminEmail);
-      if(esAdmin){ ROLE='admin'; bootApp(); return; }
+      if(esAdmin){ ROLE='admin'; asignarMeAdmin(); bootApp(); return; }
       // Sesión admin inválida → borrar todo
       ['role','session_ts','admin_email','persona_id','persona_email'].forEach(k=>lsSet(k,null));
     } else if(savedRole==='inscrito'){
