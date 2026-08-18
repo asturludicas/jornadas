@@ -1803,7 +1803,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 95; // se incrementa con cada versión desplegada
+const APP_VERSION = 96; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -5862,7 +5862,7 @@ function renderConfraAdmin(){
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
       +'<div style="flex:1;font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
       +'<div style="font-size:11px;color:var(--ink3);flex-shrink:0">'+(p.Modalidad||'').split('(')[0].trim()+'</div>'
-      +'<button class="btn btn-xs btn-danger" data-pid="'+id+'" onclick="confraAdminToggle(this.getAttribute(\"data-pid\"))">X</button>'
+      +'<button class="btn btn-xs btn-danger" data-pid="'+id+'" onclick="confraAdminQuitar(this.getAttribute(\"data-pid\"))">X</button>'
       +'</div>';
   }).filter(Boolean).join('');
 
@@ -5875,10 +5875,10 @@ function renderConfraAdmin(){
   var listaCard='<div class="card"><div class="card-hd"><span class="card-title">Apuntados ('+apuntados.length+')</span>'
     +'<button class="btn btn-sm" onclick="exportConfraCSV()">CSV</button></div>'
     +(listaHTML||'<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie apuntado aun</div>')
-    +'<div style="display:flex;gap:8px;margin-top:12px">'
-    +'<select id="confra-add-sel" style="flex:1;padding:7px;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:13px">'
+    +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+    +'<select id="confra-add-sel" style="flex:1 1 200px;min-width:0;padding:9px;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:13px">'
     +'<option value="">+ Añadir persona...</option>'+addOpts+'</select>'
-    +'<button class="btn btn-primary btn-sm" onclick="confraAdminAnadir()">Añadir</button>'
+    +'<button class="btn btn-primary" onclick="confraAdminAnadir()" style="flex:0 0 auto;padding:9px 18px">Añadir</button>'
     +'</div></div>';
 
   el.innerHTML=navHTML+formHTML+listaCard;
@@ -5897,6 +5897,44 @@ async function guardarConfra(){
   await saveRemote();
   toast('Confra actualizada ✓','ok');
   renderConfraAdmin();
+}
+
+// Añadir manualmente una persona a la comida de confraternización (jueves)
+async function confraAdminAnadir(){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  const sel=document.getElementById('confra-add-sel');
+  if(!sel) return;
+  const pid=String(sel.value||'').trim();
+  if(!pid){ toast('Elige una persona en la lista','err'); return; }
+  if(!Array.isArray(DB.confra_apuntados)) DB.confra_apuntados=[];
+  if(DB.confra_apuntados.includes(pid)){ toast('Ya estaba apuntada','err'); return; }
+  DB.confra_apuntados.push(pid);
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===pid);
+  const nombre=p?(p.Nick||p.NombreCompleto||p.Nombre||'?'):pid;
+  log('CONFRA_APUNTA_ADMIN', nombre);
+  const ok=await saveRemote();
+  if(ok){
+    toast('Añadida '+nombre+' ✓','ok');
+    renderConfraAdmin();
+  } else {
+    DB.confra_apuntados.pop();
+  }
+}
+
+// Quitar manualmente a alguien de la lista de la confra
+async function confraAdminQuitar(pid){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  if(!Array.isArray(DB.confra_apuntados)) return;
+  const idx=DB.confra_apuntados.indexOf(pid);
+  if(idx<0) return;
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===pid);
+  const nombre=p?(p.Nick||p.NombreCompleto||p.Nombre||'?'):pid;
+  if(!confirm('¿Quitar a '+nombre+' de la comida del jueves?')) return;
+  DB.confra_apuntados.splice(idx,1);
+  log('CONFRA_QUITA_ADMIN', nombre);
+  const ok=await saveRemote();
+  if(ok){ toast('Quitado','ok'); renderConfraAdmin(); }
+  else { DB.confra_apuntados.splice(idx,0,pid); }
 }
 
 function exportConfraCSV(){
@@ -7259,8 +7297,9 @@ function mostrarPopupComidaDomingoSiToca(){
     +'<div style="background:#FAF6F0;border-radius:18px;padding:28px 24px;max-width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
     +'<div style="font-size:52px;margin-bottom:8px">🍽</div>'
     +'<h2 style="color:#B87A52;margin:0 0 6px 0;font-size:22px">Comida del domingo</h2>'
-    +'<p style="color:#1A1A2E;margin:0 0 18px 0;font-size:15px;line-height:1.4">La comida del domingo es opcional. Necesitamos saber si te quedas para reservar mesa.</p>'
-    +'<p style="color:#666;font-size:12px;margin:0 0 20px 0"><em>Puedes cambiar tu respuesta después en tu ficha si te lo replanteas.</em></p>'
+    +'<p style="color:#1A1A2E;margin:0 0 12px 0;font-size:15px;line-height:1.4">La comida del domingo es <strong>opcional</strong>. Necesitamos saber si te quedas para poder reservar bien las raciones.</p>'
+    +'<p style="color:#666;font-size:13px;line-height:1.45;margin:0 0 14px 0;background:#F2EBE0;border-radius:8px;padding:10px 12px;text-align:left">En ediciones anteriores hemos pedido más comida de la cuenta y ha acabado tirándose bastante. El restaurante nos ha pedido una previsión ajustada, así que te agradecemos que respondas con sinceridad — aunque decidas <em>no</em> quedarte. Nos ayuda a evitar el despilfarro y a mantener buena relación con el sitio. ¡Gracias!</p>'
+    +'<p style="color:#666;font-size:12px;margin:0 0 20px 0"><em>Puedes cambiar tu respuesta después en tu ficha.</em></p>'
     +'<div style="display:flex;gap:10px;justify-content:center">'
     +'<button onclick="responderComidaDomingo(\'NO\')" style="background:#F2EBE0;color:#1A1A2E;border:2px solid #B87A52;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-width:120px">No, gracias</button>'
     +'<button onclick="responderComidaDomingo(\'SI\')" style="background:#4A7C59;color:#fff;border:0;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-width:120px">Sí, me apunto</button>'
