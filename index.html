@@ -80,6 +80,19 @@ function noches(p) {
   if (m.includes('viernes')) return 'viernes-domingo';
   return 'sin-alojamiento';
 }
+// Número de noches de estancia según modalidad
+function numNoches(p){
+  const n = noches(p);
+  if(n === 'jueves-domingo') return 3;    // jue→vie, vie→sáb, sáb→dom
+  if(n === 'viernes-domingo') return 2;   // vie→sáb, sáb→dom
+  return 0;
+}
+// Detecta si el hotel es el Marsol (case-insensitive, tolera variantes)
+function esHotelMarsol(hotelName){
+  return String(hotelName||'').toLowerCase().includes('marsol');
+}
+// Precio del desayuno por noche en el Marsol
+const DESAYUNO_MARSOL_PRECIO_NOCHE = 10;
 </script>
 <!-- ═══════════════════════════════════════════════════════ -->
 
@@ -723,6 +736,15 @@ tbody tr:hover td{background:var(--paper)}
           </div>
           <div class="stabs" id="aloj-tabs"></div>
           <div class="hab-grid" id="hab-grid"></div>
+        </div>
+
+        <!-- Desayunos Hotel Marsol (opcional, se paga en recepción) -->
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">🥐 Desayunos buffet Hotel Marsol</span>
+            <button class="btn btn-sm" onclick="exportDesayunosMarsol()">⬇ CSV</button>
+          </div>
+          <div id="desayunos-marsol-resumen"></div>
         </div>
       </div>
 
@@ -1507,6 +1529,7 @@ const DB = {
     inicio:'',               // ISO string, p.ej. '2026-09-04T10:00'
     fin:''                   // ISO string, p.ej. '2026-09-05T21:00'
   },
+  desayunos_marsol:{},       // {pid: true} inscritos que quieren desayuno buffet en Hotel Marsol
   // ─── CONTROL DE CONCURRENCIA Y SNAPSHOTS ───────────────
   _version:0,            // se incrementa en cada save; protege contra clientes desactualizados
   _snapLast:0,           // timestamp del último snapshot tomado (auto cada N horas)
@@ -1585,7 +1608,7 @@ function iniciarListenerFirebase(){
          'confra_peticiones','confra_llevar','modulos','config',
          'sum_consumos','sum_sobrantes','sum_historial','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
-         'premios_votos','premios_config'].forEach(k=>{
+         'premios_votos','premios_config','desayunos_marsol'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
@@ -1803,7 +1826,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 96; // se incrementa con cada versión desplegada
+const APP_VERSION = 97; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -2991,6 +3014,119 @@ function renderHabs(){
     }
     grid.appendChild(card);
   });
+  renderDesayunosMarsol();
+}
+
+// Resumen para el admin de los desayunos buffet apuntados en el Hotel Marsol.
+// El desayuno se paga directamente en recepción, no por la app.
+function renderDesayunosMarsol(){
+  const el = document.getElementById('desayunos-marsol-resumen');
+  if(!el) return;
+  const des = DB.desayunos_marsol || {};
+  const habs = DB.habitaciones || [];
+  const asig = DB.asignaciones || {};
+  // Personas apuntadas + validar que sigan en habitación del Marsol
+  const filas = Object.keys(des).filter(pid => des[pid]).map(pid => {
+    const p = DB.personas.find(x => (x.ID||x.id||'') === pid);
+    if(!p) return null;
+    const habId = asig[pid];
+    const hab = habs.find(h => (h.ID||h.id||'') === habId);
+    const hotelName = hab ? (hab.hotel || hab.Hotel || '') : '';
+    const esMarsol = esHotelMarsol(hotelName);
+    const nn = numNoches(p);
+    return { pid, p, hab, hotelName, esMarsol, nn, total: nn * DESAYUNO_MARSOL_PRECIO_NOCHE };
+  }).filter(Boolean);
+
+  const validos = filas.filter(f => f.esMarsol && f.nn > 0);
+  const huerfanos = filas.filter(f => !f.esMarsol || f.nn === 0);
+  const totalDesayunos = validos.reduce((s,f) => s + f.nn, 0);
+  const totalEuros = validos.reduce((s,f) => s + f.total, 0);
+
+  let html = '<p style="font-size:12px;color:var(--ink3);margin-bottom:12px">Los inscritos apuntados aquí pagarán su desayuno directamente en recepción al llegar. Precio: <strong>'+DESAYUNO_MARSOL_PRECIO_NOCHE+'€/noche</strong>.</p>';
+
+  if(!validos.length && !huerfanos.length){
+    html += '<p style="font-size:13px;color:var(--ink3);font-style:italic;text-align:center;padding:16px 0">Nadie apuntado al desayuno buffet aún.</p>';
+    el.innerHTML = html;
+    return;
+  }
+
+  // Resumen
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
+    +'<div style="flex:1;min-width:120px;background:var(--surface);padding:12px;border-radius:10px;text-align:center"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;font-weight:700">Personas</div><div style="font-size:24px;font-weight:800;color:#B87A52">'+validos.length+'</div></div>'
+    +'<div style="flex:1;min-width:120px;background:var(--surface);padding:12px;border-radius:10px;text-align:center"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;font-weight:700">Desayunos totales</div><div style="font-size:24px;font-weight:800;color:#B87A52">'+totalDesayunos+'</div></div>'
+    +'<div style="flex:1;min-width:120px;background:var(--surface);padding:12px;border-radius:10px;text-align:center"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;font-weight:700">Cobro en recepción</div><div style="font-size:24px;font-weight:800;color:#4A7C59">'+totalEuros+'€</div></div>'
+    +'</div>';
+
+  // Lista de personas
+  if(validos.length){
+    html += '<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Habitación</th><th>Noches</th><th style="text-align:right">Importe</th></tr></thead><tbody>';
+    validos.sort((a,b) => (a.p.NombreCompleto||a.p.Nombre||'').localeCompare(b.p.NombreCompleto||b.p.Nombre||''));
+    validos.forEach(f => {
+      html += '<tr>'
+        +'<td><div style="font-weight:600;font-size:13px">'+(f.p.NombreCompleto||f.p.Nombre||'?')+'</div>'
+        +(f.p.Nick?'<div style="font-size:11px;color:var(--ink3)">@'+f.p.Nick+'</div>':'')+'</td>'
+        +'<td style="font-size:12px">'+(f.hab ? (f.hotelName+' '+(f.hab.num||f.hab.NumeroHabitacion||'')) : '—')+'</td>'
+        +'<td style="text-align:center;font-weight:600">'+f.nn+'</td>'
+        +'<td style="text-align:right;font-weight:600;color:#4A7C59">'+f.total+'€</td>'
+        +'</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // Huérfanos: apuntados en su día pero ahora no están en Marsol (cambiaron habitación o baja)
+  if(huerfanos.length){
+    html += '<div style="margin-top:14px;background:var(--amber-l);border:1px solid var(--amber);border-radius:8px;padding:10px 12px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:6px">⚠ '+huerfanos.length+' registro'+(huerfanos.length>1?'s':'')+' desalineado'+(huerfanos.length>1?'s':'')+'</div>'
+      +'<div style="font-size:12px;color:var(--ink2)">Estas personas se apuntaron al desayuno pero ya no están en el Marsol (cambio de habitación o baja). No se les factura.</div>'
+      +'<div style="font-size:11px;color:var(--ink3);margin-top:6px">'+huerfanos.map(f=>f.p.NombreCompleto||f.p.Nombre||'?').join(', ')+'</div>'
+      +'<button class="btn btn-xs" style="margin-top:8px" onclick="limpiarDesayunosHuerfanos()">🧹 Limpiar</button>'
+      +'</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function limpiarDesayunosHuerfanos(){
+  if(!confirm('¿Eliminar del registro los desayunos de personas que ya no están en el Marsol?')) return;
+  const des = DB.desayunos_marsol || {};
+  const habs = DB.habitaciones || [];
+  const asig = DB.asignaciones || {};
+  let quitados = 0;
+  Object.keys(des).forEach(pid => {
+    if(!des[pid]) return;
+    const p = DB.personas.find(x => (x.ID||x.id||'') === pid);
+    if(!p){ delete DB.desayunos_marsol[pid]; quitados++; return; }
+    const habId = asig[pid];
+    const hab = habs.find(h => (h.ID||h.id||'') === habId);
+    const hotelName = hab ? (hab.hotel || hab.Hotel || '') : '';
+    if(!esHotelMarsol(hotelName) || numNoches(p) === 0){
+      delete DB.desayunos_marsol[pid];
+      quitados++;
+    }
+  });
+  if(!quitados){ toast('No había nada que limpiar','ok'); return; }
+  log('DESAYUNOS_LIMPIA', quitados+' huérfanos');
+  const ok = await saveRemote();
+  if(ok){ toast(quitados+' registros limpiados','ok'); renderAlojamiento(); }
+}
+
+function exportDesayunosMarsol(){
+  const des = DB.desayunos_marsol || {};
+  const habs = DB.habitaciones || [];
+  const asig = DB.asignaciones || {};
+  const lines = ['"Nombre","Nick","Email","Habitación","Noches","Importe (€)"'];
+  Object.keys(des).filter(pid => des[pid]).forEach(pid => {
+    const p = DB.personas.find(x => (x.ID||x.id||'') === pid);
+    if(!p) return;
+    const habId = asig[pid];
+    const hab = habs.find(h => (h.ID||h.id||'') === habId);
+    const hotelName = hab ? (hab.hotel || hab.Hotel || '') : '';
+    if(!esHotelMarsol(hotelName)) return;
+    const nn = numNoches(p);
+    if(nn === 0) return;
+    const habLbl = hotelName+' '+(hab.num||hab.NumeroHabitacion||'');
+    lines.push('"'+(p.NombreCompleto||p.Nombre||'').replace(/"/g,"'")+'","'+(p.Nick||'')+'","'+(p.Email||'')+'","'+habLbl+'","'+nn+'","'+(nn*DESAYUNO_MARSOL_PRECIO_NOCHE)+'"');
+  });
+  dlCSV(lines.join('\n'),'desayunos_marsol.csv');
 }
 
 
@@ -4175,6 +4311,28 @@ function renderMiAloj(){
     (function(id,p){btnS.onclick=function(){asignarHabInscrito(id,p,'');};})(hid2,pid);
     card.appendChild(btnS);
     grid3.innerHTML='';grid3.appendChild(card);
+    // Si la habitación es del Hotel Marsol, ofrecer desayuno buffet opcional
+    const hotelName = miHab.hotel || miHab.Hotel || '';
+    if(esHotelMarsol(hotelName)){
+      const nn = numNoches(p);
+      if(nn > 0){
+        const tieneDes = !!(DB.desayunos_marsol||{})[pid];
+        const total = nn * DESAYUNO_MARSOL_PRECIO_NOCHE;
+        const cardDes = document.createElement('div');
+        cardDes.style.cssText='background:var(--surface);border:2px solid '+(tieneDes?'#B87A52':'var(--border2)')+';border-radius:16px;padding:16px;margin-top:12px';
+        cardDes.innerHTML=''
+          +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+          +'<span style="font-size:32px">🥐</span>'
+          +'<div><div style="font-weight:800;font-size:16px;color:#B87A52">Desayuno buffet (opcional)</div>'
+          +'<div style="font-size:12px;color:var(--ink2);margin-top:2px">'+nn+' noche'+(nn>1?'s':'')+' × '+DESAYUNO_MARSOL_PRECIO_NOCHE+'€ = <strong>'+total+'€</strong></div>'
+          +'</div></div>'
+          +'<p style="font-size:12px;color:var(--ink2);margin-bottom:12px;line-height:1.4">El desayuno buffet lo ofrece el Hotel Marsol. Si lo quieres, márcalo aquí para que la organización pase la lista al hotel. <strong>Se paga directamente en recepción a tu llegada</strong> (no por la app).</p>'
+          +'<button class="btn '+(tieneDes?'':'btn-primary')+'" style="width:100%;padding:11px;font-size:14px;'+(tieneDes?'background:#4A7C59;color:#fff;border-color:#4A7C59':'')+'" onclick="toggleDesayunoMarsol(\''+pid+'\')">'
+          +(tieneDes?'✓ Apuntado al desayuno buffet — quitar':'Añadir desayuno buffet ('+total+'€)')
+          +'</button>';
+        grid3.appendChild(cardDes);
+      }
+    }
   } else {
     var listH='';
     if(!habs.length){
@@ -4209,6 +4367,28 @@ function renderMiAloj(){
     });
   }
 
+}
+
+// Alternar desayuno buffet del Hotel Marsol (solo para inscritos ya asignados a habitación del Marsol)
+async function toggleDesayunoMarsol(pid){
+  if(!pid) return;
+  if(!DB.desayunos_marsol) DB.desayunos_marsol = {};
+  const actual = !!DB.desayunos_marsol[pid];
+  if(actual){
+    delete DB.desayunos_marsol[pid];
+  } else {
+    DB.desayunos_marsol[pid] = true;
+  }
+  log('DESAYUNO_MARSOL', pid+' → '+(actual?'quitado':'apuntado'));
+  const ok = await saveRemote();
+  if(ok){
+    toast(actual?'Desayuno quitado':'Desayuno añadido — se paga en recepción','ok');
+    renderMiAloj();
+  } else {
+    // Revertir en memoria si falló el guardado
+    if(actual) DB.desayunos_marsol[pid] = true;
+    else delete DB.desayunos_marsol[pid];
+  }
 }
 
 let _asignando=false;
