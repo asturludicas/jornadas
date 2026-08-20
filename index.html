@@ -1834,7 +1834,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 99; // se incrementa con cada versión desplegada
+const APP_VERSION = 100; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -2961,7 +2961,7 @@ function renderHabs(){
     if(alojTab==='todas') return true;
     var hn=h.noches||h.Noches||'ambas';
     if(alojTab==='jueves-domingo') return hn==='ambas'||hn==='jueves-domingo';
-    if(alojTab==='viernes-domingo') return hn==='ambas'||hn==='viernes'||hn==='viernes-domingo';
+    if(alojTab==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo';
     return true;
   });
   var grid=document.getElementById('hab-grid');
@@ -4415,12 +4415,12 @@ function renderMiAloj(){
   const esAnonimo2=ME?._anonimo;
   const habs=DB.habitaciones.filter(h=>{
     const hn=h.noches||'ambas';
-    // Filtro por noches según modalidad del inscrito:
-    //  - Jueves→Dom: puede usar 'ambas' (que cubre las 3 noches)
-    //  - Viernes→Dom: puede usar 'ambas' (cubre las 3, aunque solo use 2) o 'viernes' (solo 2)
+    // Filtro estricto por noches según modalidad del inscrito:
+    //  - Jueves→Dom: solo habs 'ambas' (que cubren jue-dom)
+    //  - Viernes→Dom: solo habs 'viernes' (no las 'ambas' — son para los de jueves)
     //  - Sin aloj / anónimo: ve todas (solo informativo)
     if(n==='jueves-domingo') return hn==='ambas'||hn==='jueves-domingo';
-    if(n==='viernes-domingo') return hn==='ambas'||hn==='viernes'||hn==='viernes-domingo';
+    if(n==='viernes-domingo') return hn==='viernes'||hn==='viernes-domingo';
     return true;
   }).filter(h=>{
     // Además, ocultar las habitaciones LLENAS. No tiene sentido mostrarlas al elegir.
