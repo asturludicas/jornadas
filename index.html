@@ -1954,6 +1954,55 @@ async function saveRemote(){
       return false;
     }
 
+    // ─── 1.5) SANITY CHECK ANTI-ROLLBACK MASIVO ────────
+    // Última barrera contra cualquier cliente que intente escribir con muchos
+    // menos datos de los que hay en el servidor. Los checks de _version han
+    // fallado en el pasado (SSE mantiene el _version sincronizado en zombis
+    // aunque su CONTENIDO esté podrido). Aquí comparamos los CONTEOS reales
+    // del servidor con lo que vamos a escribir. Si algo baja bruscamente sin
+    // motivo, abortamos antes de tocar Firebase.
+    try{
+      const base = CFG.FIREBASE_URL+CFG.FIREBASE_PATH;
+      const auth = '?shallow=true&auth='+CFG.FIREBASE_SECRET;
+      const [rP,rH,rG,rPa] = await Promise.all([
+        fetch(base+'/personas.json'+auth).then(r=>r.ok?r.json():null).catch(()=>null),
+        fetch(base+'/habitaciones.json'+auth).then(r=>r.ok?r.json():null).catch(()=>null),
+        fetch(base+'/grupos.json'+auth).then(r=>r.ok?r.json():null).catch(()=>null),
+        fetch(base+'/pagos.json'+auth).then(r=>r.ok?r.json():null).catch(()=>null)
+      ]);
+      const cnt = obj => obj && typeof obj==='object' ? Object.keys(obj).length : 0;
+      const remP = cnt(rP), remH = cnt(rH), remG = cnt(rG), remPa = cnt(rPa);
+      const nuevoP = (DB.personas||[]).filter(p=>!p._esInvitado&&!p._esOrganizador).length;
+      const nuevoH = (DB.habitaciones||[]).length;
+      const nuevoG = (DB.grupos||[]).length;
+      const nuevoPa = (DB.pagos||[]).length;
+      // Umbrales: aborta si el nuevo es < 50% del remoto Y el remoto tiene un
+      // volumen considerable. Ratios más laxos para las tablas pequeñas.
+      const anomalias = [];
+      if(remP  >= 20 && nuevoP  < remP  * 0.5) anomalias.push('personas '+remP+'→'+nuevoP);
+      if(remH  >=  5 && nuevoH  < remH  * 0.5) anomalias.push('habitaciones '+remH+'→'+nuevoH);
+      if(remG  >= 10 && nuevoG  < remG  * 0.5) anomalias.push('grupos '+remG+'→'+nuevoG);
+      if(remPa >= 20 && nuevoPa < remPa * 0.5) anomalias.push('pagos '+remPa+'→'+nuevoPa);
+      if(anomalias.length){
+        okFinal=false;
+        _syncOK=false;
+        actualizarSyncBadge();
+        console.error('⛔ SANITY CHECK — rollback detectado, guardado ABORTADO:', anomalias);
+        // Guardar detalles en localStorage para debug
+        try{ lsSet('_ultimo_sanity_abort', {ts:Date.now(), anomalias, url:location.href}); }catch{}
+        toast('🛑 GUARDADO ABORTADO por seguridad. Detectado posible pisado de datos ('+anomalias.join(', ')+'). Tus cambios NO se han enviado. Recarga la página — si vuelve a pasar, avisa a la organización.','err',20000);
+        return false;
+      }
+    }catch(e){
+      // Si no podemos leer los conteos del servidor, mejor abortar que arriesgar
+      console.warn('Sanity check falló, abortando por seguridad:', e);
+      okFinal=false;
+      _syncOK=false;
+      actualizarSyncBadge();
+      toast('⚠ No se pudo verificar seguridad de la escritura. Cambios NO guardados. Revisa conexión y reintenta.','err');
+      return false;
+    }
+
     // ─── 2) Incrementar versión y preparar payload ─────
     DB._version = localVersion + 1;
     // Subir _minClientVersion automáticamente si nuestra APP_VERSION es mayor.
@@ -6003,25 +6052,6 @@ function elegirAdminCreador(nick, btn){
 // CONFRATERNIZACIÓN — Comida opcional jueves
 // ═══════════════════════════════════════════════════════════════
 
-// ─── HELPER: bloque de intolerancias/alérgenos de la confra ──
-function confraAlergHTML(apuntados){
-  var conAlerg=(apuntados||[]).map(function(id){
-    return DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
-  }).filter(function(p){return p&&p.Alergenos;});
-  var inner=conAlerg.length
-    ?'<p style="font-size:11px;color:var(--ink3);margin-bottom:10px">Para comunicar al restaurante</p>'
-      +conAlerg.map(function(p){
-        return '<div class="comida-alerg-item">'
-          +'<span class="comida-alerg-nombre">'+(p.Nick?'@'+p.Nick+' — ':'')+( p.NombreCompleto||p.Nombre||'?')+'</span>'
-          +'<span class="comida-alerg-val">'+p.Alergenos+'</span>'
-          +'</div>';
-      }).join('')
-    :'<div style="font-size:13px;color:var(--ink3);font-style:italic">Ningún asistente ha indicado intolerancias</div>';
-  return '<div class="card" style="margin-top:10px">'
-    +'<div class="card-hd"><span class="card-title">⚠ Intolerancias / Alérgenos'+(conAlerg.length?' ('+conAlerg.length+')':'')+'</span></div>'
-    +inner+'</div>';
-}
-
 // ─── INSCRITO: ver y apuntarse ─────────────────────────────
 function renderConfra(){
   var el=document.getElementById('confra-content');
@@ -6090,8 +6120,7 @@ function renderConfra(){
 
   el.innerHTML=bannerInfo+btnHTML
     +'<div class="card"><div class="card-hd"><span class="card-title">Asistentes ('+apuntados.length+')</span></div>'
-    +listaHTML+'</div>'
-    +confraAlergHTML(apuntados);
+    +listaHTML+'</div>';
 }
 
 function confraApuntarseGrupoModal(){
@@ -6251,7 +6280,7 @@ function renderConfraAdmin(){
     +'<button class="btn btn-primary" onclick="confraAdminAnadir()" style="flex:0 0 auto;padding:9px 18px">Añadir</button>'
     +'</div></div>';
 
-  el.innerHTML=navHTML+formHTML+listaCard+confraAlergHTML(apuntados);
+  el.innerHTML=navHTML+formHTML+listaCard;
 }
 
 
@@ -6309,10 +6338,10 @@ async function confraAdminQuitar(pid){
 
 function exportConfraCSV(){
   var apuntados=DB.confra_apuntados||[];
-  var lines=['"Nick","Nombre","Email","Modalidad","Alergenos"'];
+  var lines=['"Nick","Nombre","Email","Modalidad"'];
   apuntados.forEach(function(id){
     var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
-    if(p) lines.push('"'+(p.Nick||'')+'","'+(p.NombreCompleto||p.Nombre||'')+'","'+(p.Email||'')+'","'+(p.Modalidad||'')+'","'+(p.Alergenos||'')+'"');
+    if(p) lines.push('"'+(p.Nick||'')+'","'+(p.NombreCompleto||p.Nombre||'')+'","'+(p.Email||'')+'","'+(p.Modalidad||'')+'"');
   });
   dlCSV(lines.join('\n'),'confra_asistentes.csv');
 }
