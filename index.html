@@ -1834,7 +1834,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 101; // se incrementa con cada versión desplegada
+const APP_VERSION = 102; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -4624,23 +4624,17 @@ async function asignarHabInscrito(habId, personaId, nombre){
     }
     const actual=DB.asignaciones[personaId];
     if(actual===habId){
-      // Desasignar (solo a la persona, no al grupo)
+      // Desasignar
       delete DB.asignaciones[personaId];
       toast(`${nombre} eliminado/a de la habitación`);
     } else {
-      // ─── Asignación con lógica de grupo ─────────────────
-      const persona=DB.personas.find(x=>(x.ID||x.id||'')===personaId);
-      const grupoId=persona?.GrupoID||'';
-      // Si pertenece a un grupo, asignar a TODO el grupo
+      // ─── Asignación individual ──────────────────────────
+      // Antes había lógica que arrastraba a todo el grupo (pareja/familia)
+      // a la misma habitación. Se quitó porque las parejas bloqueaban
+      // huecos sueltos (por ej. no podían meterse en una triple con 1 sitio).
+      // Ahora cada persona elige su habitación independientemente.
       let aAsignar=[personaId];
       let nombresGrupo=[nombre];
-      if(grupoId){
-        const miembros=DB.personas.filter(p=>!p._esInvitado&&!p._esOrganizador&&p.GrupoID===grupoId&&(p.ID||p.id||'')!==personaId);
-        if(miembros.length>0){
-          aAsignar=[personaId,...miembros.map(p=>p.ID||p.id||'')];
-          nombresGrupo=[nombre,...miembros.map(p=>p.NombreCompleto||p.Nombre||'?')];
-        }
-      }
       // Verificar capacidad con datos frescos
       const h=DB.habitaciones.find(x=>(x.ID||x.id||'')===habId);
       const cap=Number(h?.Capacidad||h?.cap||2);
