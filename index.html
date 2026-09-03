@@ -714,7 +714,8 @@ tbody tr:hover td{background:var(--paper)}
               <label class="tog"><input type="checkbox" id="tog-aloj" onchange="toggleModulo('alojamiento',this.checked)"><span class="tog-s"></span></label>
               <span style="font-size:13px">Módulo alojamiento: <strong id="lbl-aloj">CERRADO</strong></span>
             </div>
-            <div style="display:flex;gap:6px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm" onclick="sanearAsignaciones()" title="Elimina asignaciones huérfanas (a personas borradas o de baja)">🧹 Sanear</button>
               <button class="btn btn-sm" onclick="exportarHotel('jueves')">📋 PDF Jue→Dom</button>
               <button class="btn btn-sm" onclick="exportarHotel('viernes')">📋 PDF Vie→Dom</button>
               <button class="btn btn-sm" onclick="exportAlojamiento()">⬇ CSV</button>
@@ -1834,7 +1835,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 103; // se incrementa con cada versión desplegada
+const APP_VERSION = 104; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -3020,7 +3021,7 @@ function renderHabs(){
   habs.forEach(function(h){
     var hid=h.ID||h.id||'';
     var cap=Number(h.Capacidad||h.cap||2);
-    var ocup=DB.personas.filter(function(x){return !x._esInvitado&&DB.asignaciones[x.ID||x.id||'']===hid;});
+    var ocup=DB.personas.filter(function(x){return !x._esInvitado&&x.Activo!=='FALSE'&&DB.asignaciones[x.ID||x.id||'']===hid;});
     var libre=Math.max(0,cap-ocup.length);
     var conAloj=personasParaTab(alojTab).filter(function(p){return !p._esInvitado;});
     var sinAsig=conAloj.filter(function(p){return !DB.asignaciones[p.ID||p.id||''];});
@@ -3221,6 +3222,41 @@ async function toggleModulo(mod,val){
   await saveRemote(); toast('Módulo '+(val?'abierto':'cerrado'),'ok');
 }
 
+// Elimina asignaciones huérfanas: entradas en DB.asignaciones cuya persona
+// ha sido borrada, no existe, o está de baja (Activo='FALSE').
+// Útil cuando alguien pausó fichas antes de v103 (que ya no dejaba huérfanas)
+// o si por importación / edición manual quedaron colgadas.
+async function sanearAsignaciones(){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  const asig = DB.asignaciones || {};
+  const pids = Object.keys(asig);
+  const aBorrar = [];
+  pids.forEach(pid => {
+    const p = DB.personas.find(x => (x.ID||x.id||'') === pid);
+    if(!p){
+      aBorrar.push({pid, motivo:'persona borrada'});
+    } else if(p.Activo === 'FALSE'){
+      aBorrar.push({pid, motivo:'baja', nombre:p.NombreCompleto||p.Nombre||'?'});
+    } else if(p._esInvitado || p._esOrganizador){
+      aBorrar.push({pid, motivo:'organizador/invitado', nombre:p.NombreCompleto||p.Nombre||'?'});
+    }
+  });
+  if(!aBorrar.length){
+    toast('✓ No hay asignaciones huérfanas. Todo limpio.','ok');
+    return;
+  }
+  const detalle = aBorrar.slice(0,10).map(x => '• '+(x.nombre||x.pid)+' ('+x.motivo+')').join('\n');
+  const resto = aBorrar.length > 10 ? '\n... y '+(aBorrar.length-10)+' más' : '';
+  if(!confirm('Se van a eliminar '+aBorrar.length+' asignación'+(aBorrar.length>1?'es':'')+' de habitación huérfanas:\n\n'+detalle+resto+'\n\nEsto libera plazas para el resto. ¿Continuar?')) return;
+  aBorrar.forEach(x => { delete DB.asignaciones[x.pid]; });
+  log('SANEAR_ASIG', aBorrar.length+' entradas');
+  const ok = await saveRemote();
+  if(ok){
+    toast('✓ '+aBorrar.length+' asignaciones huérfanas eliminadas','ok');
+    renderAlojamiento();
+  }
+}
+
 // Guardar fecha de apertura automática del reparto de habitaciones.
 // Mientras no se llegue esa fecha, los inscritos ven habitaciones en vista
 // previa pero no pueden elegir (útil para dar margen a cambios del hotel).
@@ -3299,7 +3335,7 @@ function exportAlojamiento(){
   const lines=['Habitación,Tipo,Noches,Capacidad,Ocupante,Modalidad,Alojamiento'];
   DB.habitaciones.forEach(h=>{
     const hid=h.ID||h.id||'';
-    const ocup=DB.personas.filter(p=>(DB.asignaciones[p.ID||p.id||''])===hid);
+    const ocup=DB.personas.filter(p=>(DB.asignaciones[p.ID||p.id||''])===hid&&p.Activo!=='FALSE'&&!p._esInvitado);
     if(ocup.length===0){
       lines.push(`"${h.hotel||''} ${h.num||''}","${h.tipo||''}","${h.noches||''}","${h.cap||''}","(vacía)","",""`)
     } else {
@@ -3307,7 +3343,7 @@ function exportAlojamiento(){
     }
   });
   // Añadir personas sin habitación con alojamiento
-  const sinHab=DB.personas.filter(p=>noches(p)!=='sin-alojamiento'&&!DB.asignaciones[p.ID||p.id||'']);
+  const sinHab=DB.personas.filter(p=>noches(p)!=='sin-alojamiento'&&!DB.asignaciones[p.ID||p.id||'']&&p.Activo!=='FALSE'&&!p._esInvitado&&!p._esOrganizador);
   sinHab.forEach(p=>lines.push(`"SIN ASIGNAR","","${noches(p)}","","${p.NombreCompleto||p.Nombre||''}","${p.Modalidad||''}","${noches(p)}"`));
   dlCSV(lines.join('\n'),'alojamiento_hotel.csv');
 }
@@ -4475,7 +4511,7 @@ function renderMiAloj(){
     // Además, ocultar las habitaciones LLENAS. No tiene sentido mostrarlas al elegir.
     // Los inscritos ya asignados ven su propia habitación en la card de arriba.
     const hid=h.ID||h.id||'';
-    const ocu=DB.personas.filter(x=>DB.asignaciones[x.ID||x.id||'']===hid).length;
+    const ocu=DB.personas.filter(x=>DB.asignaciones[x.ID||x.id||'']===hid&&x.Activo!=='FALSE').length;
     const cap=Number(h.Capacidad||h.cap||2);
     return ocu < cap;
   });
@@ -4487,7 +4523,7 @@ function renderMiAloj(){
   if(miHab){
     var hid2=miHab.ID||miHab.id||'';
     var cap2=Number(miHab.Capacidad||miHab.cap||2);
-    var compas=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===hid2&&(x.ID||x.id||'')!==pid;});
+    var compas=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===hid2&&(x.ID||x.id||'')!==pid&&x.Activo!=='FALSE';});
     var card=document.createElement('div');
     card.setAttribute('style','background:var(--green-l);border:2px solid var(--green);border-radius:16px;padding:16px');
     var hf='<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><span style="font-size:32px">&#x1F6CF;&#xFE0F;</span><div>';
@@ -4540,7 +4576,7 @@ function renderMiAloj(){
       listH='<div style="background:var(--amber-l);border:1px solid var(--amber);border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--amber)"><strong>Elige tu habitaci\u00f3n</strong></div>';
       habs.forEach(function(h){
         var hid3=h.ID||h.id||'';
-        var ocu3=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===hid3;});
+        var ocu3=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===hid3&&x.Activo!=='FALSE';});
         var lib3=Math.max(0,Number(h.Capacidad||h.cap||2)-ocu3.length);
         var llena=lib3===0;
         var names=ocu3.map(function(c){return c.Nick?'@'+c.Nick:(c.Nombre||'?');}).join(', ');
@@ -4558,7 +4594,7 @@ function renderMiAloj(){
     grid3.innerHTML=listH;
     habs.forEach(function(h){
       var hid3=h.ID||h.id||'';
-      var ocu3=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===hid3;});
+      var ocu3=DB.personas.filter(function(x){return DB.asignaciones[x.ID||x.id||'']===hid3&&x.Activo!=='FALSE';});
       var lib3=Math.max(0,Number(h.Capacidad||h.cap||2)-ocu3.length);
       if(!lib3||esAnonimo2||n==='sin-alojamiento')return;
       var btnEl=document.getElementById('hbtn-'+hid3);
@@ -4640,7 +4676,7 @@ async function asignarHabInscrito(habId, personaId, nombre){
       const cap=Number(h?.Capacidad||h?.cap||2);
       const ocupadosOtros=DB.personas.filter(p=>{
         const pid=p.ID||p.id||'';
-        return DB.asignaciones[pid]===habId && !aAsignar.includes(pid);
+        return DB.asignaciones[pid]===habId && !aAsignar.includes(pid) && p.Activo!=='FALSE';
       });
       const sitiosLibres=cap-ocupadosOtros.length;
       if(sitiosLibres<aAsignar.length){
@@ -5843,7 +5879,7 @@ function exportListaHotelCompleta(){
     var nomHab=(h.hotel||h.Hotel||'')+' '+(h.num||h.NumeroHabitacion||'');
     var tipo=h.tipo||h.Tipo||'';
     var noch=(h.noches||'ambas')==='viernes'?'Vie→Dom':'Jue→Dom';
-    var ocup=DB.personas.filter(function(x){return !x._esInvitado&&DB.asignaciones[x.ID||x.id||'']===hid;});
+    var ocup=DB.personas.filter(function(x){return !x._esInvitado&&x.Activo!=='FALSE'&&DB.asignaciones[x.ID||x.id||'']===hid;});
     if(ocup.length===0){
       lines.push('"'+nomHab+'","'+tipo+'","'+noch+'","(libre)","","",""');
     } else {
