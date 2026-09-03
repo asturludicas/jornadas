@@ -1834,7 +1834,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 102; // se incrementa con cada versión desplegada
+const APP_VERSION = 103; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -6274,7 +6274,81 @@ function renderConfraAdmin(){
     +'<button class="btn btn-primary" onclick="confraAdminAnadir()" style="flex:0 0 auto;padding:9px 18px">Añadir</button>'
     +'</div></div>';
 
-  el.innerHTML=navHTML+formHTML+listaCard;
+  // ─── Card de alérgenos (para pasar al restaurante) ─────
+  // Recorre los apuntados y saca solo los que tienen alérgeno declarado
+  // (excluye "Ninguna", "No", "-" y vacíos).
+  var sinAlergValores=['','ninguna','ninguno','ningun','no','nada','no tengo','sin alergias','-','—','n/a','na','ninguno/a'];
+  var conAlerg=apuntados.map(function(pid){
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===pid;});
+    if(!p) return null;
+    var a=String(p.Alergenos||'').trim();
+    if(!a) return null;
+    if(sinAlergValores.includes(a.toLowerCase())) return null;
+    return {
+      pid:pid,
+      nombre:p.NombreCompleto||p.Nombre||'?',
+      nick:p.Nick||'',
+      alergenos:a
+    };
+  }).filter(Boolean);
+
+  // Ordenar por nombre para el listado
+  conAlerg.sort(function(a,b){return a.nombre.localeCompare(b.nombre);});
+
+  var alergCard='<div class="card"><div class="card-hd">'
+    +'<span class="card-title">🥜 Alérgenos / dietas ('+conAlerg.length+')</span>';
+  if(conAlerg.length){
+    alergCard+='<button class="btn btn-sm" onclick="copiarAlergenosConfra()" title="Copiar la lista al portapapeles para pasársela al restaurante">📋 Copiar</button>';
+  }
+  alergCard+='</div>';
+  if(!conAlerg.length){
+    alergCard+='<div style="font-size:13px;color:var(--ink3);font-style:italic">Ninguno de los apuntados ha declarado alérgenos ni dieta especial.</div>';
+  } else {
+    alergCard+='<p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">Lista de personas apuntadas con alérgeno o dieta especial declarada, para pasar al restaurante:</p>';
+    alergCard+='<div id="alerg-confra-lista" style="display:flex;flex-direction:column;gap:8px">';
+    conAlerg.forEach(function(e){
+      alergCard+='<div style="background:var(--surface);border-radius:8px;padding:10px 12px;border-left:3px solid #B87A52">'
+        +'<div style="font-weight:600;font-size:13px;color:var(--ink)">'+e.nombre+(e.nick?' <span style="color:var(--ink3);font-weight:400">(@'+e.nick+')</span>':'')+'</div>'
+        +'<div style="font-size:13px;color:var(--red);margin-top:2px">'+e.alergenos.replace(/</g,'&lt;')+'</div>'
+        +'</div>';
+    });
+    alergCard+='</div>';
+  }
+  alergCard+='</div>';
+
+  el.innerHTML=navHTML+formHTML+listaCard+alergCard;
+}
+
+// Copia la lista de alérgenos actual al portapapeles en formato legible
+async function copiarAlergenosConfra(){
+  var apuntados=DB.confra_apuntados||[];
+  var sinAlergValores=['','ninguna','ninguno','ningun','no','nada','no tengo','sin alergias','-','—','n/a','na','ninguno/a'];
+  var lineas=[];
+  apuntados.forEach(function(pid){
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===pid;});
+    if(!p) return;
+    var a=String(p.Alergenos||'').trim();
+    if(!a) return;
+    if(sinAlergValores.includes(a.toLowerCase())) return;
+    var nombre=p.NombreCompleto||p.Nombre||'?';
+    lineas.push('• '+nombre+' → '+a);
+  });
+  if(!lineas.length){ toast('No hay alérgenos que copiar','err'); return; }
+  lineas.sort();
+  var titulo=(DB.confra&&DB.confra.titulo)||'AsturL (comida jueves)';
+  var texto=titulo+' — Alérgenos y dietas especiales\nTotal: '+lineas.length+' personas\n\n'+lineas.join('\n');
+  try{
+    await navigator.clipboard.writeText(texto);
+    toast('✓ '+lineas.length+' alérgenos copiados al portapapeles','ok');
+  }catch(e){
+    // Fallback si el navegador no soporta clipboard API
+    var ta=document.createElement('textarea');
+    ta.value=texto; ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('✓ Copiados '+lineas.length+' alérgenos','ok'); }
+    catch(e2){ toast('No se pudo copiar','err'); }
+    ta.remove();
+  }
 }
 
 
