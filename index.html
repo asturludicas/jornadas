@@ -69,11 +69,20 @@ function sinAlojamientoModalidad(m){
   return m.includes('sin aloj') || m.includes('sin hosp');
 }
 function tieneAlojamiento(p) {
+  // Override manual del admin (permite meter a alguien de jueves en habitación viernes-dom, etc.)
+  const override = String(p.AlojNoches||'').trim();
+  if(override === 'sin-alojamiento') return false;
+  if(override === 'jueves-domingo' || override === 'viernes-domingo') return true;
   const m = String(p.Modalidad||'').toLowerCase();
   if (sinAlojamientoModalidad(m)) return false;
   return m.includes('jueves') || m.includes('viernes');
 }
 function noches(p) {
+  // Override manual del admin (permite meter a alguien de jueves en habitación viernes-dom, etc.)
+  const override = String(p.AlojNoches||'').trim();
+  if(override === 'jueves-domingo' || override === 'viernes-domingo' || override === 'sin-alojamiento'){
+    return override;
+  }
   const m = String(p.Modalidad||'').toLowerCase();
   if (sinAlojamientoModalidad(m)) return 'sin-alojamiento';
   if (m.includes('jueves')) return 'jueves-domingo';
@@ -1271,6 +1280,24 @@ tbody tr:hover td{background:var(--paper)}
         </div>
       </div>
       <div class="fg"><label>Alérgenos</label><input type="text" id="mp-alerg"></div>
+      <div class="form-grid">
+        <div class="fg">
+          <label>💫 Invitado (no paga)</label>
+          <select id="mp-invit">
+            <option value="NO">No — inscrito normal</option>
+            <option value="SI">Sí — invitado gratuito (no cuenta en pagos ni contabilidad)</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>🛏 Alojamiento (override modalidad)</label>
+          <select id="mp-alojnoches">
+            <option value="">Automático según modalidad</option>
+            <option value="jueves-domingo">Duerme jue→dom</option>
+            <option value="viernes-domingo">Duerme vie→dom</option>
+            <option value="sin-alojamiento">No duerme aquí</option>
+          </select>
+        </div>
+      </div>
       <div class="fg"><label>Observaciones (visible al inscrito)</label><textarea id="mp-obs" rows="2"></textarea></div>
       <div class="fg"><label style="color:var(--amber)">⚙ Notas internas (solo admin)</label><textarea id="mp-notas" rows="2" style="border-color:var(--amber)"></textarea></div>
     </div>
@@ -1835,7 +1862,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 104; // se incrementa con cada versión desplegada
+const APP_VERSION = 105; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -2169,14 +2196,16 @@ function pagadoPor(pid){
                  .reduce((a,p)=>a+Number(p.importe||0),0);
 }
 function estadoPago(p){
+  // Invitado gratuito: no cuenta como pendiente/pagado, tiene su propio estado
+  if(p.EsInvitadoGratuito==='SI') return 'invitado';
   const t=Number(p.ImporteTotal||0), pg=pagadoPor(p.ID||'');
   if(t===0) return 'sin-datos';
   return pg>=t?'pagado':pg>0?'parcial':'pendiente';
 }
 function chipPago(e){
-  const m={pagado:'chip-green',parcial:'chip-amber',pendiente:'chip-red','sin-datos':'chip-gray'};
-  const t={pagado:'Pagado',parcial:'Parcial',pendiente:'Pendiente','sin-datos':'—'};
-  return `<span class="chip ${m[e]}">${t[e]}</span>`;
+  const m={pagado:'chip-green',parcial:'chip-amber',pendiente:'chip-red','sin-datos':'chip-gray',invitado:'chip-purple'};
+  const t={pagado:'Pagado',parcial:'Parcial',pendiente:'Pendiente','sin-datos':'—',invitado:'💫 Invitado'};
+  return `<span class="chip ${m[e]||'chip-gray'}">${t[e]||'?'}</span>`;
 }
 
 const GCOLORS={azul:'#2563eb',verde:'#16a34a',morado:'#7c3aed',naranja:'#d97706',rojo:'#dc2626'};
@@ -2464,10 +2493,12 @@ function renderDashboard(){
   if(!DB||!DB.personas) return;
   var inscritos=DB.personas.filter(function(p){return !p._esInvitado&&!p._esOrganizador&&p.Activo!=='FALSE';});
   var total=inscritos.length;
+  // Para cálculos financieros: excluir invitados gratuitos (no cuentan como deuda ni cobro)
+  var inscritosDeFacturar=inscritos.filter(function(p){return p.EsInvitadoGratuito!=='SI';});
 
   // Ingresos: usa pagadoPor para cada persona (suma DB.pagos correctamente)
-  var ingresoEsp=inscritos.reduce(function(s,p){return s+(Number(p.ImporteTotal)||0);},0);
-  var cobradoInscripcion=inscritos.reduce(function(s,p){return s+pagadoPor(p.ID||p.id||'');},0);
+  var ingresoEsp=inscritosDeFacturar.reduce(function(s,p){return s+(Number(p.ImporteTotal)||0);},0);
+  var cobradoInscripcion=inscritosDeFacturar.reduce(function(s,p){return s+pagadoPor(p.ID||p.id||'');},0);
   // Cobros adicionales (ingresos extra desde quick-add)
   var cobrosExtra=(DB.cobros||[]).reduce(function(s,c){return s+(Number(c.importe)||0);},0);
   var cobrado=cobradoInscripcion+cobrosExtra;
@@ -2677,6 +2708,8 @@ function openModalPersona(){
   ['mp-id','mp-nombre','mp-apellidos','mp-nick','mp-email','mp-tel','mp-ciudad','mp-cod','mp-alerg','mp-obs','mp-notas','mp-gid'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
   document.getElementById('mp-imp').value='';
   document.getElementById('mp-rol').value='SI';
+  document.getElementById('mp-invit').value='NO';
+  document.getElementById('mp-alojnoches').value='';
   var _mm=document.getElementById('mp-mod'); if(_mm){_mm.removeAttribute('data-orig-mod'); _mm.onchange=onChangeModalidad;}
   document.getElementById('mp-title').textContent='Nueva persona';
   openModal('mo-persona');
@@ -2703,6 +2736,8 @@ function editarPersona(id){
   document.getElementById('mp-imp').value=p.ImporteTotal||'';
   document.getElementById('mp-cod').value=p.Codigo||'';
   document.getElementById('mp-alerg').value=p.Alergenos||'';
+  document.getElementById('mp-invit').value=p.EsInvitadoGratuito||'NO';
+  document.getElementById('mp-alojnoches').value=p.AlojNoches||'';
   document.getElementById('mp-obs').value=p.Observaciones||'';
   document.getElementById('mp-notas').value=p.NotasInternas||'';
   document.getElementById('mp-title').textContent='Editar persona';
@@ -2790,6 +2825,8 @@ async function guardarPersona(){
     ImporteTotal:document.getElementById('mp-imp').value,
     Codigo:document.getElementById('mp-cod').value,
     Alergenos:document.getElementById('mp-alerg').value,
+    EsInvitadoGratuito:document.getElementById('mp-invit').value,
+    AlojNoches:document.getElementById('mp-alojnoches').value,
     Observaciones:document.getElementById('mp-obs').value,
     NotasInternas:document.getElementById('mp-notas').value,
     Activo:'TRUE',
@@ -6999,6 +7036,7 @@ async function enviarRecordatoriosPago(){
   // Detectar pendientes con la función canónica pagadoPor()
   var pendientes=DB.personas.filter(function(p){
     if(p._esInvitado||p._esOrganizador||p.Activo==='FALSE') return false;
+    if(p.EsInvitadoGratuito==='SI') return false;  // no molestar a invitados gratuitos
     var deb=Number(p.ImporteTotal)||0;
     if(deb<=0) return false;
     var pag=pagadoPor(p.ID||p.id||'');
