@@ -6151,10 +6151,11 @@ const CONFRA_INFO_DEFECTO={
   titulo:'Comida del jueves — Mesón La Espiga',
   desc:'Incluye postre, agua, vino Rioja, jarra de cerveza y café. Elige tu plato principal más abajo.',
   fecha:'Jueves 17 de septiembre',
-  hora:'',
+  hora:'14:00',
   lugar:'Mesón La Espiga',
   mapsUrl:'https://share.google/M6zSnDIlgRCvJ3FV4',
-  precio:25
+  precio:25,
+  aforo:35  // el restaurante solo tiene 35 plazas
 };
 
 function confraPlatosLista(){
@@ -6185,6 +6186,31 @@ function confraDeadlineLegible(){
     +d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
 }
 
+// ─── AFORO / CIERRE DE INSCRIPCIONES ───────────────────
+// aforo: nº máximo de plazas (0/vacío = sin límite). cerrado: cierre manual
+// del admin, independiente del aforo (para cerrar antes de llenarse o
+// reabrir si alguien cancela).
+function confraAforo(){
+  var c=DB.confra||{};
+  // Mientras el admin no lo haya fijado explícitamente (ni siquiera a 0/sin
+  // límite), se usa el aforo por defecto del restaurante.
+  if(c.aforo===undefined||c.aforo===null||c.aforo==='') return CONFRA_INFO_DEFECTO.aforo||0;
+  var n=Number(c.aforo)||0;
+  return n>0?n:0;
+}
+function confraLleno(){
+  var aforo=confraAforo();
+  if(!aforo) return false;
+  return (DB.confra_apuntados||[]).length>=aforo;
+}
+function confraCerradoManual(){
+  return !!(DB.confra&&DB.confra.cerrado);
+}
+// true si NO se puede apuntar gente nueva ahora mismo (ya sea por aforo o cierre manual)
+function confraInscripcionesCerradas(){
+  return confraCerradoManual()||confraLleno();
+}
+
 // ─── INSCRITO: ver y apuntarse ─────────────────────────────
 function renderConfra(){
   var el=document.getElementById('confra-content');
@@ -6204,9 +6230,25 @@ function renderConfra(){
     +(confra.desc?'<div style="font-size:13px;color:var(--ink2);margin-bottom:8px">'+confra.desc+'</div>':'')
     +entrantesHTML
     +'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">'
-    +(confra.fecha?'<span><strong>Cuando:</strong> '+confra.fecha+(confra.hora?' a las '+confra.hora:'')+'</span>':'<span style="color:var(--amber)">Fecha por confirmar</span>')
-    +(confra.lugar?'<span><strong>Donde:</strong> '+confra.lugar+(confra.mapsUrl?' (<a href="'+confra.mapsUrl+'" target="_blank" rel="noopener" style="color:var(--accent)">cómo llegar</a>)':'')+'</span>':'')
-    +(confra.precio?'<span><strong>Precio:</strong> <span style="color:var(--accent);font-weight:800">'+confra.precio+'€ / persona</span></span>':'')
+    +(function(){
+        var fecha=confra.fecha||CONFRA_INFO_DEFECTO.fecha;
+        var hora=confra.hora||CONFRA_INFO_DEFECTO.hora;
+        return fecha?'<span><strong>Cuando:</strong> '+fecha+(hora?' a las '+hora:'')+'</span>':'<span style="color:var(--amber)">Fecha por confirmar</span>';
+      })()
+    +(function(){
+        var lugar=confra.lugar||CONFRA_INFO_DEFECTO.lugar;
+        var mapsUrl=confra.mapsUrl||CONFRA_INFO_DEFECTO.mapsUrl;
+        return lugar?'<span><strong>Donde:</strong> '+lugar+(mapsUrl?' (<a href="'+mapsUrl+'" target="_blank" rel="noopener" style="color:var(--accent)">cómo llegar</a>)':'')+'</span>':'';
+      })()
+    +(function(){
+        var precio=confra.precio||CONFRA_INFO_DEFECTO.precio;
+        return precio?'<span><strong>Precio:</strong> <span style="color:var(--accent);font-weight:800">'+precio+'€ / persona</span></span>':'';
+      })()
+    +(function(){
+        var aforo=confraAforo();
+        if(!aforo) return '';
+        return '<span><strong>Plazas:</strong> <span style="color:'+(confraLleno()?'var(--red)':'var(--ink2)')+';font-weight:800">'+apuntados.length+'/'+aforo+(confraLleno()?' — completo':'')+'</span></span>';
+      })()
     +'</div>'
     +(ROLE==='admin'?'<button class="btn btn-sm" style="margin-top:10px" onclick="nav(\"confra-admin\")">Editar informacion</button>':'')
     +'</div>';
@@ -6214,6 +6256,7 @@ function renderConfra(){
   // Boton apuntarse (si no es admin ADMIN sin perfil)
   var estoy = pid&&pid!='ADMIN' ? apuntados.includes(pid) : false;
   var btnHTML='';
+  var cerradas = confraInscripcionesCerradas();
   // Los que no vienen el jueves no pueden apuntarse a la comida del jueves
   var vieneJueves = ROLE==='admin' || (ME && tieneJueves(ME));
   if(pid && pid!=='ADMIN' && !vieneJueves){
@@ -6230,10 +6273,14 @@ function renderConfra(){
       btnHTML='<div style="background:var(--green-l);border-radius:var(--rs);padding:12px 16px;font-weight:700;color:var(--green);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">'
         +'<span>Tu asistencia esta confirmada</span>'
         +'<button class="btn btn-sm" onclick="confraApuntarse(false)">Cancelar</button></div>';
+    } else if(cerradas){
+      btnHTML='<div style="background:#fff0f0;border:1.5px solid var(--red);border-radius:var(--rs);padding:12px 16px;font-size:13px;color:var(--red);font-weight:700;margin-bottom:12px">'
+        +'🚫 Inscripciones cerradas'+(confraLleno()?' — aforo completo ('+confraAforo()+' plazas)':'')+'. Si crees que es un error, escribe a la organización.'
+        +'</div>';
     } else {
       btnHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
         +'<button class="btn btn-primary" style="flex:1;font-size:15px;padding:12px" onclick="confraApuntarse(true)">'
-        +'Apuntarme'+(confra.precio?' ('+confra.precio+'€)':'')+'</button>'
+        +'Apuntarme'+((confra.precio||CONFRA_INFO_DEFECTO.precio)?' ('+(confra.precio||CONFRA_INFO_DEFECTO.precio)+'€)':'')+'</button>'
         +(tieneGrupo?'<button class="btn" style="flex:1;font-size:14px;padding:12px" onclick="confraApuntarseGrupoModal()">Apuntar a mi grupo</button>':'')
         +'</div>';
     }
@@ -6311,6 +6358,11 @@ async function confraApuntarse(apuntar){
     toast('Tu modalidad no incluye el jueves — la comida es ese día. Habla con la organización si crees que es un error.','err');
     return;
   }
+  // No permitir apuntarse si las inscripciones están cerradas (manual o aforo lleno)
+  if(apuntar && ROLE!=='admin' && confraInscripcionesCerradas()){
+    toast('Las inscripciones a la comida del jueves están cerradas'+(confraLleno()?' (aforo completo)':'')+'.','err');
+    return;
+  }
   if(!DB.confra_apuntados) DB.confra_apuntados=[];
   // Detectar grupo
   var grupo=ME.GrupoID?DB.personas.filter(function(x){
@@ -6369,7 +6421,26 @@ function confraModalGrupo(miembros){
 
 async function confraApuntarGrupo(){
   if(!DB.confra_apuntados) DB.confra_apuntados=[];
+  if(ROLE!=='admin' && confraInscripcionesCerradas()){
+    toast('Las inscripciones a la comida del jueves están cerradas'+(confraLleno()?' (aforo completo)':'')+'.','err');
+    closeModal('mo-confra-grupo');
+    return;
+  }
   var checks=document.querySelectorAll('#confra-grupo-body input[type=checkbox]');
+  // Cuántas plazas nuevas (no admin) pediría esta selección
+  var nuevos=0;
+  checks.forEach(function(cb){
+    var pid=cb.getAttribute('data-pid');
+    if(cb.checked && !DB.confra_apuntados.includes(pid)) nuevos++;
+  });
+  var aforo=confraAforo();
+  if(ROLE!=='admin' && aforo){
+    var libres=aforo-DB.confra_apuntados.length;
+    if(nuevos>libres){
+      toast('Solo quedan '+Math.max(libres,0)+' plaza'+(libres===1?'':'s')+' — desmarca a alguien del grupo','err');
+      return;
+    }
+  }
   checks.forEach(function(cb){
     var pid=cb.getAttribute('data-pid');
     if(cb.checked){if(!DB.confra_apuntados.includes(pid))DB.confra_apuntados.push(pid);}
@@ -6408,6 +6479,26 @@ function renderConfraAdmin(){
     +'<button class="btn btn-sm" onclick="_confraTab=\'mercadillo\';nav(\'confra\')">🏷 Mercadillo'+(nMerc?' ('+nMerc+')':'')+'</button>'
     +'</div>'
     +'<p style="font-size:11px;color:var(--ink3);margin-top:8px">Como admin, en estas vistas puedes borrar cualquier item. Para volver, pulsa "AsturL" en la barra inferior.</p>'
+    +'</div>';
+
+  // ─── Aforo / cierre de inscripciones ────────────────────
+  var aforoActual=confraAforo();
+  var cerradoManual=confraCerradoManual();
+  var lleno=confraLleno();
+  var aforoHTML='<div class="card" style="margin-bottom:14px;border:1.5px solid '+(cerradoManual||lleno?'var(--red)':'var(--border)')+'">'
+    +'<div class="card-hd"><span class="card-title">🔒 Aforo e inscripciones</span></div>'
+    +'<div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<div class="fg" style="flex:1 1 140px;margin-bottom:0"><label>Aforo (0 = sin límite)</label>'
+    +'<input type="number" id="confra-aforo" min="0" placeholder="35" value="'+(aforoActual||'')+'"></div>'
+    +'<button class="btn btn-sm" onclick="guardarConfraAforo()" style="flex:0 0 auto">Guardar aforo</button>'
+    +'</div>'
+    +'<div style="font-size:13px;margin-bottom:10px">Apuntados: <strong>'+apuntados.length+(aforoActual?'/'+aforoActual:'')+'</strong>'
+    +(lleno?' — <span style="color:var(--red);font-weight:700">aforo completo</span>':'')+'</div>'
+    +'<button class="btn '+(cerradoManual?'btn-primary':'btn-danger')+'" style="width:100%" onclick="confraToggleCerrado()">'
+    +(cerradoManual?'🔓 Reabrir inscripciones':'🚫 Cerrar inscripciones ahora')+'</button>'
+    +'<p style="font-size:11px;color:var(--ink3);margin:8px 0 0 0">'+(cerradoManual
+      ?'Has cerrado las inscripciones manualmente — nadie nuevo puede apuntarse aunque haya plazas libres.'
+      :'Si pones un aforo, las inscripciones se cierran solas al llegar a ese número. También puedes cerrarlas a mano en cualquier momento, aunque no esté lleno.')+'</p>'
     +'</div>';
 
   // Formulario editable
@@ -6530,7 +6621,7 @@ function renderConfraAdmin(){
     +(pendientes.length?'<div style="margin-top:10px;font-size:12px;color:var(--amber)">⏳ '+pendientes.length+' apuntado'+(pendientes.length>1?'s':'')+' sin elegir todavía.</div>':'')
     +'</div>';
 
-  el.innerHTML=navHTML+formHTML+listaCard+platosCard+alergCard;
+  el.innerHTML=navHTML+aforoHTML+formHTML+listaCard+platosCard+alergCard;
 }
 
 // Copia el recuento de platos (y quién eligió qué) al portapapeles, listo
@@ -6615,6 +6706,9 @@ async function copiarAlergenosConfra(){
 async function guardarConfra(){
   var entrantes=(document.getElementById('confra-entrantes')?.value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
   var platos=(document.getElementById('confra-platos')?.value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  // Preserva aforo/cierre manual (tienen su propio guardado rápido, no viven en este formulario)
+  var aforoPrevio=confraAforo();
+  var cerradoPrevio=confraCerradoManual();
   DB.confra={
     titulo:document.getElementById('confra-titulo')?.value.trim()||'',
     fecha:document.getElementById('confra-fecha').value.trim(),
@@ -6625,10 +6719,35 @@ async function guardarConfra(){
     desc:document.getElementById('confra-desc').value.trim(),
     entrantes:entrantes,
     platos:platos,
-    platoDeadline:document.getElementById('confra-deadline')?.value||''
+    platoDeadline:document.getElementById('confra-deadline')?.value||'',
+    aforo:aforoPrevio,
+    cerrado:cerradoPrevio
   };
   await saveRemote();
   toast('Confra actualizada ✓','ok');
+  renderConfraAdmin();
+}
+
+// Guarda solo el aforo (input rápido de la tarjeta "Aforo e inscripciones")
+async function guardarConfraAforo(){
+  var v=Number(document.getElementById('confra-aforo')?.value)||0;
+  if(!DB.confra) DB.confra={};
+  DB.confra.aforo=v>0?v:0;
+  await saveRemote();
+  toast(v>0?'Aforo fijado en '+v+' plazas ✓':'Aforo eliminado (sin límite) ✓','ok');
+  renderConfraAdmin();
+}
+
+// Cierra/reabre manualmente las inscripciones a la comida del jueves,
+// independientemente del aforo (útil para cerrar antes de llenarse, o
+// reabrir si alguien cancela y quieres dejar entrar a otra persona).
+async function confraToggleCerrado(){
+  if(!DB.confra) DB.confra={};
+  var nuevo=!DB.confra.cerrado;
+  DB.confra.cerrado=nuevo;
+  log('CONFRA_CERRADO', nuevo?'cerrado manualmente':'reabierto');
+  await saveRemote();
+  toast(nuevo?'Inscripciones cerradas ✓':'Inscripciones reabiertas ✓','ok');
   renderConfraAdmin();
 }
 
@@ -6662,12 +6781,33 @@ async function confraAdminQuitar(pid){
   if(idx<0) return;
   const p=DB.personas.find(x=>(x.ID||x.id||'')===pid);
   const nombre=p?(p.Nick||p.NombreCompleto||p.Nombre||'?'):pid;
-  if(!confirm('¿Quitar a '+nombre+' de la comida del jueves?')) return;
+  const ok1=await confirmBonito('¿Quitar a '+nombre+' de la comida del jueves?');
+  if(!ok1) return;
   DB.confra_apuntados.splice(idx,1);
+  if(DB.confra_platos&&DB.confra_platos[pid]!==undefined) delete DB.confra_platos[pid];
   log('CONFRA_QUITA_ADMIN', nombre);
   const ok=await saveRemote();
   if(ok){ toast('Quitado','ok'); renderConfraAdmin(); }
   else { DB.confra_apuntados.splice(idx,0,pid); }
+}
+
+// Confirmación propia (no usa window.confirm, que algunos navegadores/webviews
+// móviles bloquean o ignoran silenciosamente, dejando el botón "sin efecto").
+function confirmBonito(mensaje){
+  return new Promise(function(resolve){
+    var ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(26,26,46,.85);z-index:99998;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s ease';
+    ov.innerHTML='<div style="background:#FAF6F0;border-radius:16px;padding:24px 20px;max-width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+      +'<p style="color:#1A1A2E;font-size:15px;line-height:1.4;margin:0 0 18px 0">'+mensaje+'</p>'
+      +'<div style="display:flex;gap:10px;justify-content:center">'
+      +'<button data-r="0" style="background:#F2EBE0;color:#1A1A2E;border:2px solid #B87A52;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Cancelar</button>'
+      +'<button data-r="1" style="background:#c0392b;color:#fff;border:0;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Quitar</button>'
+      +'</div></div>';
+    ov.querySelectorAll('button').forEach(function(b){
+      b.onclick=function(){ var r=b.getAttribute('data-r')==='1'; ov.remove(); resolve(r); };
+    });
+    document.body.appendChild(ov);
+  });
 }
 
 function exportConfraCSV(){
