@@ -1556,6 +1556,7 @@ const DB = {
   mercadillo:[],     // [{id,vendedorId,vendedorNick,juego,desc,precio,estado,compradorId,compradorNick,compradorNombre,ts}]
   confra:null,       // {fecha:'',precio:0,lugar:''} — comida confraternización jueves
   confra_apuntados:[],// [personaId, ...]
+  confra_platos:{},   // {personaId: 'texto exacto del plato principal elegido'}
   confra_peticiones:[],// [{id,pid,nick,juego,desc,ts}] juegos que quieren jugar
   confra_llevar:[],    // [{id,pid,nick,juego,desc,ts}] juegos que traen
   camisetas_extra:[],  // [{id,talla,motivo,ts}] camisetas sueltas (organizadores, regalos, repuestos)
@@ -1640,7 +1641,7 @@ function iniciarListenerFirebase(){
         ['personas','partidas','habitaciones','asignaciones','solicitudes',
          'pagos','gastos','cobros','mensajes','mensajes_leidos',
          'comidas_optin','comidas_info','suministros_stock',
-         'camisetas_extra','mercadillo','confra','confra_apuntados',
+         'camisetas_extra','mercadillo','confra','confra_apuntados','confra_platos',
          'confra_peticiones','confra_llevar','modulos','config',
          'sum_consumos','sum_sobrantes','sum_historial','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
@@ -2386,7 +2387,12 @@ function bootApp(){
     nav('mi-ficha');
     renderPortal();
     setTimeout(mostrarNotificaciones, 800); // pequeño delay para que cargue la UI
-    setTimeout(mostrarPopupComidaDomingoSiToca, 1200);
+    setTimeout(function(){
+      mostrarPopupComidaDomingoSiToca();
+      // Si no hizo falta el popup del domingo, comprobar ya el del plato del jueves
+      // (si sí hizo falta, se encadena tras responder — ver responderComidaDomingo)
+      if(!document.getElementById('popup-com-dom')) mostrarPopupPlatoJuevesSiToca();
+    }, 1200);
   }
   updateBadge();
 }
@@ -2874,6 +2880,7 @@ async function darBaja(pid){
   }
   // Sacarlo de confra
   if(DB.confra_apuntados) DB.confra_apuntados=DB.confra_apuntados.filter(function(id){return id!==pid;});
+  if(DB.confra_platos&&DB.confra_platos[pid]!==undefined) delete DB.confra_platos[pid];
   await saveRemote();
   toast(nombre+' dada de baja','ok');
   renderPersonas();
@@ -2949,6 +2956,7 @@ async function eliminarPersona(id){
   });
   DB.mercadillo=(DB.mercadillo||[]).filter(m=>m.vendedorId!==id&&m.compradorId!==id);
   DB.confra_apuntados=(DB.confra_apuntados||[]).filter(x=>x!==id);
+  if(DB.confra_platos&&DB.confra_platos[id]!==undefined) delete DB.confra_platos[id];
   DB.confra_peticiones=(DB.confra_peticiones||[]).filter(c=>c.pid!==id);
   DB.confra_llevar=(DB.confra_llevar||[]).filter(c=>c.pid!==id);
   DB.solicitudes=(DB.solicitudes||[]).filter(s=>s.personaId!==id);
@@ -5888,6 +5896,7 @@ async function nuevaEdicion(){
   DB.mercadillo=[];
   DB.confra=null;
   DB.confra_apuntados=[];
+  DB.confra_platos={};
   DB.confra_peticiones=[];
   DB.confra_llevar=[];
   DB.modulos={ alojamiento:false };
@@ -6119,6 +6128,63 @@ function elegirAdminCreador(nick, btn){
 // CONFRATERNIZACIÓN — Comida opcional jueves
 // ═══════════════════════════════════════════════════════════════
 
+// Platos principales por defecto para la comida del jueves (editable por el
+// admin en el panel de AsturL). Se guardan como texto exacto en confra.platos.
+const CONFRA_PLATOS_DEFECTO=[
+  'Cachopo de secreto ibérico con queso manchego',
+  'Entrecot de ternera asturiana con cabrales',
+  'Bonito con pisto'
+];
+// Entrantes por defecto (informativos, se sirven para toda la mesa)
+const CONFRA_ENTRANTES_DEFECTO=[
+  'Ensalada de cecina y queso de cabra',
+  'Croquetas de jamón ibérico',
+  'Tabla de embutido',
+  'Pastel de puerro'
+];
+// Fecha/hora límite por defecto para elegir plato (aviso al restaurante).
+// Formato compatible con <input type="datetime-local">, hora local del navegador.
+const CONFRA_PLATO_DEADLINE_DEFECTO='2026-09-14T22:00';
+// Datos de la comida del jueves 17-sep-2026 en Mesón La Espiga, precargados
+// como valores por defecto del formulario de admin (editable si algo cambia).
+const CONFRA_INFO_DEFECTO={
+  titulo:'Comida del jueves — Mesón La Espiga',
+  desc:'Incluye postre, agua, vino Rioja, jarra de cerveza y café. Elige tu plato principal más abajo.',
+  fecha:'Jueves 17 de septiembre',
+  hora:'',
+  lugar:'Mesón La Espiga',
+  mapsUrl:'https://share.google/M6zSnDIlgRCvJ3FV4',
+  precio:25
+};
+
+function confraPlatosLista(){
+  var c=DB.confra||{};
+  return (Array.isArray(c.platos)&&c.platos.length)?c.platos:CONFRA_PLATOS_DEFECTO;
+}
+function confraEntrantesLista(){
+  var c=DB.confra||{};
+  return (Array.isArray(c.entrantes)&&c.entrantes.length)?c.entrantes:CONFRA_ENTRANTES_DEFECTO;
+}
+function confraDeadlineStr(){
+  var c=DB.confra||{};
+  return c.platoDeadline||CONFRA_PLATO_DEADLINE_DEFECTO;
+}
+function confraDeadlineTs(){
+  var t=new Date(confraDeadlineStr()).getTime();
+  return isNaN(t)?0:t;
+}
+function confraPlazoAbierto(){
+  var t=confraDeadlineTs();
+  return !t || Date.now()<t;
+}
+function confraDeadlineLegible(){
+  var t=confraDeadlineTs();
+  if(!t) return '';
+  var d=new Date(t);
+  return d.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' a las '
+    +d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+}
+
 // ─── INSCRITO: ver y apuntarse ─────────────────────────────
 function renderConfra(){
   var el=document.getElementById('confra-content');
@@ -6128,14 +6194,18 @@ function renderConfra(){
   var apuntados=DB.confra_apuntados||[];
 
   // Banner info siempre visible
+  var entrantesHTML=confraEntrantesLista().length
+    ?'<div style="font-size:13px;color:var(--ink2);margin-bottom:8px"><strong>Entrantes (para compartir):</strong> '+confraEntrantesLista().join(', ')+'</div>'
+    :'';
   var bannerInfo='<div style="background:#fff0f0;border:2px solid var(--red);border-radius:var(--r);padding:16px;margin-bottom:16px">'
     +'<div style="font-size:13px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">'
-    +(confra.titulo||'Vermouth de bienvenida y comida')+'</div>'
+    +(confra.titulo||CONFRA_INFO_DEFECTO.titulo)+'</div>'
     +'<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:8px">NO INCLUIDO EN EL PRECIO DE LAS JORNADAS</div>'
     +(confra.desc?'<div style="font-size:13px;color:var(--ink2);margin-bottom:8px">'+confra.desc+'</div>':'')
+    +entrantesHTML
     +'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">'
     +(confra.fecha?'<span><strong>Cuando:</strong> '+confra.fecha+(confra.hora?' a las '+confra.hora:'')+'</span>':'<span style="color:var(--amber)">Fecha por confirmar</span>')
-    +(confra.lugar?'<span><strong>Donde:</strong> '+confra.lugar+'</span>':'')
+    +(confra.lugar?'<span><strong>Donde:</strong> '+confra.lugar+(confra.mapsUrl?' (<a href="'+confra.mapsUrl+'" target="_blank" rel="noopener" style="color:var(--accent)">cómo llegar</a>)':'')+'</span>':'')
     +(confra.precio?'<span><strong>Precio:</strong> <span style="color:var(--accent);font-weight:800">'+confra.precio+'€ / persona</span></span>':'')
     +'</div>'
     +(ROLE==='admin'?'<button class="btn btn-sm" style="margin-top:10px" onclick="nav(\"confra-admin\")">Editar informacion</button>':'')
@@ -6169,6 +6239,27 @@ function renderConfra(){
     }
   }
 
+  // Selección de plato principal (solo si ya está apuntado)
+  var platoHTML='';
+  if(pid && pid!=='ADMIN' && estoy){
+    var miPlato=(DB.confra_platos||{})[pid]||'';
+    var abierto=confraPlazoAbierto();
+    var deadlineTxt=confraDeadlineLegible();
+    var opciones=confraPlatosLista();
+    platoHTML='<div class="card" style="margin-bottom:12px;border:1.5px solid '+(miPlato?'var(--border)':'var(--amber)')+'">'
+      +'<div class="card-hd"><span class="card-title">🍽 Elige tu plato principal</span></div>'
+      +(!miPlato&&abierto?'<div style="background:#fff8e6;border-radius:8px;padding:10px 12px;font-size:13px;color:#8a6100;margin-bottom:10px">Aún no has elegido plato. Necesitamos tu elección antes del <strong>'+deadlineTxt+'</strong> para avisar al restaurante.</div>':'')
+      +(!abierto?'<div style="background:var(--surface);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--ink2);margin-bottom:10px">El plazo para elegir se cerró el '+deadlineTxt+'. '+(miPlato?'Tu elección ya quedó registrada.':'No llegaste a elegir — escribe a la organización si quieres confirmar un plato.')+'</div>':'')
+      +'<div style="display:flex;flex-direction:column;gap:8px">'
+      +opciones.map(function(op){
+        var sel=op===miPlato;
+        var disabledAttr=!abierto?' disabled':'';
+        return '<button class="btn'+(sel?' btn-primary':'')+'" style="text-align:left;justify-content:flex-start;padding:12px 14px;font-size:14px;white-space:normal;line-height:1.35"'+disabledAttr+' onclick="confraElegirPlato(\''+op.replace(/'/g,"\\'")+'\')">'
+          +(sel?'✓ ':'')+op+'</button>';
+      }).join('')
+      +'</div></div>';
+  }
+
   // Lista publica de asistentes
   var listaHTML=apuntados.length
     ? apuntados.map(function(id){
@@ -6185,9 +6276,23 @@ function renderConfra(){
       }).join('')
     : '<div style="font-size:13px;color:var(--ink3);font-style:italic;padding:10px 0">Nadie apuntado aun</div>';
 
-  el.innerHTML=bannerInfo+btnHTML
+  el.innerHTML=bannerInfo+btnHTML+platoHTML
     +'<div class="card"><div class="card-hd"><span class="card-title">Asistentes ('+apuntados.length+')</span></div>'
     +listaHTML+'</div>';
+}
+
+// Guarda la elección de plato principal del inscrito (o del admin navegando la vista)
+async function confraElegirPlato(plato){
+  if(!ME||_saving) return;
+  if(!confraPlazoAbierto()){ toast('El plazo para elegir plato ya se cerró','err'); return; }
+  var pid=ME.ID||ME.id||'';
+  if(!pid) return;
+  if(!(DB.confra_apuntados||[]).includes(pid)){ toast('Primero apúntate a la comida','err'); return; }
+  if(!DB.confra_platos) DB.confra_platos={};
+  DB.confra_platos[pid]=plato;
+  log('CONFRA_PLATO', plato);
+  await saveOptimista(renderConfra);
+  toast('Plato guardado: '+plato,'ok');
 }
 
 function confraApuntarseGrupoModal(){
@@ -6309,25 +6414,41 @@ function renderConfraAdmin(){
   var formHTML='<div class="card" style="margin-bottom:14px">'
     +'<div class="card-hd"><span class="card-title">Informacion del evento</span></div>'
     +'<div class="fg"><label>Titulo / nombre del evento</label>'
-    +'<input type="text" id="confra-titulo" placeholder="Vermouth de bienvenida y comida" value="'+(c.titulo||'Vermouth de bienvenida y comida')+'"></div>'
+    +'<input type="text" id="confra-titulo" placeholder="Vermouth de bienvenida y comida" value="'+(c.titulo||CONFRA_INFO_DEFECTO.titulo)+'"></div>'
     +'<div class="fg"><label>Descripcion / menu</label>'
-    +'<textarea id="confra-desc" rows="3" placeholder="Menu del dia, lugar, detalles...">'+(c.desc||'')+'</textarea></div>'
+    +'<textarea id="confra-desc" rows="3" placeholder="Menu del dia, lugar, detalles...">'+(c.desc||CONFRA_INFO_DEFECTO.desc)+'</textarea></div>'
     +'<div class="form-grid">'
-    +'<div class="fg"><label>Fecha</label><input type="text" id="confra-fecha" placeholder="Jueves 27 de marzo" value="'+(c.fecha||'')+'"></div>'
-    +'<div class="fg"><label>Hora</label><input type="text" id="confra-hora" placeholder="14:00" value="'+(c.hora||'')+'"></div>'
-    +'<div class="fg"><label>Lugar</label><input type="text" id="confra-lugar" placeholder="Restaurante..." value="'+(c.lugar||'')+'"></div>'
-    +'<div class="fg"><label>Precio por persona (€)</label><input type="number" id="confra-precio" placeholder="25" value="'+(c.precio||'')+'"></div>'
+    +'<div class="fg"><label>Fecha</label><input type="text" id="confra-fecha" placeholder="Jueves 27 de marzo" value="'+(c.fecha||CONFRA_INFO_DEFECTO.fecha)+'"></div>'
+    +'<div class="fg"><label>Hora</label><input type="text" id="confra-hora" placeholder="14:00" value="'+(c.hora||CONFRA_INFO_DEFECTO.hora)+'"></div>'
+    +'<div class="fg"><label>Lugar</label><input type="text" id="confra-lugar" placeholder="Restaurante..." value="'+(c.lugar||CONFRA_INFO_DEFECTO.lugar)+'"></div>'
+    +'<div class="fg"><label>Enlace mapa (opcional)</label><input type="text" id="confra-maps" placeholder="https://..." value="'+(c.mapsUrl||CONFRA_INFO_DEFECTO.mapsUrl)+'"></div>'
+    +'<div class="fg"><label>Precio por persona (€)</label><input type="number" id="confra-precio" placeholder="25" value="'+(c.precio||CONFRA_INFO_DEFECTO.precio)+'"></div>'
+    +'<div class="fg"><label>Plazo para elegir plato</label><input type="datetime-local" id="confra-deadline" value="'+confraDeadlineStr()+'"></div>'
     +'</div>'
+    +'<div class="fg"><label>Entrantes (uno por línea, para compartir)</label>'
+    +'<textarea id="confra-entrantes" rows="4" placeholder="Ensalada de cecina y queso de cabra...">'+confraEntrantesLista().join('\n')+'</textarea></div>'
+    +'<div class="fg"><label>Platos principales a elegir (uno por línea)</label>'
+    +'<textarea id="confra-platos" rows="4" placeholder="Cachopo de secreto ibérico...">'+confraPlatosLista().join('\n')+'</textarea></div>'
+    +'<p style="font-size:11px;color:var(--ink3);margin:-4px 0 10px 0">Cada inscrito apuntado elige uno de estos platos. Si cambias esta lista después de que alguien haya elegido, su elección anterior queda tal cual (como texto), aunque ya no aparezca aquí.</p>'
     +'<button class="btn btn-primary" onclick="guardarConfra()">Guardar informacion</button>'
     +'</div>';
 
-  // Lista editable de apuntados
+  // Lista editable de apuntados (con plato principal elegido / selector admin)
+  var platosOpts=confraPlatosLista();
+  var platosElegidos=DB.confra_platos||{};
   var listaHTML=apuntados.map(function(id){
     var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
     if(!p) return '';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
-      +'<div style="flex:1;font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
+    var miPlato=platosElegidos[id]||'';
+    var selHTML='<select data-pid="'+id+'" onchange="confraAdminSetPlato(this.getAttribute(\'data-pid\'),this.value)" style="font-size:11px;padding:4px 6px;border:1px solid var(--border2);border-radius:6px;background:var(--paper);color:var(--ink);max-width:190px">'
+      +'<option value="">— sin elegir —</option>'
+      +platosOpts.map(function(op){return '<option value="'+op.replace(/"/g,'&quot;')+'"'+(op===miPlato?' selected':'')+'>'+op+'</option>';}).join('')
+      +(miPlato&&!platosOpts.includes(miPlato)?'<option value="'+miPlato.replace(/"/g,'&quot;')+'" selected>'+miPlato+' (fuera de lista)</option>':'')
+      +'</select>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">'
+      +'<div style="flex:1 1 160px;font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
       +'<div style="font-size:11px;color:var(--ink3);flex-shrink:0">'+(p.Modalidad||'').split('(')[0].trim()+'</div>'
+      +selHTML
       +'<button class="btn btn-xs btn-danger" data-pid="'+id+'" onclick="confraAdminQuitar(this.getAttribute(\"data-pid\"))">X</button>'
       +'</div>';
   }).filter(Boolean).join('');
@@ -6389,7 +6510,73 @@ function renderConfraAdmin(){
   }
   alergCard+='</div>';
 
-  el.innerHTML=navHTML+formHTML+listaCard+alergCard;
+  // ─── Card de recuento de platos (para pasar al restaurante) ───
+  var pendientes=apuntados.filter(function(id){return !platosElegidos[id];});
+  var recuento={};
+  apuntados.forEach(function(id){
+    var pl=platosElegidos[id];
+    if(pl) recuento[pl]=(recuento[pl]||0)+1;
+  });
+  var platosCard='<div class="card"><div class="card-hd">'
+    +'<span class="card-title">📋 Recuento de platos</span>'
+    +(Object.keys(recuento).length?'<button class="btn btn-sm" onclick="copiarResumenPlatosConfra()" title="Copiar el recuento para pasárselo al restaurante">📋 Copiar</button>':'')
+    +'</div>'
+    +'<p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">Plazo para elegir: <strong>'+confraDeadlineLegible()+'</strong>'+(confraPlazoAbierto()?'':' <span style="color:var(--red);font-weight:700">(cerrado)</span>')+'</p>'
+    +(Object.keys(recuento).length
+      ? Object.keys(recuento).map(function(pl){
+          return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+pl+'</span><strong>'+recuento[pl]+'</strong></div>';
+        }).join('')
+      : '<div style="font-size:13px;color:var(--ink3);font-style:italic">Nadie ha elegido plato todavía.</div>')
+    +(pendientes.length?'<div style="margin-top:10px;font-size:12px;color:var(--amber)">⏳ '+pendientes.length+' apuntado'+(pendientes.length>1?'s':'')+' sin elegir todavía.</div>':'')
+    +'</div>';
+
+  el.innerHTML=navHTML+formHTML+listaCard+platosCard+alergCard;
+}
+
+// Copia el recuento de platos (y quién eligió qué) al portapapeles, listo
+// para pasárselo al restaurante junto con los alérgenos.
+async function copiarResumenPlatosConfra(){
+  var apuntados=DB.confra_apuntados||[];
+  var platosElegidos=DB.confra_platos||{};
+  var recuento={};
+  var porPlato={};
+  apuntados.forEach(function(id){
+    var pl=platosElegidos[id];
+    if(!pl) return;
+    var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
+    var nombre=p?(p.Nick?'@'+p.Nick:(p.NombreCompleto||p.Nombre||'?')):id;
+    recuento[pl]=(recuento[pl]||0)+1;
+    (porPlato[pl]=porPlato[pl]||[]).push(nombre);
+  });
+  var claves=Object.keys(recuento);
+  if(!claves.length){ toast('Nadie ha elegido plato todavía','err'); return; }
+  var titulo=(DB.confra&&DB.confra.titulo)||'AsturL (comida jueves)';
+  var pendientes=apuntados.length-claves.reduce(function(s,k){return s+recuento[k];},0);
+  var texto=titulo+' — Recuento de platos principales\nTotal apuntados: '+apuntados.length+(pendientes?' ('+pendientes+' sin elegir)':'')+'\n\n'
+    +claves.map(function(pl){return pl+': '+recuento[pl]+'\n'+porPlato[pl].map(function(n){return '  • '+n;}).join('\n');}).join('\n\n');
+  try{
+    await navigator.clipboard.writeText(texto);
+    toast('✓ Recuento copiado al portapapeles','ok');
+  }catch(e){
+    var ta=document.createElement('textarea');
+    ta.value=texto; ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('✓ Recuento copiado','ok'); }
+    catch(e2){ toast('No se pudo copiar','err'); }
+    ta.remove();
+  }
+}
+
+// Cambiar/forzar el plato de un apuntado desde el panel de admin
+async function confraAdminSetPlato(pid, plato){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  if(!DB.confra_platos) DB.confra_platos={};
+  if(plato){ DB.confra_platos[pid]=plato; } else { delete DB.confra_platos[pid]; }
+  const p=DB.personas.find(x=>(x.ID||x.id||'')===pid);
+  const nombre=p?(p.Nick||p.NombreCompleto||p.Nombre||'?'):pid;
+  log('CONFRA_PLATO_ADMIN', nombre+': '+(plato||'(sin elegir)'));
+  const ok=await saveRemote();
+  if(ok){ toast('Plato actualizado','ok'); renderConfraAdmin(); }
 }
 
 // Copia la lista de alérgenos actual al portapapeles en formato legible
@@ -6426,13 +6613,19 @@ async function copiarAlergenosConfra(){
 
 
 async function guardarConfra(){
+  var entrantes=(document.getElementById('confra-entrantes')?.value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  var platos=(document.getElementById('confra-platos')?.value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
   DB.confra={
     titulo:document.getElementById('confra-titulo')?.value.trim()||'',
     fecha:document.getElementById('confra-fecha').value.trim(),
     hora:document.getElementById('confra-hora').value.trim(),
     lugar:document.getElementById('confra-lugar').value.trim(),
+    mapsUrl:document.getElementById('confra-maps')?.value.trim()||'',
     precio:parseFloat(document.getElementById('confra-precio').value)||0,
-    desc:document.getElementById('confra-desc').value.trim()
+    desc:document.getElementById('confra-desc').value.trim(),
+    entrantes:entrantes,
+    platos:platos,
+    platoDeadline:document.getElementById('confra-deadline')?.value||''
   };
   await saveRemote();
   toast('Confra actualizada ✓','ok');
@@ -6479,10 +6672,11 @@ async function confraAdminQuitar(pid){
 
 function exportConfraCSV(){
   var apuntados=DB.confra_apuntados||[];
-  var lines=['"Nick","Nombre","Email","Modalidad"'];
+  var platosElegidos=DB.confra_platos||{};
+  var lines=['"Nick","Nombre","Email","Modalidad","Plato principal"'];
   apuntados.forEach(function(id){
     var p=DB.personas.find(function(x){return (x.ID||x.id||'')===id;});
-    if(p) lines.push('"'+(p.Nick||'')+'","'+(p.NombreCompleto||p.Nombre||'')+'","'+(p.Email||'')+'","'+(p.Modalidad||'')+'"');
+    if(p) lines.push('"'+(p.Nick||'')+'","'+(p.NombreCompleto||p.Nombre||'')+'","'+(p.Email||'')+'","'+(p.Modalidad||'')+'","'+(platosElegidos[id]||'').replace(/"/g,'""')+'"');
   });
   dlCSV(lines.join('\n'),'confra_asistentes.csv');
 }
@@ -7873,11 +8067,68 @@ async function responderComidaDomingo(resp){
   if(ok){
     if(ov) ov.remove();
     toast(resp==='SI' ? 'Genial, apuntado al domingo ✓' : 'Anotado — no vienes el domingo','ok');
+    setTimeout(mostrarPopupPlatoJuevesSiToca, 500);
   } else {
     // Revertir en memoria si falló el guardado
     delete DB.comida_dom_confirmado[pid];
     if(resp==='SI' && idx<0) arr.pop();
     if(resp==='NO' && idx<0) arr.push(pid);
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+// ─── POPUP ELEGIR PLATO PRINCIPAL — COMIDA DEL JUEVES ──
+// Se muestra en cada login mientras la persona esté apuntada a la comida
+// del jueves (confra_apuntados) y no haya elegido aún su plato principal,
+// y siempre que el plazo (confraDeadlineStr) siga abierto. El restaurante
+// necesita el recuento de platos antes de esa fecha.
+function mostrarPopupPlatoJuevesSiToca(){
+  if(!ME) return;
+  const pid = ME.ID || ME.id;
+  if(!pid) return;
+  if(!(DB.confra_apuntados||[]).includes(pid)) return;
+  if((DB.confra_platos||{})[pid]) return;
+  if(!confraPlazoAbierto()) return;
+  if(document.getElementById('popup-com-dom')) return; // no solapar con el del domingo
+  if(document.getElementById('popup-confra-plato')) return; // ya hay uno abierto
+
+  const opciones = confraPlatosLista();
+  const deadlineTxt = confraDeadlineLegible();
+  const ov = document.createElement('div');
+  ov.id = 'popup-confra-plato';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(26,26,46,.85);z-index:99997;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .2s ease';
+  ov.innerHTML = '<style>@keyframes fadeIn{from{opacity:0}to{opacity:1}}</style>'
+    +'<div style="background:#FAF6F0;border-radius:18px;padding:28px 24px;max-width:440px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+    +'<div style="font-size:52px;margin-bottom:8px">🍽</div>'
+    +'<h2 style="color:#B87A52;margin:0 0 6px 0;font-size:22px">Elige tu plato — comida del jueves</h2>'
+    +'<p style="color:#1A1A2E;margin:0 0 14px 0;font-size:15px;line-height:1.4">Estás apuntado a la comida del jueves en '+((DB.confra&&DB.confra.lugar)||'el restaurante')+'. Necesitamos que elijas tu plato principal antes del <strong>'+deadlineTxt+'</strong> para avisarles con tiempo.</p>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">'
+    +opciones.map(function(op){
+      return '<button onclick="responderPlatoJueves(\''+op.replace(/'/g,"\\'")+'\')" style="background:#F2EBE0;color:#1A1A2E;border:2px solid #B87A52;padding:12px 14px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;text-align:left;line-height:1.35">'+op+'</button>';
+    }).join('')
+    +'</div>'
+    +'<p style="color:#666;font-size:12px;margin:0"><em>Puedes cambiar tu elección después en "Comidas".</em></p>'
+    +'<button onclick="document.getElementById(\'popup-confra-plato\').remove()" style="background:none;border:0;color:#999;font-size:12px;margin-top:10px;cursor:pointer;text-decoration:underline">Elegir más tarde</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+}
+
+async function responderPlatoJueves(plato){
+  if(!ME) return;
+  const pid = ME.ID || ME.id;
+  if(!pid) return;
+  const ov = document.getElementById('popup-confra-plato');
+  const btns = ov ? ov.querySelectorAll('button') : [];
+  btns.forEach(b => b.disabled = true);
+  if(!DB.confra_platos) DB.confra_platos = {};
+  DB.confra_platos[pid] = plato;
+  log('CONFRA_PLATO', plato);
+  const ok = await saveRemote();
+  if(ok){
+    if(ov) ov.remove();
+    toast('Plato guardado ✓','ok');
+  } else {
+    delete DB.confra_platos[pid];
     btns.forEach(b => b.disabled = false);
   }
 }
