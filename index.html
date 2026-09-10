@@ -880,6 +880,7 @@ tbody tr:hover td{background:var(--paper)}
           <button class="btn btn-danger" onclick="nuevaEdicion()">🗑 Iniciar nueva edición</button>
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             <button class="btn" onclick="diagnostico()" style="font-size:12px">🔍 Diagnóstico de datos</button>
+            <button class="btn" onclick="diagnosticoAgenda()" style="font-size:12px">🔍 Diagnóstico Mi Agenda</button>
             <div style="font-size:11px;color:var(--ink3);margin-top:8px">Versión app: <strong>v81</strong></div>
           </div>
         </div>
@@ -1332,7 +1333,7 @@ tbody tr:hover td{background:var(--paper)}
   <div class="mo-box">
     <div class="mo-hd"><h3>Renombrar habitaciones</h3><button class="mo-close" onclick="closeModal('mo-renombrar-hab')">✕</button></div>
     <div class="mo-body">
-      <p style="font-size:12px;color:var(--ink3);margin-bottom:10px">Marca solo las habitaciones que quieres renombrar (individual01, doble01, triple01, cuadruple01... agrupando por hotel). Las que dejes desmarcadas conservan su nombre actual tal cual. No se toca ningún otro dato.</p>
+      <p style="font-size:12px;color:var(--ink3);margin-bottom:10px">Las habitaciones sin nombre salen marcadas y con una propuesta de nombre (que continúa la numeración ya usada, sin repetir). Las que ya tienen nombre salen desmarcadas para no tocarlas. Puedes escribir el nombre que quieras en cada campo antes de aplicar. No se toca ningún otro dato.</p>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="btn btn-sm" onclick="renomSelTodas(true)">Marcar todas</button>
         <button class="btn btn-sm" onclick="renomSelTodas(false)">Desmarcar todas</button>
@@ -3400,23 +3401,51 @@ function normTipoHab(t){
   return (t||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 }
 
-// Abre el modal de selección: una fila con checkbox por habitación (marcadas
-// por defecto). Solo lee datos para pintar la lista; no modifica nada todavía.
+// Abre el modal de selección: una fila con checkbox por habitación. Las que
+// YA tienen nombre quedan desmarcadas por defecto (no se tocan); las que no
+// tienen nombre se marcan. Cada fila incluye un campo de texto EDITABLE con
+// el nombre sugerido (continuando la numeración desde el último nombre ya
+// usado en ese hotel+tipo, nunca reiniciando en 01 si ya hay otras), pero
+// puedes escribir el nombre que quieras a mano. Solo lee datos; no modifica
+// nada todavía.
 function abrirRenombrarAuto(){
   if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
   const habs = DB.habitaciones||[];
   if(!habs.length){ toast('No hay habitaciones','err'); return; }
+
+  // Detectar, por Hotel+Tipo, el número más alto ya usado (a partir de nombres
+  // tipo "triple07", "triple15"...) para que la sugerencia continúe desde ahí.
+  const maxUsado = {};
+  habs.forEach(h=>{
+    const hotel = h.hotel||h.Hotel||'(sin hotel)';
+    const tipoKey = normTipoHab(h.tipo||h.Tipo) || 'habitacion';
+    const groupKey = hotel+'|'+tipoKey;
+    const nombreActual = normTipoHab(h.num||h.NumeroHabitacion||'');
+    const m = nombreActual.match(new RegExp('^'+tipoKey+'0*(\\d+)$'));
+    if(m){ const n=parseInt(m[1],10); if(!maxUsado[groupKey]||n>maxUsado[groupKey]) maxUsado[groupKey]=n; }
+  });
+
+  const contadorSugerido = {};
   const cont = document.getElementById('renom-hab-list');
   if(!cont) return;
   cont.innerHTML = habs.map(h=>{
     const hid = h.ID||h.id||'';
     const hotel = h.hotel||h.Hotel||'(sin hotel)';
-    const tipo = h.tipo||h.Tipo||'(sin tipo)';
-    const num = h.num||h.NumeroHabitacion||'(sin número)';
-    return '<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)">'
-      +'<input type="checkbox" class="renom-chk" value="'+hid+'" checked style="width:18px;height:18px;flex-shrink:0">'
-      +'<span style="flex:1;font-size:13px"><strong>'+hotel+'</strong> · '+tipo+' · <span style="color:var(--ink3)">actual: '+num+'</span></span>'
-      +'</label>';
+    const tipoRaw = h.tipo||h.Tipo||'(sin tipo)';
+    const tipoKey = normTipoHab(tipoRaw) || 'habitacion';
+    const groupKey = hotel+'|'+tipoKey;
+    const numActual = h.num||h.NumeroHabitacion||'';
+    const tieneNombre = !!numActual;
+    // Sugerencia = siguiente número libre por encima del máximo ya usado en el grupo
+    contadorSugerido[groupKey] = Math.max(contadorSugerido[groupKey]||0, maxUsado[groupKey]||0) + 1;
+    const n = contadorSugerido[groupKey];
+    contadorSugerido[groupKey] = n;
+    const sugerido = tipoKey + (n<10?'0'+n:''+n);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)">'
+      +'<input type="checkbox" class="renom-chk" value="'+hid+'" data-hotel="'+hotel.replace(/"/g,'&quot;')+'" '+(tieneNombre?'':'checked')+' style="width:18px;height:18px;flex-shrink:0">'
+      +'<span style="flex:1;min-width:0;font-size:12px"><strong>'+hotel+'</strong> · '+tipoRaw+(tieneNombre?' · <span style="color:var(--ink3)">actual: '+numActual+'</span>':' · <span style="color:var(--ink3)">sin nombre</span>')+'</span>'
+      +'<input type="text" class="renom-nombre" data-hid="'+hid+'" value="'+(tieneNombre?numActual:sugerido)+'" style="width:110px;flex-shrink:0;padding:5px 8px;border-radius:8px;border:1px solid var(--border2);background:var(--paper);color:var(--ink);font-size:12px">'
+      +'</div>';
   }).join('');
   openModal('mo-renombrar-hab');
 }
@@ -3425,52 +3454,52 @@ function renomSelTodas(val){
   document.querySelectorAll('.renom-chk').forEach(c=>{ c.checked = val; });
 }
 
-// Renombra SOLO las habitaciones marcadas, agrupando por Hotel + Tipo
-// (individual01, doble01, triple01, cuadruple01...). Las desmarcadas se
-// dejan intactas y además se respeta su nombre actual como "ocupado" para
-// no generar un duplicado con una recién renombrada.
+// Renombra SOLO las habitaciones marcadas, usando el nombre que haya en su
+// campo de texto (editable a mano). Antes de guardar, comprueba que no haya
+// nombres duplicados dentro del mismo hotel (comparando también con las
+// habitaciones NO marcadas, que conservan su nombre actual) y si los hay,
+// avisa y no guarda nada.
 // SOLO modifica h.num / h.NumeroHabitacion. No toca ID, Hotel, Capacidad, Tipo,
 // noches, Modalidades, ocupantes, asignaciones ni pagos (las asignaciones
 // enlazan por ID de habitación, no por nombre, así que no se rompe nada).
 async function aplicarRenombrarAuto(){
-  const checked = Array.from(document.querySelectorAll('.renom-chk:checked')).map(c=>c.value);
-  if(!checked.length){ toast('No has marcado ninguna habitación','err'); return; }
+  const checks = Array.from(document.querySelectorAll('.renom-chk:checked'));
+  if(!checks.length){ toast('No has marcado ninguna habitación','err'); return; }
   const habs = DB.habitaciones||[];
-  const seleccion = new Set(checked);
+  const porId = {}; habs.forEach(h=>{ porId[h.ID||h.id||''] = h; });
 
-  // Nombres ya en uso por habitaciones que NO se van a tocar, para no duplicar.
-  const usados = new Set();
+  // Nombres ya en uso por habitaciones que NO se van a tocar.
+  const usados = {}; // 'hotel|nombre' -> true
   habs.forEach(h=>{
     const hid = h.ID||h.id||'';
-    if(!seleccion.has(hid)){
+    const marcada = checks.some(c=>c.value===hid);
+    if(!marcada){
       const hotel = h.hotel||h.Hotel||'(sin hotel)';
       const n = h.num||h.NumeroHabitacion||'';
-      if(n) usados.add(hotel+'|'+n);
+      if(n) usados[hotel+'|'+n]=true;
     }
   });
 
-  const contadores = {};
-  const cambios = [];
-  habs.forEach(h=>{
-    const hid = h.ID||h.id||'';
-    if(!seleccion.has(hid)) return;
-    const hotel = h.hotel||h.Hotel||'(sin hotel)';
-    const tipoKey = normTipoHab(h.tipo||h.Tipo) || 'habitacion';
-    const groupKey = hotel+'|'+tipoKey;
-    let n = contadores[groupKey]||0;
-    let nuevoNum, key;
-    do{
-      n++;
-      nuevoNum = tipoKey + (n<10?'0'+n:''+n);
-      key = hotel+'|'+nuevoNum;
-    } while(usados.has(key));
-    contadores[groupKey] = n;
-    usados.add(key);
-    const antes = h.num||h.NumeroHabitacion||'(sin número)';
-    if(antes !== nuevoNum) cambios.push({h, hotel, antes, despues:nuevoNum});
+  const cambios=[]; const conflictos=[]; const vistos={};
+  checks.forEach(c=>{
+    const hid=c.value;
+    const h=porId[hid]; if(!h) return;
+    const hotel=c.getAttribute('data-hotel')||h.hotel||h.Hotel||'(sin hotel)';
+    const inp=document.querySelector('.renom-nombre[data-hid="'+hid+'"]');
+    const nuevo=(inp?inp.value:'').trim();
+    if(!nuevo){ conflictos.push('Falta escribir un nombre para una habitación de '+hotel); return; }
+    const key=hotel+'|'+nuevo;
+    if(usados[key] || vistos[key]){ conflictos.push('"'+nuevo+'" duplicado en '+hotel); return; }
+    vistos[key]=true;
+    const antes=h.num||h.NumeroHabitacion||'(sin número)';
+    if(antes!==nuevo) cambios.push({h, hotel, antes, despues:nuevo});
   });
 
-  if(!cambios.length){ toast('No hay cambios que aplicar en la selección','ok'); closeModal('mo-renombrar-hab'); return; }
+  if(conflictos.length){
+    alert('No se ha guardado nada. Corrige esto primero:\n\n'+conflictos.slice(0,15).join('\n'));
+    return;
+  }
+  if(!cambios.length){ toast('No hay cambios que aplicar','ok'); closeModal('mo-renombrar-hab'); return; }
 
   const lineas = cambios.slice(0,12).map(c=>'• '+c.hotel+': "'+c.antes+'" → "'+c.despues+'"').join('\n');
   const resto = cambios.length>12 ? '\n... y '+(cambios.length-12)+' más' : '';
@@ -5979,6 +6008,61 @@ async function diagnostico(){
     msg+='⚠️ El servidor y la pantalla NO coinciden. Puede que un guardado fallara o que haya datos viejos en el servidor.';
   } else {
     msg+='✅ Servidor y pantalla coinciden.';
+  }
+  alert(msg);
+}
+
+// Diagnóstico de "Mi Agenda" (SOLO LECTURA — no modifica nada).
+// Busca a una persona por nick, nombre o email y muestra:
+//  - Su ID tal y como lo ve la app.
+//  - En qué partidas aparece con coincidencia EXACTA de ID (lo que vería en Mi Agenda).
+//  - Partidas donde aparece un ID "parecido" (espacios/mayúsculas distintas) que
+//    NO cuenta como coincidencia exacta: esa es la causa típica de "no me salen
+//    mis partidas" y aquí queda al descubierto sin tocar ningún dato.
+function diagnosticoAgenda(){
+  var q=prompt('Nick, nombre o email de la persona a comprobar:');
+  if(!q) return;
+  var ql=q.trim().toLowerCase();
+  var candidatos=DB.personas.filter(function(x){
+    return (x.Nick||'').toLowerCase().includes(ql)
+      || (x.NombreCompleto||x.Nombre||'').toLowerCase().includes(ql)
+      || (x.Email||'').toLowerCase().includes(ql);
+  });
+  if(!candidatos.length){ alert('No encuentro ninguna persona que coincida con "'+q+'".'); return; }
+  if(candidatos.length>1){
+    var lista=candidatos.slice(0,10).map(function(p){
+      return '• '+(p.Nick?'@'+p.Nick:'')+' '+(p.NombreCompleto||p.Nombre||'')+' ('+(p.Email||'sin email')+')';
+    }).join('\n');
+    alert('Hay '+candidatos.length+' coincidencias, sé más específico (usa el nick exacto o el email):\n\n'+lista);
+    return;
+  }
+  var per=candidatos[0];
+  var pid=(per.ID||per.id||'').toString();
+  var pidNorm=pid.trim().toLowerCase();
+  var nombre=per.Nick?'@'+per.Nick:(per.NombreCompleto||per.Nombre||'?');
+
+  var exactas=[]; var parecidas=[];
+  (DB.partidas||[]).forEach(function(p){
+    var todos=[{id:p.creadorId,rol:'Creador'}].concat((p.jugadores||[]).map(function(j){return {id:j.id,rol:'Jugador'};}));
+    todos.forEach(function(j){
+      var jid=(j.id||'').toString();
+      if(jid===pid){ exactas.push({p:p, rol:j.rol}); }
+      else if(jid && jid.trim().toLowerCase()===pidNorm){ parecidas.push({p:p, rol:j.rol, idGuardado:jid}); }
+    });
+  });
+
+  var msg='🔍 DIAGNÓSTICO MI AGENDA — '+nombre+'\n\n';
+  msg+='ID que usa la app para esta persona: "'+pid+'"\n\n';
+  msg+='── Partidas con coincidencia EXACTA (esto es lo que ve en Mi Agenda) ──\n';
+  msg+= exactas.length ? exactas.map(function(e){return '• '+e.p.juego+' ('+e.rol+') — franja '+(e.p.franja||'?');}).join('\n') : '(ninguna)';
+  msg+='\n\n';
+  if(parecidas.length){
+    msg+='⚠️ Partidas con un ID "parecido" pero NO exacto — ESTA es probablemente la causa:\n';
+    msg+=parecidas.map(function(e){return '• '+e.p.juego+' ('+e.rol+') — ID guardado: "'+e.idGuardado+'" vs ID real: "'+pid+'"';}).join('\n');
+  } else if(!exactas.length){
+    msg+='No hay ninguna partida (ni exacta ni parecida) con este ID. Puede que esta persona nunca llegara a guardarse en la partida (fallo de guardado) o que se apuntara con otra cuenta/persona distinta.';
+  } else {
+    msg+='✅ No se ha encontrado ningún ID "parecido" sospechoso.';
   }
   alert(msg);
 }
