@@ -4484,6 +4484,28 @@ function renderPortal(){
   if(DB.config.aviso){ const ab=document.getElementById('aviso-box'); ab.style.display='block'; ab.innerHTML=`<div class="card" style="border-left:3px solid var(--accent);padding:12px 14px"><strong style="font-size:13px">📢 Aviso</strong><p style="font-size:13px;margin-top:4px">${DB.config.aviso}</p></div>`; }
   if(ME?._anonimo){ const ab=document.getElementById('aviso-box'); ab.style.display='block'; ab.innerHTML=(ab.innerHTML||'') + `<div style="background:var(--amber-l);border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--amber);margin-top:8px">⚠ Tu email no está en la lista de inscritos. Puedes ver el calendario y el alojamiento, pero no tienes ficha personal asignada. Contacta con la organización.</div>`; }
 
+  // Aviso de votación de Premios abierta (solo inscritos reales, y solo si le faltan votos)
+  if(!ME?._anonimo && !ME?._esInvitado){
+    const _stPremios = estadoVotacionPremios();
+    if(_stPremios.estado==='ABIERTA'){
+      const _misVotosPremios = ((DB.premios_votos||{})[pid])||{};
+      const _catsSinVotar = PREMIOS_CATS.filter(c=>!_misVotosPremios[c.id]).length;
+      if(_catsSinVotar>0){
+        const _abPremios=document.getElementById('aviso-box');
+        _abPremios.style.display='block';
+        _abPremios.innerHTML += `<div style="background:linear-gradient(135deg,#9333ea,#6b21a8);border-radius:14px;padding:14px 16px;margin-bottom:10px;color:#fff;cursor:pointer" onclick="nav('premios')">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:26px">🏆</span>
+            <div>
+              <div style="font-weight:800;font-size:14px">¡Votaciones de los Premios abiertas!</div>
+              <div style="font-size:12px;opacity:.9;margin-top:2px">Te falta${_catsSinVotar>1?'n':''} ${_catsSinVotar} categoría${_catsSinVotar>1?'s':''} por votar. Toca para votar →</div>
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  }
+
     renderMercadilloEnFicha();
   // ─── Tarjeta de habitación en Mi ficha (única instancia) ───
   if(ME && !ME._anonimo && !ME._esInvitado){
@@ -7687,18 +7709,20 @@ function actualizarBadgeHoy(){
 
 // ═══════════════════════════════════════════════════════
 // ─── SISTEMA DE PREMIOS ────────────────────────────────
-// 3 categorías, un voto por votante en cada categoría, no se puede cambiar,
+// 4 categorías, un voto por votante en cada categoría, no se puede cambiar,
 // misma persona no puede recibir 2 votos del mismo votante en categorías
 // distintas. Ventana temporal configurable por admin.
 // ═══════════════════════════════════════════════════════
 
 const PREMIOS_CATS = [
   { id:'AP', ico:'🐢', nombre:'Mr "AP"',
-    desc:'Ese jugador que piensa, y sobre piensa su turno, olvidando que el resto tiene familia y un gato que le está esperando en casa.' },
+    desc:'Ese jugador que piensa, y sobre piensa su turno olvidando que el resto tiene familia y un gato que le está esperando en casa.' },
   { id:'COMEOREJAS', ico:'👂', nombre:'Comeorejas',
     desc:'A quien no le va a gustar que le digan un piropo de vez en cuando, sobretodo cuando viene seguido de una petición en la que sabes que vas a perder la partida en el momento que aceptes ese trato totalmente asimétrico.' },
   { id:'LLORON', ico:'😭', nombre:'Llorón',
-    desc:'La playa de Candás tiene una pleamar a las 9:32 y otra a las 22:10, pero está sujeta a ese jugador que no para de hablar en una partida, pero el traductor Google lo traduce por "BuaaBuaaaBuaaa".' },
+    desc:'La playa de Candás tiene 2 pleamares, una a las 8:47 y otra a las 21:10, pero está sujeta a ese jugador que no para de hablar en una partida, pero el traductor Google lo traduce por "BuaaBuaaaBuaaa".' },
+  { id:'ASTURLUDICO', ico:'🏅', nombre:'Asturlúdico del Año',
+    desc:'Esa persona que mejor ejemplifica y entiende el sentimiento de las jornadas. Acoge, es familiar con todo el mundo, siempre lo quieres en tu mesa y ejemplo de civismo y educación.' },
 ];
 
 function estadoVotacionPremios(){
@@ -7917,7 +7941,7 @@ function renderPremiosAdmin(){
   // Ventana de configuración
   let out = '<div class="card">'
     +'<div class="card-hd"><span class="card-title">🏆 Sistema de Premios</span></div>'
-    +'<p style="font-size:13px;color:var(--ink2);margin-bottom:16px">3 categorías: Mr AP, Comeorejas, Llorón. Los inscritos votan a otros nicks. Un voto por categoría, sin cambio, sin repetir persona.</p>'
+    +'<p style="font-size:13px;color:var(--ink2);margin-bottom:16px">4 categorías: Mr AP, Comeorejas, Llorón, Asturlúdico del Año. Los inscritos votan a otros nicks. Un voto por categoría, sin cambio, sin repetir persona.</p>'
     +'<div style="background:var(--surface);border-radius:10px;padding:14px;margin-bottom:14px">'
     +'<div style="font-size:12px;color:var(--ink3);text-transform:uppercase;font-weight:700;margin-bottom:8px">Estado</div>'
     +'<div id="premios-estado" style="font-size:14px">'+estadoLabel+'</div>'
