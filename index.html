@@ -7752,18 +7752,51 @@ function formatearCuentaAtras(ms){
   return m+'min '+s+'s';
 }
 
-// ─── VISTA INSCRITO ────────────────────────────────────
+// ─── VISTA INSCRITO / ADMIN ────────────────────────────
 let _tickPremios = null;
+let _premiosQuien = null; // {id,nick} — identidad elegida por el admin en ESTA visita a la página
+
+// Los dos organizadores votan siempre con su propia ficha (ORG_DANI / ORG_ALEX),
+// se identifiquen con el email que se identifiquen (login compartido en un mismo dispositivo).
+function _premiosAdminIdentidades(){
+  return ['DaniB','Alex'].map(function(nick){
+    var per = DB.personas.find(function(x){ return (x.Nick||'').toLowerCase()===nick.toLowerCase(); });
+    return { id: per?(per.ID||per.id||nick):nick, nick: nick };
+  });
+}
+function elegirQuienPremios(id, nick){
+  _premiosQuien = {id:id, nick:nick};
+  renderPremios();
+}
+function cambiarQuienPremios(){
+  _premiosQuien = null;
+  renderPremios();
+}
+
 function renderPremios(){
   const el = document.getElementById('premios-content');
   if(!el) return;
   if(_tickPremios){ clearInterval(_tickPremios); _tickPremios=null; }
 
+  // Admin: preguntar quién es antes de mostrar nada de la votación
+  if(ROLE==='admin' && !_premiosQuien){
+    const ids = _premiosAdminIdentidades();
+    el.innerHTML = '<div class="card"><div class="card-hd"><span class="card-title">🏆 Premios AsturLúdicas</span></div>'
+      + '<p style="text-align:center;padding:8px 0 12px 0;color:var(--ink2);font-weight:700">¿Quién eres?</p>'
+      + '<div style="display:flex;gap:10px;padding-bottom:8px">'
+      + ids.map(function(i){ return '<button class="btn btn-primary" style="flex:1;padding:14px 0;font-size:16px;font-weight:700" onclick="elegirQuienPremios(\''+i.id+'\',\''+i.nick+'\')">'+i.nick+'</button>'; }).join('')
+      + '</div></div>';
+    return;
+  }
+
   const st = estadoVotacionPremios();
-  const pid = ME ? (ME.ID||ME.id) : null;
+  const pid = ROLE==='admin' ? (_premiosQuien?_premiosQuien.id:null) : (miId() || null);
 
   // Header con estado
   let cabecera = '<div class="card"><div class="card-hd"><span class="card-title">🏆 Premios AsturLúdicas</span></div>';
+  if(ROLE==='admin' && _premiosQuien){
+    cabecera += '<p style="text-align:center;font-size:12px;color:var(--ink3);padding:0 0 6px 0">Votando como <strong>'+_premiosQuien.nick+'</strong> · <a href="#" onclick="cambiarQuienPremios();return false" style="color:var(--accent)">cambiar</a></p>';
+  }
   if(st.estado === 'CERRADA_NO_CONFIG'){
     cabecera += '<p style="text-align:center;color:var(--ink3);padding:16px 8px">La votación aún no está abierta. La organización avisará cuando esté disponible.</p></div>';
     el.innerHTML = cabecera;
@@ -7830,8 +7863,8 @@ function abrirVotoPremio(catId){
   if(!cat) return;
   const st = estadoVotacionPremios();
   if(st.estado !== 'ABIERTA'){ toast('La votación no está abierta','err'); return; }
-  const pid = ME ? (ME.ID||ME.id) : null;
-  if(!pid){ toast('Sin sesión','err'); return; }
+  const pid = ROLE==='admin' ? (_premiosQuien?_premiosQuien.id:null) : (miId() || null);
+  if(!pid){ toast('Indica primero quién eres','err'); return; }
 
   const misVotos = ((DB.premios_votos||{})[pid]) || {};
   if(misVotos[catId]){ toast('Ya has votado en esta categoría','err'); return; }
@@ -7897,8 +7930,8 @@ async function confirmarVotoPremio(catId, votadoPid){
   const nick = votado.Nick || votado.NombreCompleto || votado.Nombre || '?';
   if(!confirm('¿Confirmas tu voto para "'+cat.nombre+'"?\n\nVotado: '+(votado.Nick?'@'+votado.Nick:votado.NombreCompleto||votado.Nombre)+'\n\n⚠ Este voto NO se puede cambiar después. Y ya no podrás votar a esta persona en otras categorías.')) return;
 
-  const pid = ME ? (ME.ID||ME.id) : null;
-  if(!pid){ toast('Sin sesión','err'); return; }
+  const pid = ROLE==='admin' ? (_premiosQuien?_premiosQuien.id:null) : (miId() || null);
+  if(!pid){ toast('Indica primero quién eres','err'); return; }
 
   // Revalidar (por si otro dispositivo cambió algo)
   const st = estadoVotacionPremios();
@@ -7989,17 +8022,16 @@ function renderPremiosAdmin(){
     +'<div id="premios-estado" style="font-size:14px">'+estadoLabel+'</div>'
     +'</div>';
 
-  // Acceso para que el propio admin (DaniB / Alex) vote, usando su ficha de organizador
-  const _pidAdminVotante = ME ? (ME.ID||ME.id||'') : '';
-  const _misVotosAdmin = ((DB.premios_votos||{})[_pidAdminVotante]) || {};
-  const _catsSinVotarAdmin = PREMIOS_CATS.filter(c=>!_misVotosAdmin[c.id]).length;
+  // Acceso para que DaniB o Alex voten, usando su propia ficha de organizador.
+  // La pantalla de votación pregunta "¿Quién eres?" antes de mostrar nada.
   out += '<div style="background:linear-gradient(135deg,#9333ea,#6b21a8);border-radius:12px;padding:14px 16px;margin-bottom:14px;color:#fff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
     +'<div style="flex:1;min-width:180px">'
-    +'<div style="font-weight:800;font-size:14px">🗳️ Tu voto ('+(ME?(ME.Nick||ME.NombreCompleto||ME.Nombre||'Organizador'):'Organizador')+')</div>'
-    +'<div style="font-size:12px;opacity:.9;margin-top:2px">'+(_catsSinVotarAdmin>0 ? 'Te falta'+(_catsSinVotarAdmin>1?'n':'')+' '+_catsSinVotarAdmin+' categoría'+(_catsSinVotarAdmin>1?'s':'')+' por votar.' : 'Ya has votado en todas las categorías. ✓')+'</div>'
+    +'<div style="font-weight:800;font-size:14px">🗳️ Vota como organizador</div>'
+    +'<div style="font-size:12px;opacity:.9;margin-top:2px">Al entrar te preguntará si eres DaniB o Alex.</div>'
     +'</div>'
     +'<button class="btn" style="background:#fff;color:#6b21a8;font-weight:700;border:0" onclick="nav(\'premios\')">Ir a votar</button>'
     +'</div>';
+
 
   out += '<div class="form-grid">'
     +'<div class="fg"><label>Inicio votación</label><input type="datetime-local" id="pr-inicio" value="'+(cfg.inicio||'')+'"></div>'
@@ -8737,7 +8769,7 @@ async function reloadData(){
   else{ const pid=ME?.ID||ME?.id||''; const updated=DB.personas.find(x=>(x.ID||x.id||'')===pid); if(updated) ME=updated; renderPortal(); }
   toast('Datos actualizados','ok');
 }
-function logout(){ ['role','persona_id','session_ts','admin_email','persona_email','jdb'].forEach(k=>lsSet(k,null)); ROLE=null; ME=null; location.reload(); }
+function logout(){ ['role','persona_id','session_ts','admin_email','persona_email','jdb'].forEach(k=>lsSet(k,null)); ROLE=null; ME=null; _premiosQuien=null; location.reload(); }
 
 // ─── INIT ──────────────────────────────────────────────
 (async()=>{
