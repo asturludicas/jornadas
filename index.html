@@ -2413,6 +2413,7 @@ function bootApp(){
       // (si sí hizo falta, se encadena tras responder — ver responderComidaDomingo)
       if(!document.getElementById('popup-com-dom')) mostrarPopupPlatoJuevesSiToca();
     }, 1200);
+    setTimeout(mostrarPopupPremiosUrgenteSiToca, 1600);
   }
   updateBadge();
 }
@@ -2480,6 +2481,7 @@ function nav(page, pushHist=true){
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
+    premios:'🏆 Premios','premios-admin':'🏆 Premios (admin)',
     'confra':'🍻 Comida Jueves','mercadillo':'Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
@@ -7923,6 +7925,45 @@ async function confirmarVotoPremio(catId, votadoPid){
   }
 }
 
+// ─── POPUP AVISO ÚLTIMAS 8H DE VOTACIÓN ─────────────────
+// Se muestra al entrar en la app (cada vez, mientras la condición se cumpla)
+// cuando quedan 8h o menos para que cierre la votación de Premios y a esa
+// persona le falta al menos 1 de las 4 categorías por votar. Enlaza directo
+// a la pantalla de votación. No modifica ningún dato, es solo un aviso.
+function mostrarPopupPremiosUrgenteSiToca(){
+  if(!ME) return;
+  const pid = ME.ID || ME.id;
+  if(!pid) return;
+  // No amontonar pop-ups: si ya hay otro abierto (comida domingo/jueves, etc.), no insistir ahora
+  if(document.querySelector('[id^="popup-"]')) return;
+  if(document.getElementById('modal-premio')) return;
+
+  const st = estadoVotacionPremios();
+  if(st.estado !== 'ABIERTA') return;
+  const msRestantes = st.fin - Date.now();
+  const OCHO_HORAS = 8*3600*1000;
+  if(msRestantes <= 0 || msRestantes > OCHO_HORAS) return;
+
+  const misVotos = ((DB.premios_votos||{})[pid]) || {};
+  const catsSinVotar = PREMIOS_CATS.filter(c=>!misVotos[c.id]).length;
+  if(catsSinVotar === 0) return; // ya votó las 4, no molestar
+
+  const ov = document.createElement('div');
+  ov.id = 'popup-premios-urgente';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(26,26,46,.85);z-index:99997;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .2s ease';
+  ov.innerHTML = '<style>@keyframes fadeIn{from{opacity:0}to{opacity:1}}</style>'
+    +'<div style="background:#FAF6F0;border-radius:18px;padding:28px 24px;max-width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+    +'<div style="font-size:52px;margin-bottom:8px">🏆</div>'
+    +'<h2 style="color:#B87A52;margin:0 0 6px 0;font-size:22px">¡Últimas horas para votar!</h2>'
+    +'<p style="color:#1A1A2E;margin:0 0 14px 0;font-size:15px;line-height:1.4">Quedan <strong>'+formatearCuentaAtras(msRestantes)+'</strong> para que cierre la votación de los Premios AsturLúdicas y te falta'+(catsSinVotar>1?'n':'')+' <strong>'+catsSinVotar+' categoría'+(catsSinVotar>1?'s':'')+'</strong> por votar.</p>'
+    +'<div style="display:flex;gap:10px;justify-content:center">'
+    +'<button onclick="document.getElementById(\'popup-premios-urgente\').remove()" style="background:#F2EBE0;color:#1A1A2E;border:2px solid #B87A52;padding:12px 20px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-width:100px">Ahora no</button>'
+    +'<button onclick="document.getElementById(\'popup-premios-urgente\').remove();nav(\'premios\')" style="background:#9333ea;color:#fff;border:0;padding:12px 20px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-width:120px">Ir a votar</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(ov);
+}
+
 // ─── VISTA ADMIN ───────────────────────────────────────
 let _tickPremiosAdmin = null;
 function renderPremiosAdmin(){
@@ -7946,8 +7987,21 @@ function renderPremiosAdmin(){
     +'<div style="background:var(--surface);border-radius:10px;padding:14px;margin-bottom:14px">'
     +'<div style="font-size:12px;color:var(--ink3);text-transform:uppercase;font-weight:700;margin-bottom:8px">Estado</div>'
     +'<div id="premios-estado" style="font-size:14px">'+estadoLabel+'</div>'
+    +'</div>';
+
+  // Acceso para que el propio admin (DaniB / Alex) vote, usando su ficha de organizador
+  const _pidAdminVotante = ME ? (ME.ID||ME.id||'') : '';
+  const _misVotosAdmin = ((DB.premios_votos||{})[_pidAdminVotante]) || {};
+  const _catsSinVotarAdmin = PREMIOS_CATS.filter(c=>!_misVotosAdmin[c.id]).length;
+  out += '<div style="background:linear-gradient(135deg,#9333ea,#6b21a8);border-radius:12px;padding:14px 16px;margin-bottom:14px;color:#fff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    +'<div style="flex:1;min-width:180px">'
+    +'<div style="font-weight:800;font-size:14px">🗳️ Tu voto ('+(ME?(ME.Nick||ME.NombreCompleto||ME.Nombre||'Organizador'):'Organizador')+')</div>'
+    +'<div style="font-size:12px;opacity:.9;margin-top:2px">'+(_catsSinVotarAdmin>0 ? 'Te falta'+(_catsSinVotarAdmin>1?'n':'')+' '+_catsSinVotarAdmin+' categoría'+(_catsSinVotarAdmin>1?'s':'')+' por votar.' : 'Ya has votado en todas las categorías. ✓')+'</div>'
     +'</div>'
-    +'<div class="form-grid">'
+    +'<button class="btn" style="background:#fff;color:#6b21a8;font-weight:700;border:0" onclick="nav(\'premios\')">Ir a votar</button>'
+    +'</div>';
+
+  out += '<div class="form-grid">'
     +'<div class="fg"><label>Inicio votación</label><input type="datetime-local" id="pr-inicio" value="'+(cfg.inicio||'')+'"></div>'
     +'<div class="fg"><label>Fin votación</label><input type="datetime-local" id="pr-fin" value="'+(cfg.fin||'')+'"></div>'
     +'</div>'
