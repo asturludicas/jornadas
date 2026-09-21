@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <meta name="theme-color" content="#1E3A5F">
 <meta name="mobile-web-app-capable" content="yes">
@@ -328,6 +328,14 @@ tbody tr:hover td{background:var(--paper)}
 .fg-hint{font-size:11px;color:var(--ink3);margin-top:2px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media(max-width:500px){.form-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.conta-grid{grid-template-columns:1fr!important}}
+.conta-lista{display:flex;flex-direction:column;gap:8px;padding-top:4px}
+.conta-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border-radius:10px}
+.conta-row .conta-info{flex:1;min-width:0}
+.conta-row .conta-concepto{font-weight:700;font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.conta-row .conta-meta{font-size:11px;color:var(--ink3);margin-top:3px}
+.conta-row .conta-importe{text-align:right;flex-shrink:0;font-size:20px;font-weight:800;white-space:nowrap}
+.conta-row .conta-del{flex-shrink:0}
 
 /* ─── MODAL ───────────────────────────────────────────── */
 .mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:flex-end;justify-content:center}
@@ -987,7 +995,7 @@ tbody tr:hover td{background:var(--paper)}
       <div id="page-contabilidad" class="page">
         <div id="cont-resumen-cards" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px"></div>
         <div class="card" style="margin-bottom:14px"><div class="card-hd"><span class="card-title">📊 Gastos por categoría</span></div><div id="cont-grafico"></div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="conta-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <div class="card">
             <div class="card-hd">
               <span class="card-title">💸 Gastos</span>
@@ -996,12 +1004,7 @@ tbody tr:hover td{background:var(--paper)}
                 <button class="btn btn-primary btn-sm" onclick="openModal('mo-gasto')">+ Gasto</button>
               </div>
             </div>
-            <div class="tbl-wrap">
-              <table>
-                <thead><tr><th>Concepto</th><th style="text-align:right">Importe</th><th></th></tr></thead>
-                <tbody id="tb-gastos"></tbody>
-              </table>
-            </div>
+            <div id="tb-gastos" class="conta-lista"></div>
           </div>
           <div class="card">
             <div class="card-hd">
@@ -1011,12 +1014,7 @@ tbody tr:hover td{background:var(--paper)}
                 <button class="btn btn-primary btn-sm" onclick="openModal('mo-cobro')">+ Cobro</button>
               </div>
             </div>
-            <div class="tbl-wrap">
-              <table>
-                <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th></th></tr></thead>
-                <tbody id="tb-cobros"></tbody>
-              </table>
-            </div>
+            <div id="tb-cobros" class="conta-lista"></div>
           </div>
         </div>
       </div>
@@ -1104,18 +1102,19 @@ tbody tr:hover td{background:var(--paper)}
       </div>
 
 
-      <!-- ══ CONFRA (inscrito) ══════════════════════════ -->
+      <!-- ══ COMIDA JUEVES (inscrito) ═══════════════════ -->
       <div id="page-confra" class="page">
-        <div style="display:flex;gap:6px;margin-bottom:12px;padding:2px;background:var(--surface);border-radius:var(--r)">
-          <button class="btn" id="tab-confra-info" onclick="confraTab('info')" style="flex:1;font-size:12px">🧙 AsturL</button>
-          <button class="btn" id="tab-confra-peticiones" onclick="confraTab('peticiones')" style="flex:1;font-size:12px">🎲 Peticiones</button>
-          <button class="btn" id="tab-confra-llevar" onclick="confraTab('llevar')" style="flex:1;font-size:12px">🎒 Traigo</button>
-          <button class="btn" id="tab-confra-mercadillo" onclick="confraTab('mercadillo')" style="flex:1;font-size:12px">🏷 Mercadillo</button>
-        </div>
         <div id="confra-content"></div>
-        <div id="confra-peticiones-content" style="display:none"></div>
-        <div id="confra-llevar-content" style="display:none"></div>
-        <div id="confra-mercadillo-content" style="display:none"></div>
+      </div>
+
+      <!-- ══ PETICIONES DE JUEGOS (inscrito) ════════════ -->
+      <div id="page-confra-peticiones" class="page">
+        <div id="confra-peticiones-content"></div>
+      </div>
+
+      <!-- ══ JUEGOS QUE TRAIGO (inscrito) ═══════════════ -->
+      <div id="page-confra-llevar" class="page">
+        <div id="confra-llevar-content"></div>
       </div>
 
       <!-- ══ MERCADILLO (inscrito) ════════════════════════ -->
@@ -1143,7 +1142,10 @@ tbody tr:hover td{background:var(--paper)}
             <div class="card-hd"><span class="card-title">Acceso rápido</span></div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:8px">
               <button onclick="nav('calendario')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🎲</div><div style="font-size:11px;font-weight:700;color:#7c3aed">Calendario</div></button>
-              <button onclick="nav('confra')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🧙</div><div style="font-size:11px;font-weight:700;color:var(--accent-d)">AsturL</div></button>
+              <button onclick="nav('confra')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🍻</div><div style="font-size:11px;font-weight:700;color:var(--accent-d)">Comida Jueves</div></button>
+              <button onclick="nav('confra-peticiones')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🙋</div><div style="font-size:11px;font-weight:700;color:#0ea5e9">Peticiones</div></button>
+              <button onclick="nav('confra-llevar')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🎒</div><div style="font-size:11px;font-weight:700;color:#d97706">Traigo un juego</div></button>
+              <button onclick="nav('mercadillo')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🏷</div><div style="font-size:11px;font-weight:700;color:#9333ea">Mercadillo</div></button>
               <button onclick="nav('mi-aloj')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🏨</div><div style="font-size:11px;font-weight:700;color:var(--green)">Alojamiento</div></button>
               <button onclick="nav('mi-agenda')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">📋</div><div style="font-size:11px;font-weight:700;color:var(--accent)">Mi agenda</div></button>
               <button onclick="nav('mi-comidas')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🍽</div><div style="font-size:11px;font-weight:700;color:#16a34a">Comidas</div></button>
@@ -1587,6 +1589,7 @@ const DB = {
     fin:''                   // ISO string, p.ej. '2026-09-05T21:00'
   },
   desayunos_marsol:{},       // {pid: true} inscritos que quieren desayuno buffet en Hotel Marsol
+  partidas_chat:{},          // {partidaId: [{id,pid,nick,texto,ts}]} chat privado de cada partida
   // ─── CONTROL DE CONCURRENCIA Y SNAPSHOTS ───────────────
   _version:0,            // se incrementa en cada save; protege contra clientes desactualizados
   _snapLast:0,           // timestamp del último snapshot tomado (auto cada N horas)
@@ -1665,7 +1668,7 @@ function iniciarListenerFirebase(){
          'confra_peticiones','confra_llevar','modulos','config',
          'sum_consumos','sum_sobrantes','sum_historial','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
-         'premios_votos','premios_config','desayunos_marsol'].forEach(k=>{
+         'premios_votos','premios_config','desayunos_marsol','partidas_chat'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
@@ -2257,7 +2260,7 @@ function toast(msg,type='info'){
 
 // ─── MODAL ─────────────────────────────────────────────
 function openModal(id){ document.getElementById(id).classList.add('open'); }
-function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); if(id==='mo-partida-det') pararChatPartida(); }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.mo.open').forEach(m=>m.classList.remove('open')); });
 document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('open'); }));
 
@@ -2433,7 +2436,10 @@ const NAV_ADMIN=[
 const NAV_INSCRITO=[
   {id:'mi-ficha',ico:'◉',label:'Mi ficha'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
-  {id:'confra',ico:'🧙',label:'AsturL'},
+  {id:'confra',ico:'🍻',label:'Comida Jueves'},
+  {id:'confra-peticiones',ico:'🙋',label:'Peticiones'},
+  {id:'confra-llevar',ico:'🎒',label:'Traigo un juego'},
+  {id:'mercadillo',ico:'🏷',label:'Mercadillo'},
   {id:'mi-aloj',ico:'🏨',label:'Alojamiento'},
   {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
   {id:'mi-comidas',ico:'🍽',label:'Comidas'},
@@ -2482,7 +2488,7 @@ function nav(page, pushHist=true){
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
     premios:'🏆 Premios','premios-admin':'🏆 Premios (admin)',
-    'confra':'🍻 Comida Jueves','mercadillo':'Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
+    'confra':'🍻 Comida Jueves','confra-peticiones':'🙋 Peticiones','confra-llevar':'🎒 Traigo un juego','mercadillo':'🏷 Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
 
@@ -2498,7 +2504,7 @@ function nav(page, pushHist=true){
     logs:renderLogs, config:renderConfig, snapshots:renderSnapshots,
     premios:renderPremios, 'premios-admin':renderPremiosAdmin,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
-    'confra':function(){ confraTab(_confraTab||'info'); }, 'mercadillo':renderMercadillo,
+    'confra':renderConfra, 'confra-peticiones':renderConfraPeticiones, 'confra-llevar':renderConfraLlevar, 'mercadillo':renderMercadillo,
     'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
     tallas:renderTallas, contabilidad:renderContabilidad, calendario:renderCalendario, suministros:renderSuministros,
   };
@@ -5164,6 +5170,66 @@ function renderPartidaCard(p, pid){
   </div>`;
 }
 
+// ─── CHAT PRIVADO POR PARTIDA (solo apuntados) ──────────
+// Mensajes guardados en DB.partidas_chat[partidaId] = [{id,pid,nick,texto,ts}].
+// Persisten aunque alguien salga y otra persona entre después: el chat
+// pertenece a la partida, no a quién esté dentro en cada momento.
+var _chatPartidaAbiertaId = null;
+var _chatPartidaInterval = null;
+
+function pintarChatPartidaMensajes(partidaId, miPid){
+  var cont = document.getElementById('chat-partida-msgs');
+  if(!cont) return;
+  var msgs = (DB.partidas_chat && DB.partidas_chat[partidaId]) || [];
+  var estabaAbajo = (cont.scrollTop + cont.clientHeight) >= (cont.scrollHeight - 24);
+  cont.innerHTML = msgs.length ? msgs.map(function(m){
+    var esMio = m.pid === miPid;
+    var txt = String(m.texto||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<div style="align-self:'+(esMio?'flex-end':'flex-start')+';max-width:82%;background:'+(esMio?'var(--accent)':'var(--paper)')+';color:'+(esMio?'#fff':'var(--ink)')+';padding:6px 10px;border-radius:10px;font-size:13px">'
+      +(esMio?'':'<div style="font-size:10px;font-weight:700;opacity:.75;margin-bottom:2px">'+(m.nick?'@'+m.nick:'?')+'</div>')
+      +'<div style="overflow-wrap:anywhere;white-space:pre-wrap">'+txt+'</div>'
+      +'</div>';
+  }).join('') : '<div style="text-align:center;color:var(--ink3);font-size:12px;padding:10px">Sin mensajes aún. ¡Sé el primero en escribir!</div>';
+  if(estabaAbajo || msgs.length<=1) cont.scrollTop = cont.scrollHeight;
+}
+
+function iniciarChatPartida(partidaId, miPid){
+  _chatPartidaAbiertaId = partidaId;
+  pintarChatPartidaMensajes(partidaId, miPid);
+  if(_chatPartidaInterval) clearInterval(_chatPartidaInterval);
+  // Refresco periódico local: la app ya recibe los cambios remotos en DB vía
+  // el listener de Firebase; esto solo repinta si algo cambió mientras el
+  // modal está abierto (por ejemplo, otro jugador escribió).
+  _chatPartidaInterval = setInterval(function(){ pintarChatPartidaMensajes(partidaId, miPid); }, 4000);
+}
+
+function pararChatPartida(){
+  if(_chatPartidaInterval){ clearInterval(_chatPartidaInterval); _chatPartidaInterval=null; }
+  _chatPartidaAbiertaId = null;
+}
+
+async function enviarMensajeChatPartida(partidaId){
+  var p = DB.partidas.find(function(x){return x.id===partidaId;});
+  if(!p) return;
+  var pid = miId();
+  if(!pid){ toast('Indica primero quién eres','err'); return; }
+  var todosJug = [{id:p.creadorId}].concat(p.jugadores||[]);
+  var estoyDentro = todosJug.some(function(j){return j.id===pid;});
+  if(!estoyDentro && ROLE!=='admin'){ toast('Solo los apuntados a esta partida pueden chatear','err'); return; }
+  var input = document.getElementById('chat-partida-input');
+  var texto = (input?input.value:'').trim();
+  if(!texto) return;
+  if(texto.length>500){ toast('Mensaje demasiado largo (máx. 500 caracteres)','err'); return; }
+  var per = DB.personas.find(function(x){return (x.ID||x.id||'')===pid;});
+  var nick = per?(per.Nick||per.NombreCompleto||per.Nombre||'?'):miNick();
+  if(!DB.partidas_chat) DB.partidas_chat = {};
+  if(!DB.partidas_chat[partidaId]) DB.partidas_chat[partidaId] = [];
+  DB.partidas_chat[partidaId].push({id:uid('CHT_'), pid:pid, nick:nick, texto:texto, ts:new Date().toISOString()});
+  input.value = '';
+  pintarChatPartidaMensajes(partidaId, pid);
+  saveRemote(); // en background, como el resto de acciones rápidas de la app
+}
+
 function verPartida(pid_partida){
   try{
   const p=DB.partidas.find(x=>x.id===pid_partida); if(!p) return;
@@ -5215,7 +5281,18 @@ function verPartida(pid_partida){
       </div>
     </div>
     ${conflicto?`<div style="background:var(--red-l);border:2px solid var(--red);border-radius:var(--rs);padding:14px 16px;font-size:14px;font-weight:700;color:var(--red);margin-bottom:12px;display:flex;align-items:center;gap:10px"><span style="font-size:24px">⚠️</span><div><div>¡Ya tienes otra partida en esta franja!</div><div style="font-size:12px;font-weight:400;margin-top:3px">Revisa tu agenda antes de apuntarte.</div></div></div>`:''}
+    ${(estoyDentro||ROLE==='admin')?`<div style="margin-bottom:10px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink3);margin-bottom:8px">💬 Chat de la partida</div>
+      <div id="chat-partida-msgs" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;background:var(--surface);border-radius:var(--rs);padding:8px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="chat-partida-input" placeholder="Escribe un mensaje..." maxlength="500" style="flex:1;min-width:0;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:13px" onkeydown="if(event.key==='Enter'){enviarMensajeChatPartida('${p.id}')}">
+        <button class="btn btn-primary btn-sm" onclick="enviarMensajeChatPartida('${p.id}')">Enviar</button>
+      </div>
+      <p style="font-size:10px;color:var(--ink3);margin:6px 0 0 0">Solo lo ven las personas apuntadas a esta partida. Si alguien sale y otra entra, sigue viendo lo escrito antes.</p>
+    </div>`:''}
   `;
+
+  if(estoyDentro||ROLE==='admin'){ iniciarChatPartida(p.id, pid); } else { pararChatPartida(); }
 
   const ft=document.getElementById('det-ft');
   const ftTop=document.getElementById('det-ft-top');
@@ -5455,6 +5532,7 @@ async function quitarJugador(pid_partida, jugadorId){
 async function eliminarPartida(pid_partida){
   if(!confirm('¿Eliminar esta partida? Los jugadores apuntados perderán su plaza.')) return;
   DB.partidas=DB.partidas.filter(x=>x.id!==pid_partida);
+  if(DB.partidas_chat && DB.partidas_chat[pid_partida]!==undefined) delete DB.partidas_chat[pid_partida];
   log('DEL_PARTIDA',pid_partida);
   await saveRemote(); closeModal('mo-partida-det'); renderCalendario(); toast('Partida eliminada');
 }
@@ -6490,7 +6568,7 @@ function renderConfra(){
     +entrantesHTML
     +platosPreviewHTML
     +(confra.desc?'<div style="font-size:12.5px;color:#4A4A6A;margin-top:12px;padding-top:10px;border-top:1px dashed #e0c8c5">'+confra.desc+'</div>':'')
-    +(ROLE==='admin'?'<button class="btn btn-sm" style="margin-top:12px" onclick="nav(\"confra-admin\")">Editar informacion</button>':'')
+    +(ROLE==='admin'?'<button class="btn btn-sm" style="margin-top:12px" onclick="nav(\'confra-admin\')">Editar informacion</button>':'')
     +'</div>';
 
   // Boton apuntarse (si no es admin ADMIN sin perfil)
@@ -6714,11 +6792,11 @@ function renderConfraAdmin(){
   var navHTML='<div class="card" style="margin-bottom:14px">'
     +'<div class="card-hd"><span class="card-title">Ver vistas de inscritos</span></div>'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'
-    +'<button class="btn btn-sm" onclick="_confraTab=\'peticiones\';nav(\'confra\')">🎲 Peticiones'+(nPet?' ('+nPet+')':'')+'</button>'
-    +'<button class="btn btn-sm" onclick="_confraTab=\'llevar\';nav(\'confra\')">🎒 Traigo'+(nLlev?' ('+nLlev+')':'')+'</button>'
-    +'<button class="btn btn-sm" onclick="_confraTab=\'mercadillo\';nav(\'confra\')">🏷 Mercadillo'+(nMerc?' ('+nMerc+')':'')+'</button>'
+    +'<button class="btn btn-sm" onclick="nav(\'confra-peticiones\')">🙋 Peticiones'+(nPet?' ('+nPet+')':'')+'</button>'
+    +'<button class="btn btn-sm" onclick="nav(\'confra-llevar\')">🎒 Traigo'+(nLlev?' ('+nLlev+')':'')+'</button>'
+    +'<button class="btn btn-sm" onclick="nav(\'mercadillo\')">🏷 Mercadillo'+(nMerc?' ('+nMerc+')':'')+'</button>'
     +'</div>'
-    +'<p style="font-size:11px;color:var(--ink3);margin-top:8px">Como admin, en estas vistas puedes borrar cualquier item. Para volver, pulsa "AsturL" en la barra inferior.</p>'
+    +'<p style="font-size:11px;color:var(--ink3);margin-top:8px">Como admin, en estas vistas puedes borrar cualquier item. Usa el botón "atrás" o el menú para volver aquí.</p>'
     +'</div>';
 
   // ─── Aforo / cierre de inscripciones ────────────────────
@@ -6780,7 +6858,7 @@ function renderConfraAdmin(){
       +'<div style="flex:1 1 160px;font-weight:600;font-size:13px">'+(p.Nick?'@'+p.Nick+' - ':'')+( p.NombreCompleto||p.Nombre||'?')+'</div>'
       +'<div style="font-size:11px;color:var(--ink3);flex-shrink:0">'+(p.Modalidad||'').split('(')[0].trim()+'</div>'
       +selHTML
-      +'<button class="btn btn-xs btn-danger" data-pid="'+id+'" onclick="confraAdminQuitar(this.getAttribute(\"data-pid\"))">X</button>'
+      +'<button class="btn btn-xs btn-danger" onclick="confraAdminQuitar(\''+id+'\')">X</button>'
       +'</div>';
   }).filter(Boolean).join('');
 
@@ -7371,21 +7449,6 @@ async function toggleVisibleLista(visible){
 }
 
 
-// ─── CONFRA TABS ───────────────────────────────────────
-var _confraTab='info';
-function confraTab(tab){
-  _confraTab=tab;
-  ['info','peticiones','llevar','mercadillo'].forEach(function(t){
-    var c=document.getElementById(t==='info'?'confra-content':('confra-'+t+'-content'));
-    if(c) c.style.display=(t===tab)?'block':'none';
-    var b=document.getElementById('tab-confra-'+t);
-    if(b){ b.style.background=t===tab?'var(--accent)':''; b.style.color=t===tab?'#fff':''; }
-  });
-  if(tab==='info') renderConfra();
-  if(tab==='peticiones') renderConfraPeticiones();
-  if(tab==='llevar') renderConfraLlevar();
-  if(tab==='mercadillo') renderMercadilloEnTab();
-}
 
 function renderConfraPeticiones(){
   var el=document.getElementById('confra-peticiones-content');
@@ -7452,11 +7515,12 @@ function renderConfraLlevar(){
   var items=DB.confra_llevar||[];
   var pid=ME?ME.ID||ME.id||'':'';
 
+  var editando=_editandoLlevarId?items.find(function(x){return x.id===_editandoLlevarId;}):null;
   var html='<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="abrirFormLlevar()">+ Añadir juego que traigo</button>';
   html+='<div id="form-llevar" style="display:none;background:var(--surface);border-radius:var(--r);padding:14px;margin-bottom:14px">';
   html+='<div class="fg"><label>Juego que traes *</label><input type="text" id="llev-juego" placeholder="Nombre del juego..."></div>';
   html+='<div class="fg"><label>Notas (expansiones, condicion...)</label><input type="text" id="llev-desc" placeholder="Completo, con todas las expansiones..."></div>';
-  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="guardarLlevar()">Publicar</button><button class="btn" onclick="abrirFormLlevar()">Cancelar</button></div>';
+  html+='<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="guardarLlevar()">'+(editando?'Guardar cambios':'Publicar')+'</button><button class="btn" onclick="cerrarFormLlevar()">Cancelar</button></div>';
   html+='</div>';
   if(items.length){
     html+='<div class="card"><div class="card-hd"><span class="card-title">Juegos que traemos ('+items.length+')</span></div>';
@@ -7466,7 +7530,10 @@ function renderConfraLlevar(){
         +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+item.juego+'</div>'
         +(item.desc?'<div style="font-size:11px;color:var(--ink3)">'+item.desc+'</div>':'')
         +'<div style="font-size:11px;color:var(--ink2);margin-top:3px">Lo trae '+(item.nick?'@'+item.nick:item.pid)+'</div></div>'
-        +(esMio||ROLE==='admin'?'<button class="btn btn-xs btn-danger" onclick="borrarLlevar(\''+item.id+'\')" >X</button>':'')
+        +(esMio||ROLE==='admin'?'<div style="display:flex;gap:6px">'
+          +'<button class="btn btn-xs" onclick="abrirFormLlevar(\''+item.id+'\')">✏️</button>'
+          +'<button class="btn btn-xs btn-danger" onclick="borrarLlevar(\''+item.id+'\')">X</button>'
+          +'</div>':'')
         +'</div>';
     });
     html+='</div>';
@@ -7474,11 +7541,25 @@ function renderConfraLlevar(){
     html+='<div class="card" style="text-align:center;padding:20px;color:var(--ink3)">Nadie ha indicado que trae juegos aun.</div>';
   }
   el.innerHTML=html;
+  if(editando){
+    document.getElementById('llev-juego').value=editando.juego||'';
+    document.getElementById('llev-desc').value=editando.desc||'';
+    document.getElementById('form-llevar').style.display='block';
+  }
 }
 
-function abrirFormLlevar(){
+var _editandoLlevarId=null;
+function abrirFormLlevar(editId){
+  if(editId!==undefined){ _editandoLlevarId=editId; renderConfraLlevar(); var i=document.getElementById('llev-juego'); if(i) i.focus(); return; }
   var f=document.getElementById('form-llevar');
-  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block'){var i=document.getElementById('llev-juego');if(i)i.focus();} }
+  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block'){var i=document.getElementById('llev-juego');if(i)i.focus();} else { _editandoLlevarId=null; } }
+}
+function cerrarFormLlevar(){
+  _editandoLlevarId=null;
+  var f=document.getElementById('form-llevar');
+  if(f) f.style.display='none';
+  var i=document.getElementById('llev-juego'); if(i) i.value='';
+  var d=document.getElementById('llev-desc'); if(d) d.value='';
 }
 
 async function guardarLlevar(){
@@ -7487,6 +7568,15 @@ async function guardarLlevar(){
   var desc=(document.getElementById('llev-desc')?.value||'').trim();
   if(!juego){ toast('Escribe el nombre del juego','err'); return; }
   if(!DB.confra_llevar) DB.confra_llevar=[];
+  if(_editandoLlevarId){
+    var item=DB.confra_llevar.find(function(x){return x.id===_editandoLlevarId;});
+    if(item){ item.juego=juego; item.desc=desc; }
+    _editandoLlevarId=null;
+    renderConfraLlevar();
+    toast('Cambios guardados','ok');
+    saveRemote();
+    return;
+  }
   DB.confra_llevar.unshift({id:uid('LLV_'),pid:ME.ID||ME.id||'',nick:ME.Nick||'',juego:juego,desc:desc,ts:new Date().toISOString()});
   // Render local inmediato
   document.getElementById('llev-juego').value='';
@@ -7498,22 +7588,9 @@ async function guardarLlevar(){
 }
 
 async function borrarLlevar(id){
+  if(_editandoLlevarId===id) _editandoLlevarId=null;
   DB.confra_llevar=(DB.confra_llevar||[]).filter(function(x){return x.id!==id;});
   await saveRemote(); renderConfraLlevar(); toast('Eliminado','ok');
-}
-
-
-// Renderizar mercadillo dentro del tab de confra
-function renderMercadilloEnTab(){
-  var el=document.getElementById('confra-mercadillo-content');
-  if(!el) return;
-  // Temporalmente redirigir el render al contenedor del tab
-  var orig=document.getElementById('mercadillo-content');
-  if(orig) orig.id='mercadillo-content-hidden';
-  el.id='mercadillo-content';
-  renderMercadillo();
-  el.id='confra-mercadillo-content';
-  if(orig) orig.id='mercadillo-content';
 }
 
 
@@ -8071,11 +8148,14 @@ function renderPremiosAdmin(){
         + ranking.map((r,i)=>{
           const pct = Math.round((r.cnt/maxV)*100);
           const medalla = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
-          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+(i===0?'#FEF9E7':'var(--surface)')+';border-radius:8px">'
+          const esGanador = i===0;
+          const colTxt = esGanador?'#1A1A2E':'var(--ink)';
+          const colMuted = esGanador?'#6b5a3a':'var(--ink3)';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+(esGanador?'#FEF9E7':'var(--surface)')+';border-radius:8px">'
             +'<span style="min-width:28px;text-align:center;font-size:16px">'+(medalla||'#'+(i+1))+'</span>'
-            +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">'+(r.nick?'@'+r.nick:'')+'</div>'
-            +'<div style="font-size:11px;color:var(--ink3)">'+r.nombre+'</div></div>'
-            +'<div style="text-align:right"><strong style="font-size:18px">'+r.cnt+'</strong> <span style="color:var(--ink3);font-size:11px">voto'+(r.cnt>1?'s':'')+'</span></div>'
+            +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px;color:'+colTxt+'">'+(r.nick?'@'+r.nick:'')+'</div>'
+            +'<div style="font-size:11px;color:'+colMuted+'">'+r.nombre+'</div></div>'
+            +'<div style="text-align:right"><strong style="font-size:18px;color:'+colTxt+'">'+r.cnt+'</strong> <span style="color:'+colMuted+';font-size:11px">voto'+(r.cnt>1?'s':'')+'</span></div>'
             +'</div>';
         }).join('')
         +'</div>';
@@ -8340,25 +8420,25 @@ function renderContabilidad(){
     {ico:saldo>=0?'✅':'⚠️',l:'Saldo neto',n:(saldo>=0?'+':'')+saldo.toFixed(2)+'€',cls:saldo>=0?'green':'amber'},
   ].map(s=>`<div class="stat ${s.cls}"><div class="stat-ico">${s.ico}</div><div class="stat-body"><div class="stat-n">${s.n}</div><div class="stat-l">${s.l}</div></div></div>`).join('');
 
-  // Tabla gastos
-  document.getElementById('tb-gastos').innerHTML=[...DB.gastos].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')).map(g=>`<tr>
-    <td>
-      <div style="font-weight:700;font-size:14px">${g.concepto}</div>
-      <div style="font-size:11px;color:var(--ink3);margin-top:2px">${fmtD(g.fecha)} · <span class="chip chip-blue" style="font-size:10px;padding:1px 6px">${CAT_GASTOS[g.categoria]||g.categoria}</span>${g.notas?` · ${g.notas}`:''}</div>
-    </td>
-    <td style="text-align:right;white-space:nowrap;vertical-align:middle">
-      <strong style="color:var(--red);font-size:16px">${Number(g.importe||0).toFixed(2)}€</strong>
-    </td>
-    <td style="width:32px;vertical-align:middle"><button class="btn btn-xs btn-danger" onclick="eliminarGasto('${g.id}')">✕</button></td>
-  </tr>`).join('')||'<tr><td colspan="3" style="text-align:center;padding:16px;color:var(--ink3)">Sin gastos registrados.</td></tr>';
+  // Lista gastos (tarjetas, visual y responsive en móvil)
+  document.getElementById('tb-gastos').innerHTML=[...DB.gastos].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')).map(g=>`<div class="conta-row">
+    <div class="conta-info">
+      <div class="conta-concepto">${g.concepto}</div>
+      <div class="conta-meta">${fmtD(g.fecha)} · <span class="chip chip-blue" style="font-size:10px;padding:1px 6px">${CAT_GASTOS[g.categoria]||g.categoria}</span>${g.notas?` · ${g.notas}`:''}</div>
+    </div>
+    <div class="conta-importe" style="color:var(--red)">${Number(g.importe||0).toFixed(2)}€</div>
+    <button class="btn btn-xs btn-danger conta-del" onclick="eliminarGasto('${g.id}')">✕</button>
+  </div>`).join('')||'<div style="text-align:center;padding:16px;color:var(--ink3)">Sin gastos registrados.</div>';
 
-  // Tabla cobros
-  document.getElementById('tb-cobros').innerHTML=[...DB.cobros].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')).map(c=>`<tr>
-    <td style="font-size:12px;white-space:nowrap">${fmtD(c.fecha)}</td>
-    <td style="font-size:13px">${c.concepto}</td>
-    <td><strong style="color:var(--green)">${Number(c.importe||0).toFixed(2)}€</strong></td>
-    <td><button class="btn btn-xs btn-danger" onclick="eliminarCobro('${c.id}')">✕</button></td>
-  </tr>`).join('')||'<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--ink3)">Sin cobros registrados.</td></tr>';
+  // Lista cobros (tarjetas, visual y responsive en móvil)
+  document.getElementById('tb-cobros').innerHTML=[...DB.cobros].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')).map(c=>`<div class="conta-row">
+    <div class="conta-info">
+      <div class="conta-concepto">${c.concepto}</div>
+      <div class="conta-meta">${fmtD(c.fecha)}</div>
+    </div>
+    <div class="conta-importe" style="color:var(--green)">${Number(c.importe||0).toFixed(2)}€</div>
+    <button class="btn btn-xs btn-danger conta-del" onclick="eliminarCobro('${c.id}')">✕</button>
+  </div>`).join('')||'<div style="text-align:center;padding:16px;color:var(--ink3)">Sin cobros registrados.</div>';
 }
 
 function abrirModalGasto(){
