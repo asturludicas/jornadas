@@ -8392,6 +8392,7 @@ function renderTopJuegos(){
         +'<div class="card-hd"><span class="card-title">Elige tu'+(votosRestantes>1?'s':'')+' '+votosRestantes+' juego'+(votosRestantes>1?'s':'')+' más</span></div>'
         +'<div class="fg"><input type="text" id="tj-buscar" placeholder="Busca un juego..." oninput="filtrarTopJuegos()"></div>'
         +'<div id="tj-lista" style="max-height:280px;overflow-y:auto;margin-top:8px"></div>'
+        +'<button class="btn" style="width:100%;margin-top:10px" onclick="promptAnadirTopJuego()">+ Añadir un juego que no está en la lista</button>'
         +'</div>';
     } else {
       html += '<div class="card" style="text-align:center"><div style="font-size:13px;color:var(--ink3)">Has usado tus 3 votos. ¡Gracias por participar!</div></div>';
@@ -8428,14 +8429,7 @@ function filtrarTopJuegos(){
       +'<button class="btn btn-primary btn-sm" onclick="votarTopJuego(\''+j.clave.replace(/'/g,"\\'")+'\')">Votar</button>'
       +'</div>';
   });
-  const q_raw=document.getElementById('tj-buscar').value.trim();
-  if(q_raw && !juegos.some(function(j){ return normJuego(j.nombre)===normJuego(q_raw); }) && misVotos.indexOf(normJuego(q_raw))===-1){
-    html+='<div style="padding:10px 0;text-align:center">'
-      +'<div style="font-size:12px;color:var(--ink3);margin-bottom:6px">¿No está en la lista?</div>'
-      +'<button class="btn btn-primary btn-sm" onclick="anadirYVotarTopJuego(\''+q_raw.replace(/'/g,"\\'")+'\')">+ Añadir "'+q_raw+'" y votar</button>'
-      +'</div>';
-  }
-  cont.innerHTML = html || '<p style="text-align:center;color:var(--ink3);padding:10px">Sin resultados.</p>';
+  cont.innerHTML = html || '<p style="text-align:center;color:var(--ink3);padding:10px">Sin resultados. Usa el botón de abajo para añadirlo.</p>';
 }
 
 async function votarTopJuego(clave){
@@ -8451,6 +8445,12 @@ async function votarTopJuego(clave){
   log('VOTO_TOPJUEGOS', pid+' → '+clave);
   const ok=await saveRemote();
   if(ok){ toast('Voto registrado ✓','ok'); renderTopJuegos(); }
+}
+
+function promptAnadirTopJuego(){
+  const nombre = prompt('¿Qué juego quieres añadir y votar?');
+  if(nombre===null) return; // cancelado
+  anadirYVotarTopJuego(nombre);
 }
 
 async function anadirYVotarTopJuego(nombre){
