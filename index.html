@@ -1160,6 +1160,7 @@ tbody tr:hover td{background:var(--paper)}
               <button onclick="nav('confra-peticiones')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🙋</div><div style="font-size:11px;font-weight:700;color:#0ea5e9">Peticiones</div></button>
               <button onclick="nav('confra-llevar')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🎒</div><div style="font-size:11px;font-weight:700;color:#d97706">Juegos que llevo</div></button>
               <button onclick="nav('mercadillo')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🏷</div><div style="font-size:11px;font-weight:700;color:#9333ea">Mercadillo</div></button>
+              <button onclick="nav('topjuegos')" style="background:var(--paper);border:1.5px solid var(--border);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;color:var(--ink)"><div style="font-size:24px;line-height:1">🥇</div><div style="font-size:11px;font-weight:700;color:var(--accent-d)">Top Juegos</div></button>
             </div>
           </div>
           <div class="portal-hd">
@@ -1261,6 +1262,18 @@ tbody tr:hover td{background:var(--paper)}
       <!-- PREMIOS (admin) -->
       <div id="page-premios-admin" class="page">
         <div id="premios-admin-content"></div>
+      </div>
+
+      <!-- TOP JUEGOS (inscrito) -->
+      <div id="page-topjuegos" class="page">
+        <div class="portal">
+          <div id="topjuegos-content"></div>
+        </div>
+      </div>
+
+      <!-- TOP JUEGOS (admin) -->
+      <div id="page-topjuegos-admin" class="page">
+        <div id="topjuegos-admin-content"></div>
       </div>
 
     </div><!-- /content -->
@@ -1601,6 +1614,9 @@ const DB = {
   },
   desayunos_marsol:{},       // {pid: true} inscritos que quieren desayuno buffet en Hotel Marsol
   partidas_chat:{},          // {partidaId: [{id,pid,nick,texto,ts}]} chat privado de cada partida
+  topjuegos_config:{},       // {inicio,fin} ventana de votación "Top juegos de las jornadas" (post-evento)
+  topjuegos_extra:{},        // {claveNormalizada: {nombre, pid, ts}} juegos añadidos a mano (no estaban en el calendario)
+  topjuegos_votos:{},        // {pid: [clave1,clave2,clave3]} hasta 3 votos por persona, a juegos distintos, no se puede cambiar
   // ─── CONTROL DE CONCURRENCIA Y SNAPSHOTS ───────────────
   _version:0,            // se incrementa en cada save; protege contra clientes desactualizados
   _snapLast:0,           // timestamp del último snapshot tomado (auto cada N horas)
@@ -1679,7 +1695,8 @@ function iniciarListenerFirebase(){
          'confra_peticiones','confra_llevar','modulos','config',
          'sum_consumos','sum_sobrantes','sum_historial','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
-         'premios_votos','premios_config','desayunos_marsol','partidas_chat'].forEach(k=>{
+         'premios_votos','premios_config','desayunos_marsol','partidas_chat',
+         'topjuegos_config','topjuegos_extra','topjuegos_votos'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
@@ -2439,7 +2456,7 @@ const NAV_ADMIN=[
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'personas',ico:'👥',label:'Personas'},
   {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
-  {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},{id:'premios-admin',ico:'🏆',label:'Premios'},
+  {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},{id:'premios-admin',ico:'🏆',label:'Premios'},{id:'topjuegos-admin',ico:'🥇',label:'Top Juegos'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'snapshots',ico:'📦',label:'Snapshots'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
   {id:'_salir',ico:'↩',label:'Cerrar sesión', action:'logout()'},
@@ -2455,6 +2472,7 @@ const NAV_INSCRITO=[
   {id:'mi-agenda',ico:'📋',label:'Mi agenda'},
   {id:'mi-comidas',ico:'🍽',label:'Comidas'},
   {id:'premios',ico:'🏆',label:'Premios'},
+  {id:'topjuegos',ico:'🥇',label:'Top Juegos'},
   {id:'_salir',ico:'↩',label:'Salir', action:'logout()'},
 ];
 
@@ -2499,6 +2517,7 @@ function nav(page, pushHist=true){
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
     premios:'🏆 Premios','premios-admin':'🏆 Premios (admin)',
+    topjuegos:'🥇 Top Juegos','topjuegos-admin':'🥇 Top Juegos (admin)',
     'confra':'🍻 Comida Jueves','confra-peticiones':'🙋 Peticiones','confra-llevar':'🎒 Juegos que llevo','mercadillo':'🏷 Mercadillo','confra-admin':'AsturL (admin)','mercadillo-admin':'Mercadillo',
   };
   document.getElementById('page-title').textContent=titles[page]||page;
@@ -2514,6 +2533,7 @@ function nav(page, pushHist=true){
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig, snapshots:renderSnapshots,
     premios:renderPremios, 'premios-admin':renderPremiosAdmin,
+    topjuegos:renderTopJuegos, 'topjuegos-admin':renderTopJuegosAdmin,
     'mi-ficha':renderPortal, 'mi-agenda':renderMiAgenda, 'mi-aloj':renderMiAloj, 'mi-comidas':renderMisComidas,
     'confra':renderConfra, 'confra-peticiones':renderConfraPeticiones, 'confra-llevar':renderConfraLlevar, 'mercadillo':renderMercadillo,
     'confra-admin':renderConfraAdmin, 'mercadillo-admin':renderMercadilloAdmin,
@@ -2592,6 +2612,7 @@ function renderDashboard(){
     {id:'mercadillo-admin',ico:'\ud83c\udff7',label:'Mercadillo'},
     {id:'mensajes',ico:'\u2709',label:'Mensajes'},
     {id:'premios-admin',ico:'\ud83c\udfc6',label:'Premios'},
+    {id:'topjuegos-admin',ico:'\ud83e\udd47',label:'Top Juegos'},
     {id:'tallas',ico:'\ud83d\udc55',label:'Tallas'},
     {id:'contabilidad',ico:'\ud83d\udcca',label:'Contabilidad'},
     {id:'suministros',ico:'\ud83d\udce6',label:'Suministros'},
@@ -8260,6 +8281,275 @@ async function guardarConfigPremios(){
   }
 }
 
+// ─── TOP JUEGOS DE LAS JORNADAS (post-evento) ──────────────
+// Ventana de tiempo igual que Premios (topjuegos_config.inicio/fin).
+// La lista de juegos votables se construye SOLA a partir de los juegos que
+// tuvieron partida en el calendario de esta edición (DB.partidas), más
+// cualquier juego que alguien añada a mano si no estaba (topjuegos_extra).
+// Un voto por persona (topjuegos_votos), no se puede cambiar. El ranking
+// es público: se ve siempre, esté abierta la votación, cerrada o sin abrir.
+
+function estadoTopJuegos(){
+  const cfg = DB.topjuegos_config || {};
+  if(!cfg.inicio || !cfg.fin) return {estado:'CERRADA_NO_CONFIG'};
+  const ahora = Date.now();
+  const ini = new Date(cfg.inicio).getTime();
+  const fin = new Date(cfg.fin).getTime();
+  if(isNaN(ini) || isNaN(fin)) return {estado:'CERRADA_NO_CONFIG'};
+  if(ahora < ini) return {estado:'PRE', ini, fin};
+  if(ahora > fin) return {estado:'POST', ini, fin};
+  return {estado:'ABIERTA', ini, fin};
+}
+
+function normJuego(s){
+  return String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+}
+
+// Devuelve [{clave, nombre}] — juegos del calendario + juegos añadidos a mano,
+// sin duplicados (comparando en minúsculas y sin espacios extra).
+function listaTopJuegos(){
+  const map = {}; // clave -> nombre a mostrar (se queda con la primera grafía vista)
+  (DB.partidas||[]).forEach(function(p){
+    const nombre = String(p.juego||'').trim();
+    if(!nombre) return;
+    const clave = normJuego(nombre);
+    if(!map[clave]) map[clave] = nombre;
+  });
+  Object.keys(DB.topjuegos_extra||{}).forEach(function(clave){
+    if(!map[clave]) map[clave] = DB.topjuegos_extra[clave].nombre;
+  });
+  return Object.keys(map).map(function(clave){ return {clave:clave, nombre:map[clave]}; })
+    .sort(function(a,b){ return a.nombre.localeCompare(b.nombre,'es'); });
+}
+
+// Ranking ordenado de mayor a menor número de votos (cada persona aporta hasta 3).
+function rankingTopJuegos(){
+  const juegos = listaTopJuegos();
+  const porClave = {}; juegos.forEach(function(j){ porClave[j.clave]=j.nombre; });
+  const conteo = {};
+  Object.values(DB.topjuegos_votos||{}).forEach(function(arr){
+    (arr||[]).forEach(function(clave){
+      if(!clave) return;
+      conteo[clave] = (conteo[clave]||0)+1;
+    });
+  });
+  return Object.keys(conteo).map(function(clave){
+    return { clave:clave, nombre:porClave[clave]||clave, votos:conteo[clave] };
+  }).sort(function(a,b){ return b.votos-a.votos; });
+}
+
+// ─── Vista inscrito ─────────────────────────────────────
+let _tickTopJuegos=null;
+function renderTopJuegos(){
+  const el=document.getElementById('topjuegos-content');
+  if(!el) return;
+  if(_tickTopJuegos){ clearInterval(_tickTopJuegos); _tickTopJuegos=null; }
+
+  const pid = miId();
+  const st = estadoTopJuegos();
+  const misVotos = (DB.topjuegos_votos && DB.topjuegos_votos[pid]) || [];
+  const votosRestantes = Math.max(0, 3-misVotos.length);
+  const ranking = rankingTopJuegos();
+
+  let html = '<div class="card"><div class="card-hd"><span class="card-title">🥇 Top Juegos de las Jornadas</span></div>';
+  if(st.estado==='CERRADA_NO_CONFIG'){
+    html += '<p style="text-align:center;color:var(--ink3);padding:16px 8px">La votación del juego favorito aún no está abierta.</p>';
+  } else if(st.estado==='PRE'){
+    html += '<p style="text-align:center;color:var(--ink3);padding:8px">Empieza el '+new Date(st.ini).toLocaleString('es-ES',{dateStyle:'medium',timeStyle:'short'})+'.</p>';
+  } else if(st.estado==='ABIERTA'){
+    html += '<p style="text-align:center;font-size:13px">Elige tus <strong>3 juegos favoritos</strong> de esta edición. Cierra en <strong id="tj-cuenta">'+formatearCuentaAtras(st.fin-Date.now())+'</strong>.</p>';
+  } else {
+    html += '<p style="text-align:center;color:var(--ink3);padding:8px">La votación ha cerrado. Aquí está el resultado final 👇</p>';
+  }
+  html += '</div>';
+
+  // Ranking público (siempre visible)
+  html += '<div class="card"><div class="card-hd"><span class="card-title">🏆 Ranking en vivo</span></div>';
+  if(!ranking.length){
+    html += '<p style="text-align:center;color:var(--ink3);padding:14px">Aún no hay votos.</p>';
+  } else {
+    const medallas=['🥇','🥈','🥉'];
+    html += ranking.slice(0,10).map(function(r,i){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="font-size:20px;width:30px;text-align:center">'+(medallas[i]||'#'+(i+1))+'</span>'
+        +'<div style="flex:1;font-weight:700;font-size:14px">'+r.nombre+'</div>'
+        +'<div style="font-weight:800;color:var(--accent)">'+r.votos+' voto'+(r.votos>1?'s':'')+'</div>'
+        +'</div>';
+    }).join('');
+  }
+  html += '</div>';
+
+  // Zona de voto (solo si está abierta)
+  if(st.estado==='ABIERTA'){
+    if(misVotos.length){
+      const nombres = misVotos.map(function(c){ return (listaTopJuegos().find(function(j){return j.clave===c;})||{}).nombre || c; });
+      html += '<div class="card"><div class="card-hd"><span class="card-title">Tus votos ('+misVotos.length+'/3)</span></div>'
+        + nombres.map(function(n){ return '<div style="padding:6px 0;font-size:13px">✓ '+n+'</div>'; }).join('')
+        + '</div>';
+    }
+    if(votosRestantes>0){
+      html += '<div class="card">'
+        +'<div class="card-hd"><span class="card-title">Elige tu'+(votosRestantes>1?'s':'')+' '+votosRestantes+' juego'+(votosRestantes>1?'s':'')+' más</span></div>'
+        +'<div class="fg"><input type="text" id="tj-buscar" placeholder="Busca un juego..." oninput="filtrarTopJuegos()"></div>'
+        +'<div id="tj-lista" style="max-height:280px;overflow-y:auto;margin-top:8px"></div>'
+        +'</div>';
+    } else {
+      html += '<div class="card" style="text-align:center"><div style="font-size:13px;color:var(--ink3)">Has usado tus 3 votos. ¡Gracias por participar!</div></div>';
+    }
+  }
+
+  el.innerHTML = html;
+
+  if(st.estado==='ABIERTA'){
+    _tickTopJuegos=setInterval(function(){
+      const s2=estadoTopJuegos();
+      const c=document.getElementById('tj-cuenta');
+      if(c) c.textContent=formatearCuentaAtras(s2.fin-Date.now());
+      if(s2.estado!=='ABIERTA') renderTopJuegos();
+    },1000);
+    if(votosRestantes>0) filtrarTopJuegos();
+  }
+}
+
+function filtrarTopJuegos(){
+  const cont=document.getElementById('tj-lista');
+  if(!cont) return;
+  const pid=miId();
+  const misVotos=(DB.topjuegos_votos && DB.topjuegos_votos[pid]) || [];
+  const q=normJuego(document.getElementById('tj-buscar').value);
+  const juegos=listaTopJuegos().filter(function(j){
+    if(misVotos.indexOf(j.clave)>-1) return false; // ya votado, no se repite
+    return !q || normJuego(j.nombre).indexOf(q)>-1;
+  });
+  let html='';
+  juegos.slice(0,40).forEach(function(j){
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="flex:1;font-size:13px">'+j.nombre+'</div>'
+      +'<button class="btn btn-primary btn-sm" onclick="votarTopJuego(\''+j.clave.replace(/'/g,"\\'")+'\')">Votar</button>'
+      +'</div>';
+  });
+  const q_raw=document.getElementById('tj-buscar').value.trim();
+  if(q_raw && !juegos.some(function(j){ return normJuego(j.nombre)===normJuego(q_raw); }) && misVotos.indexOf(normJuego(q_raw))===-1){
+    html+='<div style="padding:10px 0;text-align:center">'
+      +'<div style="font-size:12px;color:var(--ink3);margin-bottom:6px">¿No está en la lista?</div>'
+      +'<button class="btn btn-primary btn-sm" onclick="anadirYVotarTopJuego(\''+q_raw.replace(/'/g,"\\'")+'\')">+ Añadir "'+q_raw+'" y votar</button>'
+      +'</div>';
+  }
+  cont.innerHTML = html || '<p style="text-align:center;color:var(--ink3);padding:10px">Sin resultados.</p>';
+}
+
+async function votarTopJuego(clave){
+  const pid=miId();
+  if(!pid){ toast('Indica primero quién eres','err'); return; }
+  const st=estadoTopJuegos();
+  if(st.estado!=='ABIERTA'){ toast('La votación no está abierta','err'); return; }
+  if(!DB.topjuegos_votos) DB.topjuegos_votos={};
+  if(!DB.topjuegos_votos[pid]) DB.topjuegos_votos[pid]=[];
+  if(DB.topjuegos_votos[pid].length>=3){ toast('Ya has usado tus 3 votos','err'); return; }
+  if(DB.topjuegos_votos[pid].indexOf(clave)>-1){ toast('Ya has votado ese juego','err'); return; }
+  DB.topjuegos_votos[pid].push(clave);
+  log('VOTO_TOPJUEGOS', pid+' → '+clave);
+  const ok=await saveRemote();
+  if(ok){ toast('Voto registrado ✓','ok'); renderTopJuegos(); }
+}
+
+async function anadirYVotarTopJuego(nombre){
+  nombre=(nombre||'').trim();
+  if(!nombre){ return; }
+  if(nombre.length>60){ toast('Nombre demasiado largo','err'); return; }
+  const pid=miId();
+  if(!pid){ toast('Indica primero quién eres','err'); return; }
+  const st=estadoTopJuegos();
+  if(st.estado!=='ABIERTA'){ toast('La votación no está abierta','err'); return; }
+  const clave=normJuego(nombre);
+  if(!DB.topjuegos_extra) DB.topjuegos_extra={};
+  if(!DB.topjuegos_extra[clave]) DB.topjuegos_extra[clave]={nombre:nombre, pid:pid, ts:new Date().toISOString()};
+  if(!DB.topjuegos_votos) DB.topjuegos_votos={};
+  if(!DB.topjuegos_votos[pid]) DB.topjuegos_votos[pid]=[];
+  if(DB.topjuegos_votos[pid].length>=3){ toast('Ya has usado tus 3 votos','err'); return; }
+  if(DB.topjuegos_votos[pid].indexOf(clave)>-1){ toast('Ya has votado ese juego','err'); return; }
+  DB.topjuegos_votos[pid].push(clave);
+  log('VOTO_TOPJUEGOS_NUEVO', pid+' → '+nombre);
+  const ok=await saveRemote();
+  if(ok){ toast('"'+nombre+'" añadido y voto registrado ✓','ok'); renderTopJuegos(); }
+}
+
+// ─── Vista admin ────────────────────────────────────────
+function renderTopJuegosAdmin(){
+  const el=document.getElementById('topjuegos-admin-content');
+  if(!el) return;
+  const cfg=DB.topjuegos_config||{};
+  const st=estadoTopJuegos();
+  const ranking=rankingTopJuegos();
+  const personasVotaron=Object.keys(DB.topjuegos_votos||{}).length;
+  const totalVotos=Object.values(DB.topjuegos_votos||{}).reduce(function(s,arr){return s+(arr||[]).length;},0);
+
+  const estadoLabel = {
+    CERRADA_NO_CONFIG:'⚪ Sin configurar',
+    PRE:'🟡 Programada (aún no empezó)',
+    ABIERTA:'🟢 Abierta — cierra en '+formatearCuentaAtras(st.fin-Date.now()),
+    POST:'🔴 Cerrada'
+  }[st.estado];
+
+  let out='<div class="card">'
+    +'<div class="card-hd"><span class="card-title">🥇 Top Juegos — configuración</span></div>'
+    +'<p style="font-size:13px;color:var(--ink2);margin-bottom:16px">La lista de juegos votables se genera sola a partir del calendario de esta edición. Los inscritos también pueden añadir un juego si no está. Un voto por persona, no se puede cambiar. Ranking público en todo momento.</p>'
+    +'<div style="background:var(--surface);border-radius:10px;padding:14px;margin-bottom:14px">'
+    +'<div style="font-size:12px;color:var(--ink3);text-transform:uppercase;font-weight:700;margin-bottom:8px">Estado</div>'
+    +'<div style="font-size:14px">'+estadoLabel+'</div>'
+    +'</div>'
+    +'<div class="form-grid">'
+    +'<div class="fg"><label>Inicio votación</label><input type="datetime-local" id="tj-inicio" value="'+(cfg.inicio||'')+'"></div>'
+    +'<div class="fg"><label>Fin votación</label><input type="datetime-local" id="tj-fin" value="'+(cfg.fin||'')+'"></div>'
+    +'</div>'
+    +'<button class="btn btn-primary" onclick="guardarConfigTopJuegos()" style="margin-top:8px">Guardar configuración</button>'
+    +' <button class="btn" onclick="document.getElementById(\'tj-inicio\').value=\'\';document.getElementById(\'tj-fin\').value=\'\';guardarConfigTopJuegos()">Cerrar votación</button>'
+    +'</div>';
+
+  out+='<div class="card"><div class="card-hd"><span class="card-title">Resultado ('+personasVotaron+' personas, '+totalVotos+' votos)</span></div>';
+  if(!ranking.length){
+    out+='<p style="text-align:center;color:var(--ink3);padding:14px">Sin votos todavía.</p>';
+  } else {
+    const medallas=['🥇','🥈','🥉'];
+    out+=ranking.map(function(r,i){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="width:26px;text-align:center">'+(medallas[i]||'#'+(i+1))+'</span>'
+        +'<div style="flex:1;font-size:13px;font-weight:700">'+r.nombre+'</div>'
+        +'<div style="font-weight:800">'+r.votos+'</div>'
+        +(DB.topjuegos_extra&&DB.topjuegos_extra[r.clave]?'<button class="btn btn-xs btn-danger" title="Eliminar juego añadido a mano (sus votos se pierden)" onclick="borrarTopJuegoExtra(\''+r.clave.replace(/'/g,"\\'")+'\')">✕</button>':'')
+        +'</div>';
+    }).join('');
+  }
+  out+='</div>';
+
+  el.innerHTML=out;
+}
+
+async function guardarConfigTopJuegos(){
+  if(ROLE!=='admin'){ toast('Solo admin','err'); return; }
+  const ini=String(document.getElementById('tj-inicio').value||'').trim();
+  const fin=String(document.getElementById('tj-fin').value||'').trim();
+  if(ini && fin && new Date(ini).getTime()>=new Date(fin).getTime()){
+    toast('El fin debe ser posterior al inicio','err'); return;
+  }
+  if(!DB.topjuegos_config) DB.topjuegos_config={inicio:'',fin:''};
+  DB.topjuegos_config.inicio=ini;
+  DB.topjuegos_config.fin=fin;
+  log('TOPJUEGOS_CONFIG', ini+' → '+fin);
+  const ok=await saveRemote();
+  if(ok){ toast('Configuración guardada ✓','ok'); renderTopJuegosAdmin(); }
+}
+
+async function borrarTopJuegoExtra(clave){
+  if(!confirm('¿Eliminar este juego añadido a mano? Los votos que tenga se perderán.')) return;
+  if(DB.topjuegos_extra) delete DB.topjuegos_extra[clave];
+  Object.keys(DB.topjuegos_votos||{}).forEach(function(pid){
+    DB.topjuegos_votos[pid] = (DB.topjuegos_votos[pid]||[]).filter(function(c){ return c!==clave; });
+  });
+  const ok=await saveRemote();
+  if(ok){ toast('Eliminado','ok'); renderTopJuegosAdmin(); }
+}
+
 // ─── DETECCIÓN ONLINE/OFFLINE (sin auto-save peligroso) ────
 // PROBLEMA HISTÓRICO RESUELTO: el código anterior tenía un wrapper de
 // "sincronización offline" que, al recuperar conexión, llamaba automáticamente
@@ -8977,4 +9267,3 @@ if('serviceWorker' in navigator){
 
 </body>
 </html>
-  
