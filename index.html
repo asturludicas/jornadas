@@ -1063,19 +1063,11 @@ tbody tr:hover td{background:var(--paper)}
 
           <!-- Modo previsión -->
           <div id="sum-modo-prev">
-            <p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">La previsión usa el consumo real de eventos ya guardados. Sin ningún dato para un producto, se marca claramente como "Pendiente" — nunca se sustituye por una cifra inventada.</p>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:10px;cursor:pointer">
-              <input type="checkbox" id="sum-misma-duracion" checked onchange="calcularSuministros()">
-              Misma duración que el evento de referencia (no aplica el campo "Días" como multiplicador)
-            </label>
+            <p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">Introduce los asistentes y el margen: la app calcula la cantidad prevista de cada producto. Sin referencia todavía, un producto sale como "Pendiente" — puedes añadirla tú (ver "editar" bajo el artículo).</p>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
               <div class="fg" style="margin-bottom:0;flex:0 0 160px">
                 <label>Asistentes previstos</label>
                 <input type="number" id="sum-asistentes" value="100" min="1" max="300" oninput="calcularSuministros()">
-              </div>
-              <div class="fg" style="margin-bottom:0;flex:0 0 100px" id="sum-dias-wrap">
-                <label>Días</label>
-                <input type="number" id="sum-dias" value="1" min="1" max="10" oninput="calcularSuministros()">
               </div>
               <div class="fg" style="margin-bottom:0;flex:0 0 120px">
                 <label>Margen (%)</label>
@@ -1098,10 +1090,6 @@ tbody tr:hover td{background:var(--paper)}
               <div class="fg" style="margin-bottom:0;flex:0 0 120px">
                 <label>Asistentes reales</label>
                 <input type="number" id="sum-asistentes-real" value="100" min="1" max="300">
-              </div>
-              <div class="fg" style="margin-bottom:0;flex:0 0 90px">
-                <label>Días</label>
-                <input type="number" id="sum-dias-real" value="1" min="1" max="10">
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -1612,7 +1600,8 @@ const DB = {
   mensajes_leidos:{}, // {personaId: [msgId, ...]}
   sum_registro:{},    // {itemId: {cantidadInicial,comprasExtra,devoluciones,stockFisico,mermas,excluir}} — post-evento EN CURSO
   sum_historial:[],   // [{nombre,asistentes,dias,fecha,registros:{itemId:{...,consumo,estado}}}] — post-eventos ya guardados
-  sum_minimos:{},      // {itemId: cantidad} mínimo manual de compra aunque la demanda calculada sea menor
+  sum_minimos:{},      // (sin uso actualmente)
+  sum_referencias:{},   // {itemId: cantidad} edición manual de la cantidad de referencia (114 asistentes)
   sum_previsiones_congeladas:{}, // {nombreEdicion: {fecha,asistentes,dias,margen,items:{itemId:{previsto,compra,fuente}}}} — INMUTABLE
   modulos:{ alojamiento:false },
   config:{ nombre:CFG.EVENTO, fechas:'', aviso:'', aloj_apertura:'' },
@@ -1711,7 +1700,7 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock',
          'camisetas_extra','mercadillo','confra','confra_apuntados','confra_platos',
          'confra_peticiones','confra_llevar','modulos','config',
-         'sum_registro','sum_historial','sum_minimos','sum_previsiones_congeladas','logs',
+         'sum_registro','sum_historial','sum_minimos','sum_referencias','sum_previsiones_congeladas','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
          'premios_votos','premios_config','desayunos_marsol','partidas_chat',
          'topjuegos_config','topjuegos_extra','topjuegos_votos'].forEach(k=>{
@@ -1932,7 +1921,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 108; // se incrementa con cada versión desplegada
+const APP_VERSION = 109; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -5606,33 +5595,39 @@ function slugSum(s){
   return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 }
+// asistentesRef: asistentes del evento de referencia (X Aniversario = 114).
+// refCantidad: cantidad de referencia YA reconstruida (consumo real), en la
+// unidad indicada — para bebidas, en PACKS (nunca "tamaño de pack").
+// refEstado: 'calculado' (cierre real con balance completo) o 'estimado'
+// (aproximación: histórico antiguo no ambiguo, o reposición sin sobrante
+// posterior confirmado). null/ausente = sin referencia todavía (Pendiente).
+// Esta referencia va INCLUIDA en el código a propósito: no depende de que
+// nadie guarde nada, para que la previsión funcione desde el primer momento.
 const SUMINISTROS_DATA = [
   {cat:'🥤 Bebidas', items:[
-    // packSize = unidades por pack (formato de compra). formatoConfirmado=false
-    // significa que el tamaño de pack NO está confirmado con proveedor todavía:
-    // no se usa para prever hasta confirmarlo (evita repetir el error de tratar
-    // el tamaño de pack como si fuera una cantidad histórica de packs).
-    {nombre:'Agua (pack 42L)',       hist:[42,42,42],  unidad:'pack',   packSize:null, formatoConfirmado:false},
-    {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack',   packSize:24,   formatoConfirmado:true},
-    {nombre:'Coca Cola Zero',        hist:[0,0,24],    unidad:'pack',   packSize:24,   formatoConfirmado:true},
-    {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
-    {nombre:'Kas Naranja',           hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
-    {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
+    // packSize = unidades por pack, solo para mostrar la equivalencia; nunca
+    // se ha usado como si fuera una cantidad de packs comprados.
+    {nombre:'Agua (pack 42L)',       hist:[42,42,42],  unidad:'pack',   packSize:null},
+    {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack',   packSize:24,   refNota:'Conflicto sin resolver: CSV registra 5 sobrantes, albarán 4 devueltos sobre 8 packs iniciales.'},
+    {nombre:'Coca Cola Zero',        hist:[0,0,24],    unidad:'pack',   packSize:24,   refCantidad:13, asistentesRef:114, refEstado:'calculado', refNota:'14 packs iniciales − 1 devuelto (albarán) = 13'},
+    {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack',   packSize:24,   refNota:'Conflicto sin resolver: CSV registra 1 sobrante, albarán 2 devueltos sobre 2 packs iniciales.'},
+    {nombre:'Kas Naranja',           hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:2,  asistentesRef:114, refEstado:'calculado', refNota:'Fanta naranja / "Kas Naranja": 3 packs iniciales − 1 devuelto = 2'},
+    {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack',   packSize:24},
     {nombre:'Energéticas',           hist:[90,90,100], unidad:'uds'},
-    {nombre:'Nestea',                hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
-    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:null, formatoConfirmado:false},
-    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:null, formatoConfirmado:false},
-    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack',   packSize:null, formatoConfirmado:false},
-    {nombre:'Casera',                hist:[6,6,6],     unidad:'pack',   packSize:null, formatoConfirmado:false},
+    {nombre:'Nestea',                hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:3,  asistentesRef:114, refEstado:'calculado', refNota:'Fuze limón / "Nestea": 8 packs iniciales − 5 devueltos = 3'},
+    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:null},
+    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:null},
+    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack',   packSize:null},
+    {nombre:'Casera',                hist:[6,6,6],     unidad:'pack',   packSize:null},
     {nombre:'Sidra',                 hist:[1,1,1],     unidad:'uds'},
-    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:null, formatoConfirmado:false},
+    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:24,   refCantidad:0,  asistentesRef:114, refEstado:'calculado', refNota:'Mahou 0,0: 3 packs iniciales − 3 devueltos = 0'},
   ]},
   {cat:'🥐 Desayunos', items:[
-    {nombre:'Leche sin lactosa',     hist:[6,6,6],     unidad:'briks 1L'},
-    {nombre:'Leche entera',          hist:[5,5,4],     unidad:'pack 6u'},
-    {nombre:'Leche soja',            hist:[0,0,2],     unidad:'briks'},
-    {nombre:'Tomate con aceite',     hist:[5,5,4],     unidad:'pack 5x18'},
-    {nombre:'Bollería',              hist:[12,12,12],  unidad:'uds'},
+    {nombre:'Leche sin lactosa',     hist:[6,6,6],     unidad:'briks 1L', refCantidad:10, asistentesRef:114, refEstado:'estimado', refNota:'6 + 4 repuestos = 10, asumiendo que no quedó nada (estimación)'},
+    {nombre:'Leche entera',          hist:[5,5,4],     unidad:'pack 6u',  refCantidad:5,  asistentesRef:114, refEstado:'calculado', refNota:'7 iniciales − 2 sobrantes = 5'},
+    {nombre:'Leche soja',            hist:[0,0,2],     unidad:'briks',    refCantidad:6,  asistentesRef:114, refEstado:'estimado', refNota:'4 + 2 repuestos = 6, asumiendo que no quedó nada (estimación)'},
+    {nombre:'Tomate con aceite',     hist:[5,5,4],     unidad:'pack 5x18',refCantidad:7,  asistentesRef:114, refEstado:'calculado', refNota:'7 iniciales − 0 sobrante = 7'},
+    {nombre:'Bollería',              hist:[12,12,12],  unidad:'uds',      refCantidad:15, asistentesRef:114, refEstado:'calculado', refNota:'17 iniciales − 2 sobrantes = 15'},
     {nombre:'Leche condensada',      hist:[1,1,2],     unidad:'botes'},
     {nombre:'Colacao',               hist:[1,1,1],     unidad:'uds'},
     {nombre:'Cápsulas café',         hist:[250,250,0], unidad:'uds'},
@@ -5644,13 +5639,13 @@ const SUMINISTROS_DATA = [
   {cat:'🍿 Picoteo', items:[
     {nombre:'Mezcladitos 2kg',       hist:[3,3,3],     unidad:'bolsas'},
     {nombre:'Palomitas',             hist:[1,1,1],     unidad:'uds'},
-    {nombre:'Patatillas picantes',   hist:[2,2,1],     unidad:'bolsas'},
+    {nombre:'Patatillas picantes',   hist:[2,2,1],     unidad:'bolsas',   refCantidad:2,  asistentesRef:114, refEstado:'calculado', refNota:'3 iniciales − 1 sobrante = 2'},
     {nombre:'Patatitas normales',    hist:[2,2,2],     unidad:'bolsas'},
     {nombre:'Cortezas 1kg',          hist:[1,1,1],     unidad:'bolsas'},
     {nombre:'Conguitos 1kg',         hist:[6,6,0],     unidad:'bolsas'},
     {nombre:'Barquillos',            hist:[1,1,1],     unidad:'kg'},
     {nombre:'Gominolas 1kg',         hist:[6,6,8],     unidad:'bolsas'},
-    {nombre:'Nubes',                 hist:[2,2,2],     unidad:'bolsas'},
+    {nombre:'Nubes',                 hist:[2,2,2],     unidad:'bolsas',   refCantidad:3,  asistentesRef:114, refEstado:'calculado', refNota:'4 iniciales − 1 sobrante = 3'},
     {nombre:'Regaliz',               hist:[3,3,3],     unidad:'kg'},
     {nombre:'Galletitas saladas',    hist:[1,1,1],     unidad:'bolsas'},
   ]},
@@ -5658,13 +5653,14 @@ const SUMINISTROS_DATA = [
     {nombre:'Servilletas 200ud',     hist:[1,1,1],     unidad:'packs'},
     {nombre:'Vasos café 240ud',      hist:[240,240,320],unidad:'uds'},
     {nombre:'Vasos normales 350ud',  hist:[350,350,350],unidad:'uds'},
-    {nombre:'Platos',                hist:[200,200,200],unidad:'uds'},
+    {nombre:'Platos',                hist:[200,200,200],unidad:'uds',     refCantidad:300,asistentesRef:114, refEstado:'estimado', refNota:'200 + 100 repuestos = 300, asumiendo que no quedó nada (estimación)'},
     {nombre:'Cuchillos',             hist:[0,0,200],   unidad:'uds'},
     {nombre:'Tenedores',             hist:[0,0,200],   unidad:'uds'},
     {nombre:'Papel higiénico',       hist:[24,24,24],  unidad:'rollos'},
     {nombre:'Mantel rollo 50m',      hist:[1,1,0],     unidad:'rollos'},
   ]},
 ];
+const ASISTENTES_REFERENCIA_DEFAULT = 114; // X Aniversario
 // Añadir id estable + tamaño de lote de compra (por defecto 1 = redondea a
 // la unidad ya declarada; cámbialo aquí si algún producto se compra en
 // lotes mayores, ej. tamanoLote:2 si solo se puede pedir de 2 en 2).
@@ -5738,118 +5734,117 @@ function calcularConsumoRegistro(reg){
 // distinto al actual (no se comparan packs de tamaños diferentes sin
 // convertir antes) — esta restricción de formato es SOLO para bebidas y
 // nunca afecta a desayunos, picoteo o fungibles (no tienen packSize).
-function tasaValidadaSum(item, mismaDuracion){
-  let huboValidado=false, huboProvisional=false;
+// ── Referencia de un producto ────────────────────────────────────────
+// Prioridad: 1) consumo real guardado en un post-evento (DB.sum_historial,
+// VALIDADO o PROVISIONAL) — así un evento nuevo mejora la previsión con el
+// tiempo; 2) edición manual del admin sobre la referencia (DB.sum_referencias);
+// 3) referencia incluida en el código (X Aniversario); 4) nada → Pendiente.
+// Las jornadas siempre duran lo mismo, así que NO hay ningún factor de días:
+// solo se escala por número de asistentes.
+function referenciaItem(item){
   const muestras = (DB.sum_historial||[]).map(function(ed){
     const reg = (ed.registros||{})[item.id];
     if(!reg || (reg.estado!=='VALIDADO' && reg.estado!=='PROVISIONAL')) return null;
     if(item.packSize && reg.packSizeUsado && reg.packSizeUsado!==item.packSize) return null; // formato distinto, no comparable
     const asist = Number(ed.asistentes)||0;
-    if(asist<=0) return null;
-    if(reg.estado==='VALIDADO') huboValidado=true; else huboProvisional=true;
-    // Bebidas: tasa por persona (sin días, según fórmula acordada).
-    // Resto de categorías: si se pide "misma duración que la referencia" no
-    // se aplica ningún factor de días adicional; si no, se usa persona·día
-    // (y si no se conoce la duración de ese evento histórico, se descarta
-    // la muestra en vez de asumir 1 día en silencio).
-    if(item.esBebidaPack || mismaDuracion){
-      return reg.consumo/asist;
-    }
-    if(esVacio(ed.dias)) return null; // duración de ese evento desconocida: no se puede usar en modo "por día"
-    const dias = Number(ed.dias);
-    if(dias<=0) return null;
-    return reg.consumo/(asist*dias);
-  }).filter(function(v){ return v!==null && isFinite(v); });
-  if(!muestras.length) return {tasa:null, esProvisional:false};
-  const tasa = muestras.reduce(function(a,b){return a+b;},0)/muestras.length;
-  return {tasa:tasa, esProvisional: huboValidado ? false : huboProvisional};
+    if(asist<=0 || reg.consumo===null) return null;
+    return {cantidad:reg.consumo, asistentes:asist, estado: reg.estado==='VALIDADO'?'calculado':'estimado'};
+  }).filter(Boolean);
+  if(muestras.length){
+    // Si hay varias muestras guardadas, promedia sus tasas (cantidad/asistentes).
+    const tasaMedia = muestras.reduce(function(s,m){return s+m.cantidad/m.asistentes;},0)/muestras.length;
+    const esCalculado = muestras.some(function(m){return m.estado==='calculado';});
+    return {cantidad: tasaMedia*ASISTENTES_REFERENCIA_DEFAULT, asistentes: ASISTENTES_REFERENCIA_DEFAULT, estado: esCalculado?'calculado':'estimado', editable:false};
+  }
+  if(DB.sum_referencias && DB.sum_referencias[item.id]!==undefined && DB.sum_referencias[item.id]!==null){
+    return {cantidad: DB.sum_referencias[item.id], asistentes: ASISTENTES_REFERENCIA_DEFAULT, estado:'editado', editable:true};
+  }
+  if(item.refCantidad!==undefined && item.refCantidad!==null){
+    return {cantidad: item.refCantidad, asistentes: item.asistentesRef||ASISTENTES_REFERENCIA_DEFAULT, estado: item.refEstado||'estimado', editable:true, nota:item.refNota};
+  }
+  return {cantidad:null, asistentes:null, estado:'pendiente', editable:true, nota:item.refNota};
 }
 
 // ── Previsión de un producto (con margen configurable) ─────────────────
-// Tres resultados posibles, nunca mezclados:
-//  "validado"    → Calculado: hay cierre real, cifra fiable.
-//  "provisional" → Provisional: solo hay estimaciones explícitas, cifra
-//                  editable/hipótesis a la vista, NO un cierre.
-//  "sin_datos" / "formato_sin_confirmar" → Pendiente: no hay NINGUNA cifra
-//                  de demanda (null, no 0), y la compra sugerida es null
-//                  salvo que exista un mínimo manual — un "no comprar" solo
-//                  puede salir cuando sí hay cálculo válido.
-function preverItemSum(item, asistFuturos, diasFuturos, margen, mismaDuracion){
-  const minimo = (DB.sum_minimos && DB.sum_minimos[item.id]) || 0;
-  const lote = item.tamanoLote||1;
-  if(item.esBebidaPack && item.formatoConfirmado===false){
-    return {tasa:null, demanda:null, objetivo:null, stockUtilizable:0, minimo, compra:(minimo>0?Math.ceil(minimo/lote)*lote:null), margenEfectivo:null, fuente:'formato_sin_confirmar'};
-  }
-  const {tasa, esProvisional} = tasaValidadaSum(item, mismaDuracion);
+// demanda = cantidadReferencia × asistentesFuturos / asistentesReferencia
+// objetivo = demanda × (1 + margen)
+// compra  = redondear al lote de compra de max(0, objetivo − stock)
+// Sin referencia, demanda es null (Pendiente) — nunca 0 disfrazado de "OK".
+function preverItemSum(item, asistFuturos, margen){
+  const ref = referenciaItem(item);
   const stockUtilizable = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
-  if(tasa===null){
-    // Sin ningún dato: demanda desconocida de verdad (null), no cero.
-    // La única compra posible es un mínimo manual explícito.
-    return {tasa:null, demanda:null, objetivo:null, stockUtilizable, minimo, compra:(minimo>0?Math.ceil(minimo/lote)*lote:null), margenEfectivo:null, fuente:'sin_datos'};
+  const lote = item.tamanoLote||1;
+  if(ref.cantidad===null || !ref.asistentes){
+    return {ref, demanda:null, objetivo:null, stockUtilizable, compra:null};
   }
-  const demanda = (item.esBebidaPack || mismaDuracion) ? tasa*asistFuturos : tasa*asistFuturos*diasFuturos;
+  const demanda = ref.cantidad * asistFuturos / ref.asistentes;
   const objetivo = demanda * (1+margen);
-  let compra = Math.max(0, Math.ceil((objetivo-stockUtilizable)/lote))*lote;
-  if(compra < minimo) compra = Math.ceil(minimo/lote)*lote;
-  const margenEfectivo = demanda>0 ? (stockUtilizable+compra-demanda)/demanda : null;
-  return {tasa, demanda, objetivo, stockUtilizable, minimo, compra, margenEfectivo, fuente: esProvisional?'provisional':'validado'};
+  const compra = Math.max(0, Math.ceil((objetivo-stockUtilizable)/lote))*lote;
+  return {ref, demanda, objetivo, stockUtilizable, compra};
+}
+
+async function editarReferenciaSum(itemId){
+  const item = itemSumPorId(itemId); if(!item) return;
+  const ref = referenciaItem(item);
+  const actual = ref.cantidad!==null ? ref.cantidad : '';
+  const val = prompt('Cantidad de referencia para "'+item.nombre+'" (consumo de '+(ref.asistentes||ASISTENTES_REFERENCIA_DEFAULT)+' asistentes, en "'+item.unidad+'"):', actual);
+  if(val===null) return; // cancelado
+  if(val.trim()===''){ if(DB.sum_referencias) delete DB.sum_referencias[itemId]; }
+  else {
+    const n = Number(val);
+    if(isNaN(n) || n<0){ toast('Escribe un número válido','err'); return; }
+    if(!DB.sum_referencias) DB.sum_referencias={};
+    DB.sum_referencias[itemId]=n;
+  }
+  const ok = await saveRemote();
+  if(ok) calcularSuministros();
 }
 
 function calcularSuministros(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
-  const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
-  const mismaDuracion = document.getElementById('sum-misma-duracion')?.checked!==false;
-  const diasWrap = document.getElementById('sum-dias-wrap'); if(diasWrap) diasWrap.style.opacity = mismaDuracion?'.4':'1';
   const el = document.getElementById('sum-categorias');
   if(!el) return;
 
   el.innerHTML = SUMINISTROS_DATA.map(cat=>{
     const itemsHTML = cat.items.map(item=>{
-      const p = preverItemSum(item, asist, dias, margen, mismaDuracion);
-      const fuenteChip = p.fuente==='validado'
-        ? '<span class="chip chip-green" title="Calculado con consumo real de eventos guardados">✓ Calculado</span>'
-        : p.fuente==='provisional'
-          ? '<span class="chip chip-amber" title="Estimación provisional: se asumió que no quedó stock final tras una reposición. Revisa y confirma cuando puedas.">≈ Provisional</span>'
-          : p.fuente==='formato_sin_confirmar'
-            ? '<span class="chip chip-red" title="Confirma con el proveedor cuántas unidades trae cada pack antes de prever este producto">⚠ confirmar formato</span>'
-            : '<span class="chip chip-gray" title="Aún no hay ningún dato de consumo guardado para este producto">Pendiente</span>';
+      const p = preverItemSum(item, asist, margen);
+      const ref = p.ref;
       const unidadLabel = item.esBebidaPack ? ('pack'+(item.packSize?' ('+item.packSize+'u)':'')) : item.unidad;
-      const demandaLabel = p.demanda!==null ? (p.fuente==='provisional'?'≈':'')+p.demanda.toFixed(1) : '—';
-      const equivalencia = (item.esBebidaPack && item.packSize && p.compra>0) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} uds</div>` : '';
 
-      // Columna "A comprar": SOLO puede decir "No comprar" cuando hay un
-      // cálculo válido (validado o provisional) y el resultado es cero. Si no
-      // hay ningún cálculo, se muestra "Pendiente" — nunca "✓ OK".
+      // Detalle secundario: qué referencia se está usando, editable.
+      let refDetalle;
+      if(ref.cantidad===null){
+        refDetalle = `<div style="font-size:10px;color:var(--ink3);margin-top:2px">Sin referencia<button class="btn btn-xs" style="margin-left:4px;padding:1px 6px" onclick="editarReferenciaSum('${item.id}')">+ añadir</button></div>`;
+      } else {
+        const etiqueta = ref.estado==='calculado' ? '' : ref.estado==='editado' ? ' (editado)' : ' (estimado)';
+        refDetalle = `<div style="font-size:10px;color:var(--ink3);margin-top:2px" title="${ref.nota||''}">ref: ${ref.cantidad} / ${ref.asistentes}p${etiqueta} <a href="#" onclick="editarReferenciaSum('${item.id}');return false" style="color:var(--accent-d)">editar</a></div>`;
+      }
+
+      const demandaLabel = p.demanda!==null ? p.demanda.toFixed(1) : 'Pendiente';
+
+      // "No comprar" solo puede salir con un cálculo real; si no hay
+      // referencia, se muestra "Pendiente" — nunca "✓ OK" disfrazando un vacío.
       let compraHTML;
       if(p.demanda===null){
-        compraHTML = p.compra>0
-          ? `<span style="background:var(--surface);color:var(--ink2);font-weight:600;font-size:11px;padding:3px 10px;border-radius:20px" title="Mínimo manual, no hay previsión calculada">${p.compra} (mínimo manual)</span>`
-          : `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">Pendiente</span>`;
+        compraHTML = `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">Pendiente</span>`;
       } else if(p.compra>0){
-        const colorFondo = p.fuente==='provisional' ? 'var(--amber)' : 'var(--red)';
-        compraHTML = `<span style="background:${colorFondo};color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>${equivalencia}`;
+        const equivalencia = (item.esBebidaPack && item.packSize) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} uds</div>` : '';
+        compraHTML = `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>${equivalencia}`;
       } else {
         compraHTML = `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">No comprar</span>`;
       }
 
       return `<tr>
-        <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}</td>
+        <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}${refDetalle}</td>
         <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${unidadLabel}</td>
-        <td style="font-size:11px;text-align:center;padding:8px 6px">${fuenteChip}</td>
         <td style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;padding:8px 6px">${demandaLabel}</td>
         <td style="text-align:center;padding:8px 6px">
           <input type="number" value="${p.stockUtilizable||''}" placeholder="0" min="0"
             style="width:60px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarStock('${item.id}',this.value)" oninput="this.onchange()">
         </td>
-        <td style="text-align:center;padding:8px 6px">
-          <input type="number" value="${p.minimo||''}" placeholder="0" min="0" title="Mínimo manual: compra al menos esto aunque no haya demanda calculada"
-            style="width:56px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
-            onchange="guardarMinimoSum('${item.id}',this.value)" oninput="this.onchange()">
-        </td>
         <td style="text-align:center;padding:8px 6px">${compraHTML}</td>
-        <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(0)+'%':'—'}</td>
       </tr>`;
     }).join('');
 
@@ -5858,12 +5853,10 @@ function calcularSuministros(){
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th>Artículo</th><th>Formato</th><th>Fuente</th>
-            <th>Demanda<br><span style="font-size:10px;text-transform:none;font-weight:400">sin margen</span></th>
+            <th>Artículo</th><th>Formato</th>
+            <th>Cantidad<br><span style="font-size:10px;text-transform:none;font-weight:400">prevista</span></th>
             <th>Stock<br><span style="font-size:10px;text-transform:none;font-weight:400">disponible</span></th>
-            <th>Mínimo<br><span style="font-size:10px;text-transform:none;font-weight:400">manual</span></th>
             <th style="color:var(--red)">A comprar</th>
-            <th>Margen<br><span style="font-size:10px;text-transform:none;font-weight:400">efectivo</span></th>
           </tr></thead>
           <tbody>${itemsHTML}</tbody>
         </table>
@@ -5876,13 +5869,6 @@ async function guardarStock(itemId, valor){
   if(!DB.suministros_stock) DB.suministros_stock={};
   DB.suministros_stock[itemId] = Number(valor)||0;
   await saveRemote();
-}
-
-async function guardarMinimoSum(itemId, valor){
-  if(!DB.sum_minimos) DB.sum_minimos={};
-  DB.sum_minimos[itemId] = Number(valor)||0;
-  await saveRemote();
-  calcularSuministros();
 }
 
 // Congela la previsión actual (con sus asistentes/días/margen) para una
@@ -5975,18 +5961,16 @@ async function congelarPrevisionSum(){
   if(DB.sum_previsiones_congeladas[nombre] && !confirm('Ya existe una previsión congelada con el nombre "'+nombre+'". ¿Sobrescribirla?')) return;
 
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
-  const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
-  const mismaDuracion = document.getElementById('sum-misma-duracion')?.checked!==false;
   const items={};
   SUMINISTROS_DATA.forEach(function(cat){
     cat.items.forEach(function(item){
-      const p=preverItemSum(item, asist, dias, margen, mismaDuracion);
-      items[item.id]={nombre:item.nombre, unidad:item.unidad, previsto: p.objetivo!==null?Math.round(p.objetivo*10)/10:null, compra:p.compra, fuente:p.fuente};
+      const p=preverItemSum(item, asist, margen);
+      items[item.id]={nombre:item.nombre, unidad:item.unidad, previsto: p.objetivo!==null?Math.round(p.objetivo*10)/10:null, compra:p.compra, estado:p.ref.estado};
     });
   });
   DB.sum_previsiones_congeladas[nombre]={
-    fecha:new Date().toISOString(), asistentes:asist, dias:dias, mismaDuracion:mismaDuracion, margen:margen, items:items
+    fecha:new Date().toISOString(), asistentes:asist, margen:margen, items:items
   };
   log('CONGELAR_PREVISION_SUM', nombre);
   const ok=await saveRemote();
@@ -5995,14 +5979,12 @@ async function congelarPrevisionSum(){
 
 function exportSuministrosCSV(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
-  const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
-  const mismaDuracion = document.getElementById('sum-misma-duracion')?.checked!==false;
-  const lines=['"Categoria","Articulo","Unidad","Fuente","Tasa","Demanda","Stock","Minimo manual","A comprar","Margen efectivo %"'];
+  const lines=['"Categoria","Articulo","Unidad","Estado","Referencia","Asistentes ref.","Cantidad prevista","Stock","A comprar"'];
   SUMINISTROS_DATA.forEach(cat=>{
     cat.items.forEach(item=>{
-      const p=preverItemSum(item, asist, dias, margen, mismaDuracion);
-      lines.push(`"${cat.cat}","${item.nombre}","${item.unidad}","${p.fuente}","${p.tasa!==null?p.tasa.toFixed(4):''}","${p.demanda!==null?p.demanda.toFixed(1):''}","${p.stockUtilizable}","${p.minimo}","${p.compra!==null?p.compra:''}","${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(1):''}"`);
+      const p=preverItemSum(item, asist, margen);
+      lines.push(`"${cat.cat}","${item.nombre}","${item.unidad}","${p.ref.estado}","${p.ref.cantidad!==null?p.ref.cantidad:''}","${p.ref.asistentes||''}","${p.demanda!==null?p.demanda.toFixed(1):''}","${p.stockUtilizable}","${p.compra!==null?p.compra:''}"`);
     });
   });
   dlCSV(lines.join('\n'),'suministros_prevision.csv');
@@ -6106,7 +6088,6 @@ async function guardarRegistroSum(itemId, campo, valor){
 async function guardarPostEvento(){
   const nombre = document.getElementById('sum-edicion-nombre')?.value?.trim();
   const asist  = Number(document.getElementById('sum-asistentes-real')?.value||0);
-  const dias   = Number(document.getElementById('sum-dias-real')?.value||1);
   if(!nombre){ toast('Pon un nombre para esta edición','err'); return; }
   if(!asist)  { toast('Pon los asistentes reales','err'); return; }
   if(!confirm('¿Guardar el post-evento de "'+nombre+'"? Esto pasa los registros al histórico (se usarán para calcular futuras previsiones) y actualiza el stock disponible.')) return;
@@ -6125,7 +6106,7 @@ async function guardarPostEvento(){
     });
   });
 
-  const edicion = { nombre, asistentes: asist, dias: dias, fecha: new Date().toISOString().split('T')[0], registros: registrosFinal };
+  const edicion = { nombre, asistentes: asist, fecha: new Date().toISOString().split('T')[0], registros: registrosFinal };
   const idx = DB.sum_historial.findIndex(e=>e.nombre===nombre);
   if(idx>=0){ if(!confirm('Ya existe un post-evento guardado con el nombre "'+nombre+'". ¿Sobrescribirlo?')) return; DB.sum_historial[idx]=edicion; }
   else DB.sum_historial.push(edicion);
