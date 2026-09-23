@@ -1108,6 +1108,7 @@ tbody tr:hover td{background:var(--paper)}
                 ⬆ Importar CSV antiguo
                 <input type="file" accept=".csv" style="display:none" onchange="importarPostEventoLegadoCSV(this)">
               </label>
+              <button class="btn btn-sm" onclick="aplicarBebidasXAniversario()" title="Aplica los 4 productos de bebidas ya conciliados de X Aniversario, y marca los 2 en conflicto como pendientes">🥤 Aplicar bebidas X Aniversario</button>
             </div>
           </div>
         </div>
@@ -1605,7 +1606,7 @@ const DB = {
   partidas:[],       // [{id,franja,juego,duracion,maxJugadores,explicacion,creadorId,creadorNick,jugadores:[{id,nick}],ts}]
   suministros_stock:{}, // {itemId: cantidad_stock_utilizable}
   mensajes_leidos:{}, // {personaId: [msgId, ...]}
-  sum_registro:{},    // {itemId: {cantidadInicial,comprasExtra,devoluciones,stockFinal,mermas,excluir}} — post-evento EN CURSO
+  sum_registro:{},    // {itemId: {cantidadInicial,comprasExtra,devoluciones,stockFisico,mermas,excluir}} — post-evento EN CURSO
   sum_historial:[],   // [{nombre,asistentes,dias,fecha,registros:{itemId:{...,consumo,estado}}}] — post-eventos ya guardados
   sum_minimos:{},      // {itemId: cantidad} mínimo manual de compra aunque la demanda calculada sea menor
   sum_previsiones_congeladas:{}, // {nombreEdicion: {fecha,asistentes,dias,margen,items:{itemId:{previsto,compra,fuente}}}} — INMUTABLE
@@ -1927,7 +1928,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 106; // se incrementa con cada versión desplegada
+const APP_VERSION = 107; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -5603,20 +5604,24 @@ function slugSum(s){
 }
 const SUMINISTROS_DATA = [
   {cat:'🥤 Bebidas', items:[
-    {nombre:'Agua (pack 42L)',       hist:[42,42,42],  unidad:'pack 42L'},
-    {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack 24u'},
-    {nombre:'Coca Cola Zero',        hist:[0,0,24],    unidad:'pack 24u'},
-    {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack 24u'},
-    {nombre:'Kas Naranja',           hist:[24,24,24],  unidad:'pack 24u'},
-    {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack 24u'},
+    // packSize = unidades por pack (formato de compra). formatoConfirmado=false
+    // significa que el tamaño de pack NO está confirmado con proveedor todavía:
+    // no se usa para prever hasta confirmarlo (evita repetir el error de tratar
+    // el tamaño de pack como si fuera una cantidad histórica de packs).
+    {nombre:'Agua (pack 42L)',       hist:[42,42,42],  unidad:'pack',   packSize:null, formatoConfirmado:false},
+    {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack',   packSize:24,   formatoConfirmado:true},
+    {nombre:'Coca Cola Zero',        hist:[0,0,24],    unidad:'pack',   packSize:24,   formatoConfirmado:true},
+    {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
+    {nombre:'Kas Naranja',           hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
+    {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
     {nombre:'Energéticas',           hist:[90,90,100], unidad:'uds'},
-    {nombre:'Nestea',                hist:[24,24,24],  unidad:'pack 24u'},
-    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack 30u'},
-    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack 24u'},
-    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack 6u'},
-    {nombre:'Casera',                hist:[6,6,6],     unidad:'uds'},
+    {nombre:'Nestea',                hist:[24,24,24],  unidad:'pack',   packSize:24,   formatoConfirmado:true},
+    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:null, formatoConfirmado:false},
+    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:null, formatoConfirmado:false},
+    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack',   packSize:null, formatoConfirmado:false},
+    {nombre:'Casera',                hist:[6,6,6],     unidad:'pack',   packSize:null, formatoConfirmado:false},
     {nombre:'Sidra',                 hist:[1,1,1],     unidad:'uds'},
-    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack 24u'},
+    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:null, formatoConfirmado:false},
   ]},
   {cat:'🥐 Desayunos', items:[
     {nombre:'Leche sin lactosa',     hist:[6,6,6],     unidad:'briks 1L'},
@@ -5659,10 +5664,15 @@ const SUMINISTROS_DATA = [
 // Añadir id estable + tamaño de lote de compra (por defecto 1 = redondea a
 // la unidad ya declarada; cámbialo aquí si algún producto se compra en
 // lotes mayores, ej. tamanoLote:2 si solo se puede pedir de 2 en 2).
+// esBebidaPack: true para bebidas que se compran en packs completos (todo lo
+// de la categoría Bebidas cuya unidad sea "pack"). Estas usan la fórmula de
+// previsión en packs de la sección 5 (sin factor de días) y su UI muestra
+// "Packs a pedir" con la equivalencia en unidades como dato secundario.
 SUMINISTROS_DATA.forEach(function(cat){
   cat.items.forEach(function(it){
     it.id = slugSum(it.nombre);
     if(it.tamanoLote===undefined) it.tamanoLote = 1;
+    it.esBebidaPack = cat.cat.indexOf('Bebidas')>-1 && it.unidad==='pack';
   });
 });
 function itemSumPorId(id){
@@ -5670,37 +5680,55 @@ function itemSumPorId(id){
   return null;
 }
 
-const HIST_ASISTENTES = [101, 91, 91]; // ed8, naked3, ed9 (fallback legado)
+const HIST_ASISTENTES = [101, 91, 91]; // ed8, naked3, ed9 (ya NO se usa para prever — ver aviso más abajo)
 
 // ── Cálculo de consumo de un registro (post-evento) ─────
-// Un registro tiene: cantidadInicial, comprasExtra, devoluciones, stockFinal,
-// mermas, excluir (bool). cantidadInicial/stockFinal en blanco = desconocido
+// Un registro tiene: cantidadInicial, comprasExtra, devoluciones, stockFisico,
+// mermas, excluir (bool). cantidadInicial/stockFisico en blanco = desconocido
 // (NO se asume 0). Sin ambos datos no se puede cerrar el consumo: PENDIENTE.
 function esVacio(v){ return v===undefined || v===null || v===''; }
+
+// Consumo = cantidad inicial + compras extra − devoluciones − stock físico − mermas.
+// "stockFisico" es SOLO existencia física confirmada de forma independiente
+// (lo que de verdad se guarda para el próximo evento). Las devoluciones al
+// proveedor NUNCA cuentan como stock, van en su propio campo y se descuentan
+// una sola vez aquí, no se restan dos veces aunque consten en factura y en
+// el cierre del evento (son la misma devolución vista desde dos sitios).
 function calcularConsumoRegistro(reg){
   reg = reg || {};
   if(esVacio(reg.cantidadInicial)) return {consumo:null, estado:'PENDIENTE'};
-  if(esVacio(reg.stockFinal))      return {consumo:null, estado:'INCOMPLETO'};
+  if(reg.pendienteConciliacion) return {consumo:null, estado:'PENDIENTE_CONCILIACION'};
+  if(esVacio(reg.stockFisico))     return {consumo:null, estado:'INCOMPLETO'};
   const ci = Number(reg.cantidadInicial)||0;
   const extra = Number(reg.comprasExtra)||0;
   const dev = Number(reg.devoluciones)||0;
-  const sf = Number(reg.stockFinal)||0;
+  const sf = Number(reg.stockFisico)||0;
   const merma = Number(reg.mermas)||0;
   const consumo = ci + extra - dev - sf - merma;
   return {consumo:consumo, estado: reg.excluir ? 'EXCLUIDO' : 'VALIDADO'};
 }
 
-// ── Tasa de consumo aprendida (consumo validado / asistentes·días) ─────
-// Recorre el histórico de eventos reales guardados y promedia la tasa por
-// persona-día de los eventos donde este producto quedó VALIDADO (no
-// PENDIENTE/INCOMPLETO/EXCLUIDO). Null si no hay ninguna muestra usable.
-function tasaValidadaSum(itemId){
+// ── Tasa de consumo aprendida ────────────────────────────────────────
+// SOLO usa eventos reales guardados y VALIDADOS. Ya NO existe una caída
+// silenciosa al histórico antiguo (hist[]): esos valores mezclaban tamaño
+// de pack con cantidad comprada y daban previsiones falsas (ver aviso del
+// usuario). Si el producto es de bebidas con packSize definido, además
+// descarta cualquier muestra guardada con un packSize distinto al actual
+// (no se comparan packs de tamaños diferentes sin convertir antes).
+function tasaValidadaSum(item){
   const muestras = (DB.sum_historial||[]).map(function(ed){
-    const reg = (ed.registros||{})[itemId];
+    const reg = (ed.registros||{})[item.id];
     if(!reg || reg.estado!=='VALIDADO') return null;
+    if(item.packSize && reg.packSizeUsado && reg.packSizeUsado!==item.packSize) return null; // formato distinto, no comparable
     const asist = Number(ed.asistentes)||0;
+    if(asist<=0) return null;
+    // Bebidas: tasa por persona (sin días, según fórmula acordada).
+    // Resto de categorías: tasa por persona·día, si se conoce la duración.
+    if(item.esBebidaPack){
+      return reg.consumo/asist;
+    }
     const dias = Number(ed.dias)||1;
-    if(asist<=0 || dias<=0) return null;
+    if(dias<=0) return null;
     return reg.consumo/(asist*dias);
   }).filter(function(v){ return v!==null && isFinite(v); });
   if(!muestras.length) return null;
@@ -5708,30 +5736,31 @@ function tasaValidadaSum(itemId){
 }
 
 // ── Previsión de un producto (con margen configurable) ─────────────────
-// Prioriza la tasa validada de eventos reales; si no existe ninguna, cae al
-// método histórico antiguo (promedio hist[]/asistentes de esas 3 ediciones)
-// como aproximación, marcándolo claramente como "histórico" en vez de
-// "validado" para no mezclar la fiabilidad de ambas fuentes.
+// Sin consumo validado no hay previsión numérica fiable: se marca
+// "sin_datos" y no se propone ninguna compra salvo el mínimo manual que tú
+// mismo fijes. Para bebidas con packSize sin confirmar, tampoco se calcula
+// (hay que confirmar el formato con proveedor primero).
 function preverItemSum(item, asistFuturos, diasFuturos, margen){
-  const tasa = tasaValidadaSum(item.id);
+  if(item.esBebidaPack && item.formatoConfirmado===false){
+    return {tasa:null, demanda:null, objetivo:null, stockUtilizable:0, minimo:(DB.sum_minimos&&DB.sum_minimos[item.id])||0, compra:(DB.sum_minimos&&DB.sum_minimos[item.id])||0, margenEfectivo:null, fuente:'formato_sin_confirmar'};
+  }
+  const tasa = tasaValidadaSum(item);
   let demanda, fuente;
   if(tasa!==null){
-    demanda = tasa * asistFuturos * diasFuturos;
+    demanda = item.esBebidaPack ? tasa*asistFuturos : tasa*asistFuturos*diasFuturos;
     fuente = 'validado';
   } else {
-    const histConAsist = HIST_ASISTENTES.map(function(a,i){ return item.hist[i]>0 ? {asist:a,val:item.hist[i]} : null; }).filter(Boolean);
-    if(histConAsist.length>0){
-      const ratio = histConAsist.reduce(function(acc,x){return acc+x.val/x.asist;},0)/histConAsist.length;
-      demanda = ratio * asistFuturos; // el histórico legado no distingue días
-      fuente = 'historico';
-    } else {
-      demanda = 0; fuente = 'sin_datos';
-    }
+    demanda = null; fuente = 'sin_datos';
   }
-  const objetivo = demanda * (1+margen);
   const stockUtilizable = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
   const minimo = (DB.sum_minimos && DB.sum_minimos[item.id]) || 0;
   const lote = item.tamanoLote||1;
+  if(demanda===null){
+    // Sin datos: la única compra posible es el mínimo manual, nunca una demanda inventada.
+    const compraMin = minimo>0 ? Math.ceil(minimo/lote)*lote : 0;
+    return {tasa:null, demanda:null, objetivo:null, stockUtilizable, minimo, compra:compraMin, margenEfectivo:null, fuente};
+  }
+  const objetivo = demanda * (1+margen);
   let compra = Math.max(0, Math.ceil((objetivo-stockUtilizable)/lote))*lote;
   if(compra < minimo) compra = Math.ceil(minimo/lote)*lote;
   const margenEfectivo = demanda>0 ? (stockUtilizable+compra-demanda)/demanda : null;
@@ -5748,31 +5777,34 @@ function calcularSuministros(){
   el.innerHTML = SUMINISTROS_DATA.map(cat=>{
     const itemsHTML = cat.items.map(item=>{
       const p = preverItemSum(item, asist, dias, margen);
-      const histStr = item.hist.map((v,i)=>v>0?`${v}`:'-').join(' / ');
       const fuenteChip = p.fuente==='validado'
         ? '<span class="chip chip-green" title="Calculado con consumo real validado de eventos guardados">✓ validado</span>'
-        : p.fuente==='historico'
-          ? '<span class="chip chip-amber" title="Sin consumo validado todavía: aproximación con el histórico antiguo">hist. antiguo</span>'
-          : '<span class="chip chip-gray" title="Sin ningún dato de referencia">sin datos</span>';
+        : p.fuente==='formato_sin_confirmar'
+          ? '<span class="chip chip-red" title="Confirma con el proveedor cuántas unidades trae cada pack antes de prever este producto">⚠ confirmar formato</span>'
+          : '<span class="chip chip-gray" title="Aún no hay ningún post-evento validado para este producto">sin datos</span>';
+      const unidadLabel = item.esBebidaPack ? ('pack'+(item.packSize?' ('+item.packSize+'u)':'')) : item.unidad;
+      const demandaLabel = p.demanda!==null ? p.demanda.toFixed(1) : '—';
+      const compraLabel = item.esBebidaPack ? 'Packs a pedir' : 'A comprar';
+      const equivalencia = (item.esBebidaPack && item.packSize && p.compra>0) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} uds</div>` : '';
 
       return `<tr>
         <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}</td>
-        <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${item.unidad}</td>
+        <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${unidadLabel}</td>
         <td style="font-size:11px;text-align:center;padding:8px 6px">${fuenteChip}</td>
-        <td style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;padding:8px 6px">${p.demanda?p.demanda.toFixed(1):'-'}</td>
+        <td style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;padding:8px 6px">${demandaLabel}</td>
         <td style="text-align:center;padding:8px 6px">
           <input type="number" value="${p.stockUtilizable||''}" placeholder="0" min="0"
             style="width:60px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarStock('${item.id}',this.value)" oninput="this.onchange()">
         </td>
         <td style="text-align:center;padding:8px 6px">
-          <input type="number" value="${p.minimo||''}" placeholder="0" min="0" title="Mínimo manual: compra al menos esto aunque la demanda calculada sea menor"
+          <input type="number" value="${p.minimo||''}" placeholder="0" min="0" title="Mínimo manual: compra al menos esto aunque no haya demanda calculada"
             style="width:56px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarMinimoSum('${item.id}',this.value)" oninput="this.onchange()">
         </td>
         <td style="text-align:center;padding:8px 6px">
           ${p.compra>0
-            ? `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>`
+            ? `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>${equivalencia}`
             : `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">✓ OK</span>`}
         </td>
         <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(0)+'%':'—'}</td>
@@ -5784,7 +5816,7 @@ function calcularSuministros(){
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th>Artículo</th><th>Unidad</th><th>Fuente</th>
+            <th>Artículo</th><th>Formato</th><th>Fuente</th>
             <th>Demanda<br><span style="font-size:10px;text-transform:none;font-weight:400">sin margen</span></th>
             <th>Stock<br><span style="font-size:10px;text-transform:none;font-weight:400">disponible</span></th>
             <th>Mínimo<br><span style="font-size:10px;text-transform:none;font-weight:400">manual</span></th>
@@ -5815,6 +5847,52 @@ async function guardarMinimoSum(itemId, valor){
 // edición futura concreta, de forma INMUTABLE: cambios posteriores al
 // algoritmo o al histórico no la modifican. Es la que se compara luego en
 // el post-evento como "Previsto", en vez de recalcularla con datos nuevos.
+// ── Datos de bebidas ya conciliados de X Aniversario (114 asistentes) ──
+// Acción explícita (no automática) para no pisar nada sin que el admin lo
+// vea venir. Aplica exactamente los números que confirmaste:
+//   Consumo = cantidad inicial − devoluciones documentadas (stock físico 0,
+//   porque todo lo no vendido se devolvió al proveedor, no se quedó en casa).
+// Coca-Cola normal y Kas/Fanta Limón quedan como PENDIENTE DE CONCILIACIÓN
+// (hay dos cifras distintas en CSV y albarán) y no se usan para aprender.
+async function aplicarBebidasXAniversario(){
+  const RESUELTOS = [
+    {id:'coca_cola_zero', ci:14, extra:0, dev:1, nota:'14 packs iniciales, 1 devuelto (albarán) → consumo 13'},
+    {id:'nestea',         ci:8,  extra:0, dev:5, nota:'Fuze limón / "Nestea": 8 packs iniciales, 5 devueltos → consumo 3'},
+    {id:'kas_naranja',    ci:3,  extra:0, dev:1, nota:'Fanta naranja / "Kas Naranja": 3 packs iniciales, 1 devuelto → consumo 2'},
+    {id:'cerveza_0',      ci:3,  extra:0, dev:3, nota:'Mahou 0,0: 3 packs iniciales, 3 devueltos → consumo 0'},
+  ];
+  const PENDIENTES = [
+    {id:'coca_cola_normal', nota:'Conflicto: CSV registra 5 sobrantes, albarán registra 4 devueltos sobre 8 packs iniciales. Sin resolver.'},
+    {id:'kas_limon',        nota:'Conflicto: CSV registra 1 sobrante, albarán registra 2 devueltos sobre 2 packs iniciales. Sin resolver.'},
+  ];
+  if(!confirm('¿Aplicar los datos de bebidas conciliados de "X Aniversario" (114 asistentes)?\n\n'
+    +'Se guardarán como VALIDADOS: Coca-Cola Zero, Nestea/Fuze, Kas Naranja/Fanta, Cerveza 0%.\n'
+    +'Se marcarán como PENDIENTES DE CONCILIAR (sin usar para prever): Coca-Cola normal, Kas/Fanta Limón.\n\n'
+    +'No se toca ninguna otra categoría ni el stock actual.')) return;
+
+  if(!DB.sum_historial) DB.sum_historial=[];
+  let ed = DB.sum_historial.find(function(e){ return e.nombre==='X Aniversario'; });
+  if(!ed){ ed={nombre:'X Aniversario', asistentes:114, dias:1, fecha:new Date().toISOString().split('T')[0], registros:{}}; DB.sum_historial.push(ed); }
+  ed.asistentes=114;
+  if(!ed.registros) ed.registros={};
+
+  RESUELTOS.forEach(function(r){
+    const item=itemSumPorId(r.id); if(!item) return;
+    const reg={cantidadInicial:r.ci, comprasExtra:r.extra, devoluciones:r.dev, stockFisico:0, mermas:0, packSizeUsado:item.packSize, nota:r.nota};
+    const c=calcularConsumoRegistro(reg);
+    reg.consumo=c.consumo; reg.estado=c.estado;
+    ed.registros[r.id]=reg;
+  });
+  PENDIENTES.forEach(function(p){
+    const item=itemSumPorId(p.id); if(!item) return;
+    ed.registros[p.id]={pendienteConciliacion:true, consumo:null, estado:'PENDIENTE_CONCILIACION', nota:p.nota};
+  });
+
+  log('SUM_BEBIDAS_XANIV', 'aplicados '+RESUELTOS.length+' resueltos, '+PENDIENTES.length+' pendientes');
+  const ok=await saveRemote();
+  if(ok){ toast('Datos de bebidas de X Aniversario aplicados ✓','ok'); if(_modoSum==='postevento') calcularPostEvento(); }
+}
+
 async function congelarPrevisionSum(){
   const nombre = prompt('¿Nombre de la edición para la que congelas esta previsión?\n(Debe coincidir exactamente con el nombre que usarás luego al guardar el post-evento)');
   if(!nombre) return;
@@ -5883,8 +5961,9 @@ function calcularPostEvento(){
       const estadoChip = {
         VALIDADO:'<span class="chip chip-green">✓ Validado</span>',
         PENDIENTE:'<span class="chip chip-gray">Falta cant. inicial</span>',
-        INCOMPLETO:'<span class="chip chip-amber">Falta stock final</span>',
+        INCOMPLETO:'<span class="chip chip-amber">Falta stock físico</span>',
         EXCLUIDO:'<span class="chip chip-red">Excluido</span>',
+        PENDIENTE_CONCILIACION:'<span class="chip chip-red" title="'+(reg.nota||'')+'">⚠ Conciliar</span>',
       }[r.estado];
       const val = function(campo){ return esVacio(reg[campo]) ? '' : reg[campo]; };
       return `<tr>
@@ -5899,9 +5978,9 @@ function calcularPostEvento(){
         <td style="text-align:center;padding:4px"><input type="number" value="${val('devoluciones')}" placeholder="0" title="Unidades devueltas al proveedor"
             style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarRegistroSum('${item.id}','devoluciones',this.value)"></td>
-        <td style="text-align:center;padding:4px"><input type="number" value="${val('stockFinal')}" placeholder="?" title="Stock que quedó conservado al terminar (sin contar lo ya devuelto)"
+        <td style="text-align:center;padding:4px"><input type="number" value="${val('stockFisico')}" placeholder="?" title="Stock que quedó conservado al terminar (sin contar lo ya devuelto)"
             style="width:56px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--green-l);color:var(--green);font-size:12px"
-            onchange="guardarRegistroSum('${item.id}','stockFinal',this.value)"></td>
+            onchange="guardarRegistroSum('${item.id}','stockFisico',this.value)"></td>
         <td style="text-align:center;padding:4px"><input type="number" value="${val('mermas')}" placeholder="0" title="Roturas, caducados, pérdidas..."
             style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarRegistroSum('${item.id}','mermas',this.value)"></td>
@@ -5957,9 +6036,10 @@ async function guardarPostEvento(){
     cat.items.forEach(function(item){
       const reg = (DB.sum_registro||{})[item.id];
       if(!reg) return;
+      if(item.packSize && !reg.packSizeUsado) reg.packSizeUsado = item.packSize;
       const r = calcularConsumoRegistro(reg);
       registrosFinal[item.id] = {...reg, consumo:r.consumo, estado:r.estado};
-      if(!esVacio(reg.stockFinal)) nuevoStock[item.id] = Number(reg.stockFinal)||0;
+      if(!esVacio(reg.stockFisico)) nuevoStock[item.id] = Number(reg.stockFisico)||0;
     });
   });
 
@@ -5993,7 +6073,7 @@ function exportPostEventoCSV(nombre, asist){
         errorFirmado = (Number(previsto)-r.consumo).toFixed(1);
         errorRel = (100*(Number(previsto)-r.consumo)/r.consumo).toFixed(1);
       }
-      lines.push(`"${nombre}","${asist}","${cat.cat}","${item.nombre}","${item.unidad}","${previsto}","${esVacio(reg.cantidadInicial)?'':reg.cantidadInicial}","${Number(reg.comprasExtra)||0}","${Number(reg.devoluciones)||0}","${esVacio(reg.stockFinal)?'':reg.stockFinal}","${Number(reg.mermas)||0}","${r.consumo!==null?r.consumo:''}","${errorFirmado}","${errorRel}","${r.estado}"`);
+      lines.push(`"${nombre}","${asist}","${cat.cat}","${item.nombre}","${item.unidad}","${previsto}","${esVacio(reg.cantidadInicial)?'':reg.cantidadInicial}","${Number(reg.comprasExtra)||0}","${Number(reg.devoluciones)||0}","${esVacio(reg.stockFisico)?'':reg.stockFisico}","${Number(reg.mermas)||0}","${r.consumo!==null?r.consumo:''}","${errorFirmado}","${errorRel}","${r.estado}"`);
     });
   });
   if(!congelada){
@@ -6043,21 +6123,31 @@ function importarPostEventoLegadoCSV(input){
         const sobrStr = (cols[iSobr]||'').trim();
         const reg = {};
         reg.cantidadInicial = consStr===''||consStr==='-' ? '' : Number(consStr);
+        // OJO: en bebidas, un "Sobró" positivo del CSV antiguo suele ser en
+        // realidad lo DEVUELTO al proveedor (no stock físico disponible para
+        // el siguiente evento). Para el resto de categorías (fungibles,
+        // picoteo, desayunos) sí es razonable tratarlo como stock guardado.
         if(sobrStr===''||sobrStr==='-'){
-          reg.stockFinal=''; reg.comprasExtra=0; // desconocido
+          reg.stockFisico=''; reg.comprasExtra=0; reg.devoluciones=0; // todo desconocido
         } else {
           const s = Number(sobrStr);
-          if(s<0){ reg.comprasExtra=Math.abs(s); reg.stockFinal=''; }
-          else { reg.stockFinal=s; reg.comprasExtra=0; }
+          if(s<0){
+            reg.comprasExtra=Math.abs(s); reg.stockFisico=''; reg.devoluciones=0;
+          } else if(item.esBebidaPack){
+            reg.devoluciones=s; reg.stockFisico=0; reg.comprasExtra=0; // bebidas: positivo = devuelto, stock físico 0
+          } else {
+            reg.stockFisico=s; reg.comprasExtra=0; reg.devoluciones=0; // resto: positivo = se quedó de stock
+          }
         }
-        reg.devoluciones=0; reg.mermas=0;
+        reg.mermas=0;
+        if(item.packSize) reg.packSizeUsado=item.packSize;
         DB.sum_registro[item.id]=reg;
         importados++;
       }
       lsSet('jdb',DB);
       calcularPostEvento();
-      let msg=importados+' productos importados. Revisa cada fila (compras extra/stock final quedan a 0 o vacío según el signo de "Sobró" del CSV, corrígelo si tienes más datos) antes de guardar.';
-      if(sinMatch.length) msg+=' No se encontraron en la app: '+sinMatch.join(', ');
+      let msg=importados+' productos importados.\n\nEn bebidas, "Sobró" positivo se ha interpretado como DEVUELTO al proveedor (no como stock disponible) — revisa esas filas contra el albarán antes de guardar. En el resto de categorías se ha tratado como stock físico conservado. Corrígelo a mano si tienes datos más precisos.';
+      if(sinMatch.length) msg+='\n\nNo se encontraron en la app: '+sinMatch.join(', ');
       alert(msg);
     }catch(err){
       toast('No se pudo leer el CSV: '+err.message,'err');
