@@ -896,7 +896,7 @@ tbody tr:hover td{background:var(--paper)}
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             <button class="btn" onclick="diagnostico()" style="font-size:12px">🔍 Diagnóstico de datos</button>
             <button class="btn" onclick="diagnosticoAgenda()" style="font-size:12px">🔍 Diagnóstico Mi Agenda</button>
-            <div style="font-size:11px;color:var(--ink3);margin-top:8px">Versión app: <strong>v81</strong></div>
+            <div style="font-size:11px;color:var(--ink3);margin-top:8px">Versión app: <strong id="lbl-app-version">v?</strong></div>
           </div>
         </div>
 
@@ -1063,40 +1063,52 @@ tbody tr:hover td{background:var(--paper)}
 
           <!-- Modo previsión -->
           <div id="sum-modo-prev">
+            <p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">La previsión usa el consumo real validado de eventos ya guardados (columna "Fuente" = validado). Mientras no haya ninguno para un producto, usa el histórico antiguo como aproximación (marcado como "hist. antiguo").</p>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
               <div class="fg" style="margin-bottom:0;flex:0 0 160px">
-                <label>Asistentes edición actual</label>
+                <label>Asistentes previstos</label>
                 <input type="number" id="sum-asistentes" value="100" min="1" max="300" oninput="calcularSuministros()">
+              </div>
+              <div class="fg" style="margin-bottom:0;flex:0 0 100px">
+                <label>Días</label>
+                <input type="number" id="sum-dias" value="1" min="1" max="10" oninput="calcularSuministros()">
               </div>
               <div class="fg" style="margin-bottom:0;flex:0 0 120px">
                 <label>Margen (%)</label>
                 <input type="number" id="sum-margen" value="10" min="0" max="50" oninput="calcularSuministros()">
               </div>
-              <div style="font-size:12px;color:var(--ink3);padding-top:18px">
-                Histórico: Ed8 (101p) · Naked3 (91p) · Ed9 (91p)
-              </div>
+              <button class="btn btn-primary btn-sm" style="align-self:flex-end;margin-bottom:2px" onclick="congelarPrevisionSum()" title="Guarda esta previsión de forma fija para compararla luego con el post-evento real">🧊 Congelar previsión</button>
             </div>
           </div>
 
           <!-- Modo post-evento -->
           <div id="sum-modo-post" style="display:none">
             <div style="background:var(--amber-l);border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--amber);margin-bottom:10px">
-              ✍️ Rellena lo que <strong>realmente se consumió</strong> y lo que <strong>sobró</strong>. 
-              Al guardar, estos datos se añadirán al histórico para calcular mejor la próxima edición.
+              ✍️ Por producto: <strong>Cantidad inicial</strong> disponible al empezar, <strong>Compras extra</strong> durante el evento, <strong>Devoluciones</strong>, <strong>Stock final</strong> conservado y <strong>Mermas</strong>. Deja en blanco lo que no sepas — en blanco NO es cero. El consumo se calcula solo, y solo se usará para aprender cuando esté "Validado" (cantidad inicial y stock final rellenos).
             </div>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
               <div class="fg" style="margin-bottom:0;flex:0 0 180px">
                 <label>Nombre de esta edición</label>
-                <input type="text" id="sum-edicion-nombre" placeholder="Ej: Naked 4ª (2025)">
+                <input type="text" id="sum-edicion-nombre" placeholder="Ej: X Aniversario (2026)">
               </div>
               <div class="fg" style="margin-bottom:0;flex:0 0 120px">
                 <label>Asistentes reales</label>
                 <input type="number" id="sum-asistentes-real" value="100" min="1" max="300">
               </div>
+              <div class="fg" style="margin-bottom:0;flex:0 0 90px">
+                <label>Días</label>
+                <input type="number" id="sum-dias-real" value="1" min="1" max="10">
+              </div>
             </div>
-            <button class="btn btn-success" onclick="guardarPostEvento()" style="margin-top:4px">
-              💾 Guardar post-evento y actualizar histórico
-            </button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-success" onclick="guardarPostEvento()">
+                💾 Guardar post-evento y actualizar histórico
+              </button>
+              <label class="btn btn-sm" style="cursor:pointer">
+                ⬆ Importar CSV antiguo
+                <input type="file" accept=".csv" style="display:none" onchange="importarPostEventoLegadoCSV(this)">
+              </label>
+            </div>
           </div>
         </div>
 
@@ -1591,11 +1603,12 @@ const DB = {
   gastos:[],         // [{id,fecha,categoria,concepto,importe,notas}]
   cobros:[],         // [{id,fecha,concepto,importe,notas}]
   partidas:[],       // [{id,franja,juego,duracion,maxJugadores,explicacion,creadorId,creadorNick,jugadores:[{id,nick}],ts}]
-  suministros_stock:{}, // {nombre_articulo: cantidad_stock}
+  suministros_stock:{}, // {itemId: cantidad_stock_utilizable}
   mensajes_leidos:{}, // {personaId: [msgId, ...]}
-  sum_consumos:{},   // post-evento: real consumido
-  sum_sobrantes:{},  // post-evento: lo que sobró
-  sum_historial:[],  // historial de ediciones guardadas
+  sum_registro:{},    // {itemId: {cantidadInicial,comprasExtra,devoluciones,stockFinal,mermas,excluir}} — post-evento EN CURSO
+  sum_historial:[],   // [{nombre,asistentes,dias,fecha,registros:{itemId:{...,consumo,estado}}}] — post-eventos ya guardados
+  sum_minimos:{},      // {itemId: cantidad} mínimo manual de compra aunque la demanda calculada sea menor
+  sum_previsiones_congeladas:{}, // {nombreEdicion: {fecha,asistentes,dias,margen,items:{itemId:{previsto,compra,fuente}}}} — INMUTABLE
   modulos:{ alojamiento:false },
   config:{ nombre:CFG.EVENTO, fechas:'', aviso:'', aloj_apertura:'' },
   logs:[],
@@ -1693,7 +1706,7 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock',
          'camisetas_extra','mercadillo','confra','confra_apuntados','confra_platos',
          'confra_peticiones','confra_llevar','modulos','config',
-         'sum_consumos','sum_sobrantes','sum_historial','logs',
+         'sum_registro','sum_historial','sum_minimos','sum_previsiones_congeladas','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
          'premios_votos','premios_config','desayunos_marsol','partidas_chat',
          'topjuegos_config','topjuegos_extra','topjuegos_votos'].forEach(k=>{
@@ -1914,7 +1927,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 105; // se incrementa con cada versión desplegada
+const APP_VERSION = 106; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -2416,6 +2429,7 @@ function showErr(id,msg){ const e=document.getElementById(id); e.textContent=msg
 function bootApp(){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='flex';
+  const _lblV=document.getElementById('lbl-app-version'); if(_lblV) _lblV.textContent='v'+APP_VERSION;
   document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
   if(ROLE==='admin'){
     document.getElementById('sb-sub').textContent='Administrador';
@@ -5578,8 +5592,15 @@ async function eliminarPartida(pid_partida){
 
 
 // ─── SUMINISTROS ────────────────────────────────────────
-// Histórico: [ed8(101p), naked3(91p), ed9(91p)]
+// Histórico legado (solo como referencia/fallback si aún no hay consumo
+// validado de eventos reales): [ed8(101p), naked3(91p), ed9(91p)]
 // ed8=AsturLúdicas 8ª, naked3=Naked 3ª, ed9=AsturLúdicas 9ª
+// NOTA: cada producto tiene ahora un "id" estable — no lo cambies aunque
+// renombres el producto, o se perderá el enlace con el histórico guardado.
+function slugSum(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+}
 const SUMINISTROS_DATA = [
   {cat:'🥤 Bebidas', items:[
     {nombre:'Agua (pack 42L)',       hist:[42,42,42],  unidad:'pack 42L'},
@@ -5635,49 +5656,126 @@ const SUMINISTROS_DATA = [
     {nombre:'Mantel rollo 50m',      hist:[1,1,0],     unidad:'rollos'},
   ]},
 ];
+// Añadir id estable + tamaño de lote de compra (por defecto 1 = redondea a
+// la unidad ya declarada; cámbialo aquí si algún producto se compra en
+// lotes mayores, ej. tamanoLote:2 si solo se puede pedir de 2 en 2).
+SUMINISTROS_DATA.forEach(function(cat){
+  cat.items.forEach(function(it){
+    it.id = slugSum(it.nombre);
+    if(it.tamanoLote===undefined) it.tamanoLote = 1;
+  });
+});
+function itemSumPorId(id){
+  for(const cat of SUMINISTROS_DATA){ const it=cat.items.find(function(x){return x.id===id;}); if(it) return it; }
+  return null;
+}
 
-const HIST_ASISTENTES = [101, 91, 91]; // ed8, naked3, ed9
+const HIST_ASISTENTES = [101, 91, 91]; // ed8, naked3, ed9 (fallback legado)
+
+// ── Cálculo de consumo de un registro (post-evento) ─────
+// Un registro tiene: cantidadInicial, comprasExtra, devoluciones, stockFinal,
+// mermas, excluir (bool). cantidadInicial/stockFinal en blanco = desconocido
+// (NO se asume 0). Sin ambos datos no se puede cerrar el consumo: PENDIENTE.
+function esVacio(v){ return v===undefined || v===null || v===''; }
+function calcularConsumoRegistro(reg){
+  reg = reg || {};
+  if(esVacio(reg.cantidadInicial)) return {consumo:null, estado:'PENDIENTE'};
+  if(esVacio(reg.stockFinal))      return {consumo:null, estado:'INCOMPLETO'};
+  const ci = Number(reg.cantidadInicial)||0;
+  const extra = Number(reg.comprasExtra)||0;
+  const dev = Number(reg.devoluciones)||0;
+  const sf = Number(reg.stockFinal)||0;
+  const merma = Number(reg.mermas)||0;
+  const consumo = ci + extra - dev - sf - merma;
+  return {consumo:consumo, estado: reg.excluir ? 'EXCLUIDO' : 'VALIDADO'};
+}
+
+// ── Tasa de consumo aprendida (consumo validado / asistentes·días) ─────
+// Recorre el histórico de eventos reales guardados y promedia la tasa por
+// persona-día de los eventos donde este producto quedó VALIDADO (no
+// PENDIENTE/INCOMPLETO/EXCLUIDO). Null si no hay ninguna muestra usable.
+function tasaValidadaSum(itemId){
+  const muestras = (DB.sum_historial||[]).map(function(ed){
+    const reg = (ed.registros||{})[itemId];
+    if(!reg || reg.estado!=='VALIDADO') return null;
+    const asist = Number(ed.asistentes)||0;
+    const dias = Number(ed.dias)||1;
+    if(asist<=0 || dias<=0) return null;
+    return reg.consumo/(asist*dias);
+  }).filter(function(v){ return v!==null && isFinite(v); });
+  if(!muestras.length) return null;
+  return muestras.reduce(function(a,b){return a+b;},0)/muestras.length;
+}
+
+// ── Previsión de un producto (con margen configurable) ─────────────────
+// Prioriza la tasa validada de eventos reales; si no existe ninguna, cae al
+// método histórico antiguo (promedio hist[]/asistentes de esas 3 ediciones)
+// como aproximación, marcándolo claramente como "histórico" en vez de
+// "validado" para no mezclar la fiabilidad de ambas fuentes.
+function preverItemSum(item, asistFuturos, diasFuturos, margen){
+  const tasa = tasaValidadaSum(item.id);
+  let demanda, fuente;
+  if(tasa!==null){
+    demanda = tasa * asistFuturos * diasFuturos;
+    fuente = 'validado';
+  } else {
+    const histConAsist = HIST_ASISTENTES.map(function(a,i){ return item.hist[i]>0 ? {asist:a,val:item.hist[i]} : null; }).filter(Boolean);
+    if(histConAsist.length>0){
+      const ratio = histConAsist.reduce(function(acc,x){return acc+x.val/x.asist;},0)/histConAsist.length;
+      demanda = ratio * asistFuturos; // el histórico legado no distingue días
+      fuente = 'historico';
+    } else {
+      demanda = 0; fuente = 'sin_datos';
+    }
+  }
+  const objetivo = demanda * (1+margen);
+  const stockUtilizable = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
+  const minimo = (DB.sum_minimos && DB.sum_minimos[item.id]) || 0;
+  const lote = item.tamanoLote||1;
+  let compra = Math.max(0, Math.ceil((objetivo-stockUtilizable)/lote))*lote;
+  if(compra < minimo) compra = Math.ceil(minimo/lote)*lote;
+  const margenEfectivo = demanda>0 ? (stockUtilizable+compra-demanda)/demanda : null;
+  return {tasa, demanda, objetivo, stockUtilizable, minimo, compra, margenEfectivo, fuente};
+}
 
 function calcularSuministros(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
+  const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
   const el = document.getElementById('sum-categorias');
   if(!el) return;
 
   el.innerHTML = SUMINISTROS_DATA.map(cat=>{
     const itemsHTML = cat.items.map(item=>{
-      // Media de ediciones con consumo > 0
-      const histValidos = item.hist.filter(v=>v>0);
-      const histConAsist = HIST_ASISTENTES.map((a,i)=>item.hist[i]>0?{asist:a,val:item.hist[i]}:null).filter(Boolean);
-      
-      let prevision = 0;
-      if(histConAsist.length > 0){
-        // Ratio promedio por persona
-        const ratio = histConAsist.reduce((acc,x)=>acc+x.val/x.asist,0)/histConAsist.length;
-        prevision = Math.ceil(ratio * asist * (1+margen));
-      }
-      
-      // Stock disponible (sobrantes guardados)
-      const stock = DB.suministros_stock?.[item.nombre]||0;
-      const aComprar = Math.max(0, prevision - stock);
-      
+      const p = preverItemSum(item, asist, dias, margen);
       const histStr = item.hist.map((v,i)=>v>0?`${v}`:'-').join(' / ');
-      
+      const fuenteChip = p.fuente==='validado'
+        ? '<span class="chip chip-green" title="Calculado con consumo real validado de eventos guardados">✓ validado</span>'
+        : p.fuente==='historico'
+          ? '<span class="chip chip-amber" title="Sin consumo validado todavía: aproximación con el histórico antiguo">hist. antiguo</span>'
+          : '<span class="chip chip-gray" title="Sin ningún dato de referencia">sin datos</span>';
+
       return `<tr>
         <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}</td>
         <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${item.unidad}</td>
-        <td style="font-size:12px;color:var(--ink3);text-align:center;padding:8px 6px">${histStr}</td>
-        <td style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;padding:8px 6px">${prevision||'-'}</td>
+        <td style="font-size:11px;text-align:center;padding:8px 6px">${fuenteChip}</td>
+        <td style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;padding:8px 6px">${p.demanda?p.demanda.toFixed(1):'-'}</td>
         <td style="text-align:center;padding:8px 6px">
-          <input type="number" value="${stock||''}" placeholder="0" min="0"
+          <input type="number" value="${p.stockUtilizable||''}" placeholder="0" min="0"
             style="width:60px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
-            onchange="guardarStock('${item.nombre}',this.value)" oninput="this.onchange()">
+            onchange="guardarStock('${item.id}',this.value)" oninput="this.onchange()">
         </td>
         <td style="text-align:center;padding:8px 6px">
-          ${aComprar>0
-            ? `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${aComprar}</span>`
+          <input type="number" value="${p.minimo||''}" placeholder="0" min="0" title="Mínimo manual: compra al menos esto aunque la demanda calculada sea menor"
+            style="width:56px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
+            onchange="guardarMinimoSum('${item.id}',this.value)" oninput="this.onchange()">
+        </td>
+        <td style="text-align:center;padding:8px 6px">
+          ${p.compra>0
+            ? `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>`
             : `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">✓ OK</span>`}
         </td>
+        <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(0)+'%':'—'}</td>
       </tr>`;
     }).join('');
 
@@ -5686,11 +5784,12 @@ function calcularSuministros(){
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th>Artículo</th><th>Unidad</th>
-            <th style="white-space:normal;font-size:10px">Ed8(101p) / Naked(91p) / Ed9(91p)</th>
-            <th>Previsión<br><span style="font-size:10px;text-transform:none;font-weight:400">(+${Math.round(margen*100)}% margen)</span></th>
+            <th>Artículo</th><th>Unidad</th><th>Fuente</th>
+            <th>Demanda<br><span style="font-size:10px;text-transform:none;font-weight:400">sin margen</span></th>
             <th>Stock<br><span style="font-size:10px;text-transform:none;font-weight:400">disponible</span></th>
+            <th>Mínimo<br><span style="font-size:10px;text-transform:none;font-weight:400">manual</span></th>
             <th style="color:var(--red)">A comprar</th>
+            <th>Margen<br><span style="font-size:10px;text-transform:none;font-weight:400">efectivo</span></th>
           </tr></thead>
           <tbody>${itemsHTML}</tbody>
         </table>
@@ -5699,30 +5798,59 @@ function calcularSuministros(){
   }).join('');
 }
 
-async function guardarStock(nombre, valor){
+async function guardarStock(itemId, valor){
   if(!DB.suministros_stock) DB.suministros_stock={};
-  DB.suministros_stock[nombre] = Number(valor)||0;
+  DB.suministros_stock[itemId] = Number(valor)||0;
   await saveRemote();
+}
+
+async function guardarMinimoSum(itemId, valor){
+  if(!DB.sum_minimos) DB.sum_minimos={};
+  DB.sum_minimos[itemId] = Number(valor)||0;
+  await saveRemote();
+  calcularSuministros();
+}
+
+// Congela la previsión actual (con sus asistentes/días/margen) para una
+// edición futura concreta, de forma INMUTABLE: cambios posteriores al
+// algoritmo o al histórico no la modifican. Es la que se compara luego en
+// el post-evento como "Previsto", en vez de recalcularla con datos nuevos.
+async function congelarPrevisionSum(){
+  const nombre = prompt('¿Nombre de la edición para la que congelas esta previsión?\n(Debe coincidir exactamente con el nombre que usarás luego al guardar el post-evento)');
+  if(!nombre) return;
+  if(!DB.sum_previsiones_congeladas) DB.sum_previsiones_congeladas={};
+  if(DB.sum_previsiones_congeladas[nombre] && !confirm('Ya existe una previsión congelada con el nombre "'+nombre+'". ¿Sobrescribirla?')) return;
+
+  const asist = Number(document.getElementById('sum-asistentes')?.value||100);
+  const dias  = Number(document.getElementById('sum-dias')?.value||1);
+  const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
+  const items={};
+  SUMINISTROS_DATA.forEach(function(cat){
+    cat.items.forEach(function(item){
+      const p=preverItemSum(item, asist, dias, margen);
+      items[item.id]={nombre:item.nombre, unidad:item.unidad, previsto:Math.round(p.objetivo*10)/10, compra:p.compra, fuente:p.fuente};
+    });
+  });
+  DB.sum_previsiones_congeladas[nombre]={
+    fecha:new Date().toISOString(), asistentes:asist, dias:dias, margen:margen, items:items
+  };
+  log('CONGELAR_PREVISION_SUM', nombre);
+  const ok=await saveRemote();
+  if(ok) toast('Previsión de "'+nombre+'" congelada ✓','ok');
 }
 
 function exportSuministrosCSV(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
+  const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
-  const lines=['"Categoría","Artículo","Unidad","Ed8(101p)","Naked(91p)","Ed9(91p)","Previsión","Stock","A comprar"'];
+  const lines=['"Categoria","Articulo","Unidad","Fuente","Tasa por persona-dia","Demanda","Stock","Minimo manual","A comprar","Margen efectivo %"'];
   SUMINISTROS_DATA.forEach(cat=>{
     cat.items.forEach(item=>{
-      const histConAsist=HIST_ASISTENTES.map((a,i)=>item.hist[i]>0?{asist:a,val:item.hist[i]}:null).filter(Boolean);
-      let prev=0;
-      if(histConAsist.length>0){
-        const ratio=histConAsist.reduce((acc,x)=>acc+x.val/x.asist,0)/histConAsist.length;
-        prev=Math.ceil(ratio*asist*(1+margen));
-      }
-      const stock=DB.suministros_stock?.[item.nombre]||0;
-      const comprar=Math.max(0,prev-stock);
-      lines.push(`"${cat.cat}","${item.nombre}","${item.unidad}","${item.hist[0]}","${item.hist[1]}","${item.hist[2]}","${prev||0}","${stock}","${comprar}"`);
+      const p=preverItemSum(item, asist, dias, margen);
+      lines.push(`"${cat.cat}","${item.nombre}","${item.unidad}","${p.fuente}","${p.tasa!==null?p.tasa.toFixed(4):''}","${p.demanda?p.demanda.toFixed(1):0}","${p.stockUtilizable}","${p.minimo}","${p.compra}","${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(1):''}"`);
     });
   });
-  dlCSV(lines.join('\n'),'suministros.csv');
+  dlCSV(lines.join('\n'),'suministros_prevision.csv');
 }
 
 let _modoSum = 'prevision'; // 'prevision' | 'postevento'
@@ -5746,38 +5874,40 @@ function renderSuministros(){
 function calcularPostEvento(){
   const el = document.getElementById('sum-categorias');
   if(!el) return;
-  // Cargar consumos guardados
-  const consumos = DB.sum_consumos || {};
-  const sobrantes= DB.sum_sobrantes || {};
+  const registros = DB.sum_registro || {};
 
   el.innerHTML = SUMINISTROS_DATA.map(cat=>{
     const itemsHTML = cat.items.map(item=>{
-      const consumido = consumos[item.nombre] !== undefined ? consumos[item.nombre] : '';
-      const sobro     = sobrantes[item.nombre]!== undefined ? sobrantes[item.nombre] : '';
-      // Último histórico como referencia
-      const ultHist = item.hist[item.hist.length-1];
+      const reg = registros[item.id] || {};
+      const r = calcularConsumoRegistro(reg);
+      const estadoChip = {
+        VALIDADO:'<span class="chip chip-green">✓ Validado</span>',
+        PENDIENTE:'<span class="chip chip-gray">Falta cant. inicial</span>',
+        INCOMPLETO:'<span class="chip chip-amber">Falta stock final</span>',
+        EXCLUIDO:'<span class="chip chip-red">Excluido</span>',
+      }[r.estado];
+      const val = function(campo){ return esVacio(reg[campo]) ? '' : reg[campo]; };
       return `<tr>
         <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}</td>
         <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${item.unidad}</td>
-        <td style="font-size:12px;color:var(--ink3);text-align:center">${ultHist>0?ultHist:'-'}</td>
-        <td style="text-align:center;padding:8px 6px">
-          <input type="number" value="${consumido}" placeholder="0" min="0"
-            style="width:64px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:13px"
-            onchange="guardarConsumo('${item.nombre}',this.value)">
-        </td>
-        <td style="text-align:center;padding:8px 6px">
-          <input type="number" value="${sobro}" placeholder="0" min="0"
-            style="width:64px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--green-l);color:var(--green);font-size:13px"
-            onchange="guardarSobrante('${item.nombre}',this.value)">
-        </td>
-        <td style="text-align:center;padding:8px 6px;font-size:12px;color:${
-          consumido!==''&&ultHist>0
-            ? (Number(consumido)>ultHist?'var(--red)':Number(consumido)<ultHist?'var(--green)':'var(--ink3)')
-            : 'var(--ink3)'
-        }">
-          ${consumido!==''&&ultHist>0
-            ? (Number(consumido)>ultHist?'⬆ Faltó':'⬇ Sobró')
-            : '—'}
+        <td style="text-align:center;padding:4px"><input type="number" value="${val('cantidadInicial')}" placeholder="?" title="Cantidad inicial disponible (antes llamado 'Real consumido')"
+            style="width:56px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
+            onchange="guardarRegistroSum('${item.id}','cantidadInicial',this.value)"></td>
+        <td style="text-align:center;padding:4px"><input type="number" value="${val('comprasExtra')}" placeholder="0" title="Compras adicionales durante el evento, no incluidas en la cantidad inicial"
+            style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
+            onchange="guardarRegistroSum('${item.id}','comprasExtra',this.value)"></td>
+        <td style="text-align:center;padding:4px"><input type="number" value="${val('devoluciones')}" placeholder="0" title="Unidades devueltas al proveedor"
+            style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
+            onchange="guardarRegistroSum('${item.id}','devoluciones',this.value)"></td>
+        <td style="text-align:center;padding:4px"><input type="number" value="${val('stockFinal')}" placeholder="?" title="Stock que quedó conservado al terminar (sin contar lo ya devuelto)"
+            style="width:56px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--green-l);color:var(--green);font-size:12px"
+            onchange="guardarRegistroSum('${item.id}','stockFinal',this.value)"></td>
+        <td style="text-align:center;padding:4px"><input type="number" value="${val('mermas')}" placeholder="0" title="Roturas, caducados, pérdidas..."
+            style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
+            onchange="guardarRegistroSum('${item.id}','mermas',this.value)"></td>
+        <td style="text-align:center;padding:8px 6px;font-weight:700;font-size:13px">${r.consumo!==null?r.consumo:'—'}</td>
+        <td style="text-align:center;padding:8px 6px">${estadoChip}
+          <label style="display:block;font-size:9px;color:var(--ink3);margin-top:3px;cursor:pointer"><input type="checkbox" ${reg.excluir?'checked':''} onchange="guardarRegistroSum('${item.id}','excluir',this.checked)" style="width:11px;height:11px;vertical-align:middle"> excluir</label>
         </td>
       </tr>`;
     }).join('');
@@ -5787,11 +5917,13 @@ function calcularPostEvento(){
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th>Artículo</th>
-            <th>Unidad</th>
-            <th>Ref. últ. edición</th>
-            <th style="color:var(--accent)">✍️ Real consumido</th>
-            <th style="color:var(--green)">📦 Sobró</th>
+            <th>Artículo</th><th>Unidad</th>
+            <th style="color:var(--accent)">Cant.<br>inicial</th>
+            <th>Compras<br>extra</th>
+            <th>Devol.</th>
+            <th style="color:var(--green)">Stock<br>final</th>
+            <th>Mermas</th>
+            <th>Consumo</th>
             <th>Estado</th>
           </tr></thead>
           <tbody>${itemsHTML}</tbody>
@@ -5801,64 +5933,139 @@ function calcularPostEvento(){
   }).join('');
 }
 
-async function guardarConsumo(nombre, valor){
-  if(!DB.sum_consumos) DB.sum_consumos={};
-  DB.sum_consumos[nombre]=Number(valor)||0;
-  lsSet('jdb',DB); // guardar local inmediatamente, sync al guardar post-evento
-}
-async function guardarSobrante(nombre, valor){
-  if(!DB.sum_sobrantes) DB.sum_sobrantes={};
-  DB.sum_sobrantes[nombre]=Number(valor)||0;
-  lsSet('jdb',DB);
+async function guardarRegistroSum(itemId, campo, valor){
+  if(!DB.sum_registro) DB.sum_registro={};
+  if(!DB.sum_registro[itemId]) DB.sum_registro[itemId]={};
+  if(campo==='excluir'){ DB.sum_registro[itemId][campo]=!!valor; }
+  else { DB.sum_registro[itemId][campo]= valor===''? '' : (Number(valor)||0); }
+  lsSet('jdb',DB); // guardado local inmediato; se sincroniza al guardar el post-evento
+  calcularPostEvento(); // repinta esa fila con el consumo/estado recalculado
 }
 
 async function guardarPostEvento(){
   const nombre = document.getElementById('sum-edicion-nombre')?.value?.trim();
   const asist  = Number(document.getElementById('sum-asistentes-real')?.value||0);
+  const dias   = Number(document.getElementById('sum-dias-real')?.value||1);
   if(!nombre){ toast('Pon un nombre para esta edición','err'); return; }
   if(!asist)  { toast('Pon los asistentes reales','err'); return; }
+  if(!confirm('¿Guardar el post-evento de "'+nombre+'"? Esto pasa los registros al histórico (se usarán para calcular futuras previsiones) y actualiza el stock disponible.')) return;
 
-  // Añadir la edición al historial guardado en DB
   if(!DB.sum_historial) DB.sum_historial=[];
-  const edicion = {
-    nombre, asistentes: asist,
-    fecha: new Date().toISOString().split('T')[0],
-    consumos:  {...(DB.sum_consumos||{})},
-    sobrantes: {...(DB.sum_sobrantes||{})},
-  };
-  // Reemplazar si ya existe edición con ese nombre
+  const registrosFinal = {};
+  const nuevoStock = {...(DB.suministros_stock||{})};
+  SUMINISTROS_DATA.forEach(function(cat){
+    cat.items.forEach(function(item){
+      const reg = (DB.sum_registro||{})[item.id];
+      if(!reg) return;
+      const r = calcularConsumoRegistro(reg);
+      registrosFinal[item.id] = {...reg, consumo:r.consumo, estado:r.estado};
+      if(!esVacio(reg.stockFinal)) nuevoStock[item.id] = Number(reg.stockFinal)||0;
+    });
+  });
+
+  const edicion = { nombre, asistentes: asist, dias: dias, fecha: new Date().toISOString().split('T')[0], registros: registrosFinal };
   const idx = DB.sum_historial.findIndex(e=>e.nombre===nombre);
-  if(idx>=0) DB.sum_historial[idx]=edicion;
+  if(idx>=0){ if(!confirm('Ya existe un post-evento guardado con el nombre "'+nombre+'". ¿Sobrescribirlo?')) return; DB.sum_historial[idx]=edicion; }
   else DB.sum_historial.push(edicion);
 
-  // Actualizar stock disponible para la próxima edición = lo que sobró
-  if(!DB.suministros_stock) DB.suministros_stock={};
-  Object.entries(DB.sum_sobrantes||{}).forEach(([k,v])=>{ DB.suministros_stock[k]=Number(v)||0; });
+  DB.suministros_stock = nuevoStock;
 
-  log('POST_EVENTO', `${nombre} (${asist}p)`);
-  await saveRemote();
-  toast(`Post-evento "${nombre}" guardado. Histórico y stock actualizados.`, 'ok');
-
-  // Exportar Excel del post-evento
-  exportPostEventoCSV(nombre, asist);
+  log('POST_EVENTO', `${nombre} (${asist}p, ${dias}d)`);
+  const ok = await saveRemote();
+  if(ok){
+    toast(`Post-evento "${nombre}" guardado. Histórico y stock actualizados.`, 'ok');
+    exportPostEventoCSV(nombre, asist);
+  }
 }
 
 function exportPostEventoCSV(nombre, asist){
-  const consumos  = DB.sum_consumos  || {};
-  const sobrantes = DB.sum_sobrantes || {};
-  const lines = ['"Edición","Asistentes","Categoría","Artículo","Unidad","Previsto","Real consumido","Sobró","Estado"'];
+  const registros = DB.sum_registro || {};
+  const congelada = (DB.sum_previsiones_congeladas||{})[nombre];
+  const lines = ['"Edicion","Asistentes","Categoria","Articulo","Unidad","Previsto (congelado)","Cantidad inicial","Compras extra","Devoluciones","Stock final","Mermas","Consumo","Error firmado","Error relativo %","Estado"'];
   SUMINISTROS_DATA.forEach(cat=>{
     cat.items.forEach(item=>{
-      const prev = item.hist[item.hist.length-1]||0;
-      const cons = consumos[item.nombre]!==undefined ? consumos[item.nombre] : '';
-      const sobr = sobrantes[item.nombre]!==undefined ? sobrantes[item.nombre] : '';
-      const estado = cons!==''&&prev>0 ? (Number(cons)>prev?'FALTÓ':'SOBRÓ') : '';
-      lines.push(`"${nombre}","${asist}","${cat.cat}","${item.nombre}","${item.unidad}","${prev}","${cons}","${sobr}","${estado}"`);
+      const reg = registros[item.id] || {};
+      const r = calcularConsumoRegistro(reg);
+      const previstoItem = congelada ? congelada.items[item.id] : null;
+      const previsto = previstoItem ? previstoItem.previsto : '';
+      let errorFirmado='', errorRel='';
+      if(previsto!=='' && r.consumo!==null && r.consumo!==0){
+        errorFirmado = (Number(previsto)-r.consumo).toFixed(1);
+        errorRel = (100*(Number(previsto)-r.consumo)/r.consumo).toFixed(1);
+      }
+      lines.push(`"${nombre}","${asist}","${cat.cat}","${item.nombre}","${item.unidad}","${previsto}","${esVacio(reg.cantidadInicial)?'':reg.cantidadInicial}","${Number(reg.comprasExtra)||0}","${Number(reg.devoluciones)||0}","${esVacio(reg.stockFinal)?'':reg.stockFinal}","${Number(reg.mermas)||0}","${r.consumo!==null?r.consumo:''}","${errorFirmado}","${errorRel}","${r.estado}"`);
     });
   });
+  if(!congelada){
+    lines.push('');
+    lines.push('"AVISO: no hay una previsión congelada guardada con este nombre de edición. La columna Previsto queda vacía en vez de usar un valor inventado. Usa Congelar previsión en el modo Previsión antes del evento la próxima vez."');
+  }
   dlCSV(lines.join('\n'), `post_evento_${nombre.replace(/[^a-z0-9]/gi,'_')}.csv`);
 }
 
+// ─── Importar un post-evento antiguo (formato con columna "Sobró" con
+// signo: positivo=sobrante final, negativo=compra extra sin stock final
+// conocido, vacío=desconocido, cero=sobrante exactamente cero) ─────────
+// Rellena DB.sum_registro para revisar ANTES de pulsar "Guardar post-evento".
+function importarPostEventoLegadoCSV(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const texto = e.target.result;
+      const filas = texto.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+      // Parser simple de CSV con comillas dobles
+      function parseLinea(l){
+        const out=[]; let cur=''; let dentro=false;
+        for(let i=0;i<l.length;i++){
+          const c=l[i];
+          if(c==='"'){ dentro=!dentro; }
+          else if(c===',' && !dentro){ out.push(cur); cur=''; }
+          else cur+=c;
+        }
+        out.push(cur);
+        return out;
+      }
+      const cab = parseLinea(filas[0]).map(function(h){ return h.trim(); });
+      const iArt = cab.indexOf('Artículo'), iCons = cab.indexOf('Real consumido'), iSobr = cab.indexOf('Sobró');
+      if(iArt<0 || iCons<0 || iSobr<0){ toast('El CSV no tiene las columnas esperadas (Artículo, Real consumido, Sobró)','err'); return; }
+
+      if(!DB.sum_registro) DB.sum_registro={};
+      let importados=0, sinMatch=[];
+      for(let i=1;i<filas.length;i++){
+        const cols = parseLinea(filas[i]);
+        const nombreArt = (cols[iArt]||'').trim();
+        if(!nombreArt) continue;
+        const item = SUMINISTROS_DATA.flatMap(function(c){return c.items;}).find(function(it){ return it.nombre.toLowerCase()===nombreArt.toLowerCase(); });
+        if(!item){ sinMatch.push(nombreArt); continue; }
+        const consStr = (cols[iCons]||'').trim();
+        const sobrStr = (cols[iSobr]||'').trim();
+        const reg = {};
+        reg.cantidadInicial = consStr===''||consStr==='-' ? '' : Number(consStr);
+        if(sobrStr===''||sobrStr==='-'){
+          reg.stockFinal=''; reg.comprasExtra=0; // desconocido
+        } else {
+          const s = Number(sobrStr);
+          if(s<0){ reg.comprasExtra=Math.abs(s); reg.stockFinal=''; }
+          else { reg.stockFinal=s; reg.comprasExtra=0; }
+        }
+        reg.devoluciones=0; reg.mermas=0;
+        DB.sum_registro[item.id]=reg;
+        importados++;
+      }
+      lsSet('jdb',DB);
+      calcularPostEvento();
+      let msg=importados+' productos importados. Revisa cada fila (compras extra/stock final quedan a 0 o vacío según el signo de "Sobró" del CSV, corrígelo si tienes más datos) antes de guardar.';
+      if(sinMatch.length) msg+=' No se encontraron en la app: '+sinMatch.join(', ');
+      alert(msg);
+    }catch(err){
+      toast('No se pudo leer el CSV: '+err.message,'err');
+    }
+    input.value='';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
 
 // ─── MIGRACIÓN JSONBin → Firebase ──────────────────────
 async function checkFirebaseStatus(){
@@ -6283,10 +6490,9 @@ async function nuevaEdicion(){
   DB.modulos={ alojamiento:false };
   DB.config={ nombre:nombre, fechas:'', aviso:'' };
   DB.logs=[];
-  // Restaurar suministros
+  // Restaurar suministros (el histórico y las previsiones congeladas se conservan siempre)
   DB.suministros_stock = stockActual;
-  DB.sum_consumos={};
-  DB.sum_sobrantes={};
+  DB.sum_registro={};
 
   log('NUEVA_EDICION', nombre);
   await saveRemote();
