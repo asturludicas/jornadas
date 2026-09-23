@@ -1063,13 +1063,17 @@ tbody tr:hover td{background:var(--paper)}
 
           <!-- Modo previsión -->
           <div id="sum-modo-prev">
-            <p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">La previsión usa el consumo real validado de eventos ya guardados (columna "Fuente" = validado). Mientras no haya ninguno para un producto, usa el histórico antiguo como aproximación (marcado como "hist. antiguo").</p>
+            <p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">La previsión usa el consumo real de eventos ya guardados. Sin ningún dato para un producto, se marca claramente como "Pendiente" — nunca se sustituye por una cifra inventada.</p>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:10px;cursor:pointer">
+              <input type="checkbox" id="sum-misma-duracion" checked onchange="calcularSuministros()">
+              Misma duración que el evento de referencia (no aplica el campo "Días" como multiplicador)
+            </label>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
               <div class="fg" style="margin-bottom:0;flex:0 0 160px">
                 <label>Asistentes previstos</label>
                 <input type="number" id="sum-asistentes" value="100" min="1" max="300" oninput="calcularSuministros()">
               </div>
-              <div class="fg" style="margin-bottom:0;flex:0 0 100px">
+              <div class="fg" style="margin-bottom:0;flex:0 0 100px" id="sum-dias-wrap">
                 <label>Días</label>
                 <input type="number" id="sum-dias" value="1" min="1" max="10" oninput="calcularSuministros()">
               </div>
@@ -1108,7 +1112,7 @@ tbody tr:hover td{background:var(--paper)}
                 ⬆ Importar CSV antiguo
                 <input type="file" accept=".csv" style="display:none" onchange="importarPostEventoLegadoCSV(this)">
               </label>
-              <button class="btn btn-sm" onclick="aplicarBebidasXAniversario()" title="Aplica los 4 productos de bebidas ya conciliados de X Aniversario, y marca los 2 en conflicto como pendientes">🥤 Aplicar bebidas X Aniversario</button>
+              <button class="btn btn-sm" onclick="aplicarBebidasXAniversario()" title="Aplica los productos ya conciliados de X Aniversario (bebidas, leche, bollería, platos...) con su estado correcto: validado, provisional o pendiente">📋 Aplicar datos X Aniversario</button>
             </div>
           </div>
         </div>
@@ -1928,7 +1932,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 107; // se incrementa con cada versión desplegada
+const APP_VERSION = 108; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -5684,108 +5688,150 @@ const HIST_ASISTENTES = [101, 91, 91]; // ed8, naked3, ed9 (ya NO se usa para pr
 
 // ── Cálculo de consumo de un registro (post-evento) ─────
 // Un registro tiene: cantidadInicial, comprasExtra, devoluciones, stockFisico,
-// mermas, excluir (bool). cantidadInicial/stockFisico en blanco = desconocido
-// (NO se asume 0). Sin ambos datos no se puede cerrar el consumo: PENDIENTE.
+// mermas, excluir, pendienteConciliacion, usarProvisional. cantidadInicial y
+// stockFisico en blanco = desconocido (NUNCA se asume 0 automáticamente).
+//
+// Estados posibles:
+//  PENDIENTE              → falta cantidad inicial, no hay nada que hacer.
+//  PENDIENTE_CONCILIACION → dato contradictorio entre fuentes, marcado a mano.
+//  INCOMPLETO             → hay cantidad inicial pero falta el stock físico
+//                            final, y NADIE ha activado la referencia
+//                            provisional todavía. No se usa para prever.
+//  PROVISIONAL            → como INCOMPLETO, pero el usuario activó
+//                            explícitamente "usar cantidad inicial como
+//                            referencia" (asumiendo que no quedó nada). Se
+//                            usa para prever, pero SIEMPRE visible como
+//                            estimación, nunca como si fuese un cierre real.
+//  VALIDADO               → cantidad inicial y stock físico conocidos: cierre
+//                            real y completo.
+//  EXCLUIDO                → casilla manual, nunca se usa para aprender.
 function esVacio(v){ return v===undefined || v===null || v===''; }
 
-// Consumo = cantidad inicial + compras extra − devoluciones − stock físico − mermas.
-// "stockFisico" es SOLO existencia física confirmada de forma independiente
-// (lo que de verdad se guarda para el próximo evento). Las devoluciones al
-// proveedor NUNCA cuentan como stock, van en su propio campo y se descuentan
-// una sola vez aquí, no se restan dos veces aunque consten en factura y en
-// el cierre del evento (son la misma devolución vista desde dos sitios).
 function calcularConsumoRegistro(reg){
   reg = reg || {};
   if(esVacio(reg.cantidadInicial)) return {consumo:null, estado:'PENDIENTE'};
   if(reg.pendienteConciliacion) return {consumo:null, estado:'PENDIENTE_CONCILIACION'};
-  if(esVacio(reg.stockFisico))     return {consumo:null, estado:'INCOMPLETO'};
   const ci = Number(reg.cantidadInicial)||0;
   const extra = Number(reg.comprasExtra)||0;
   const dev = Number(reg.devoluciones)||0;
-  const sf = Number(reg.stockFisico)||0;
   const merma = Number(reg.mermas)||0;
+  if(esVacio(reg.stockFisico)){
+    if(!reg.usarProvisional) return {consumo:null, estado:'INCOMPLETO'};
+    // Provisional: se asume que no quedó nada (stock físico = 0), y queda
+    // marcado como tal — nunca se guarda como si fuera el cierre real.
+    const consumoProv = ci + extra - dev - merma;
+    return {consumo: reg.excluir?null:consumoProv, estado: reg.excluir ? 'EXCLUIDO' : 'PROVISIONAL'};
+  }
+  const sf = Number(reg.stockFisico)||0;
   const consumo = ci + extra - dev - sf - merma;
-  return {consumo:consumo, estado: reg.excluir ? 'EXCLUIDO' : 'VALIDADO'};
+  return {consumo: reg.excluir?null:consumo, estado: reg.excluir ? 'EXCLUIDO' : 'VALIDADO'};
 }
 
 // ── Tasa de consumo aprendida ────────────────────────────────────────
-// SOLO usa eventos reales guardados y VALIDADOS. Ya NO existe una caída
-// silenciosa al histórico antiguo (hist[]): esos valores mezclaban tamaño
-// de pack con cantidad comprada y daban previsiones falsas (ver aviso del
-// usuario). Si el producto es de bebidas con packSize definido, además
-// descarta cualquier muestra guardada con un packSize distinto al actual
-// (no se comparan packs de tamaños diferentes sin convertir antes).
-function tasaValidadaSum(item){
+// Usa muestras VALIDADO (cierre real) y PROVISIONAL (estimación explícita),
+// pero recuerda si hubo al menos una muestra realmente VALIDADO: eso decide
+// si la previsión resultante se etiqueta "Calculado" o "Provisional" en la
+// interfaz (nunca se mezclan sin decirlo). Ya no existe ninguna caída
+// silenciosa al histórico antiguo (hist[]): esos valores mezclaban tamaño de
+// pack con cantidad comprada. Si el producto es de bebidas con packSize
+// definido, además descarta cualquier muestra guardada con un packSize
+// distinto al actual (no se comparan packs de tamaños diferentes sin
+// convertir antes) — esta restricción de formato es SOLO para bebidas y
+// nunca afecta a desayunos, picoteo o fungibles (no tienen packSize).
+function tasaValidadaSum(item, mismaDuracion){
+  let huboValidado=false, huboProvisional=false;
   const muestras = (DB.sum_historial||[]).map(function(ed){
     const reg = (ed.registros||{})[item.id];
-    if(!reg || reg.estado!=='VALIDADO') return null;
+    if(!reg || (reg.estado!=='VALIDADO' && reg.estado!=='PROVISIONAL')) return null;
     if(item.packSize && reg.packSizeUsado && reg.packSizeUsado!==item.packSize) return null; // formato distinto, no comparable
     const asist = Number(ed.asistentes)||0;
     if(asist<=0) return null;
+    if(reg.estado==='VALIDADO') huboValidado=true; else huboProvisional=true;
     // Bebidas: tasa por persona (sin días, según fórmula acordada).
-    // Resto de categorías: tasa por persona·día, si se conoce la duración.
-    if(item.esBebidaPack){
+    // Resto de categorías: si se pide "misma duración que la referencia" no
+    // se aplica ningún factor de días adicional; si no, se usa persona·día
+    // (y si no se conoce la duración de ese evento histórico, se descarta
+    // la muestra en vez de asumir 1 día en silencio).
+    if(item.esBebidaPack || mismaDuracion){
       return reg.consumo/asist;
     }
-    const dias = Number(ed.dias)||1;
+    if(esVacio(ed.dias)) return null; // duración de ese evento desconocida: no se puede usar en modo "por día"
+    const dias = Number(ed.dias);
     if(dias<=0) return null;
     return reg.consumo/(asist*dias);
   }).filter(function(v){ return v!==null && isFinite(v); });
-  if(!muestras.length) return null;
-  return muestras.reduce(function(a,b){return a+b;},0)/muestras.length;
+  if(!muestras.length) return {tasa:null, esProvisional:false};
+  const tasa = muestras.reduce(function(a,b){return a+b;},0)/muestras.length;
+  return {tasa:tasa, esProvisional: huboValidado ? false : huboProvisional};
 }
 
 // ── Previsión de un producto (con margen configurable) ─────────────────
-// Sin consumo validado no hay previsión numérica fiable: se marca
-// "sin_datos" y no se propone ninguna compra salvo el mínimo manual que tú
-// mismo fijes. Para bebidas con packSize sin confirmar, tampoco se calcula
-// (hay que confirmar el formato con proveedor primero).
-function preverItemSum(item, asistFuturos, diasFuturos, margen){
-  if(item.esBebidaPack && item.formatoConfirmado===false){
-    return {tasa:null, demanda:null, objetivo:null, stockUtilizable:0, minimo:(DB.sum_minimos&&DB.sum_minimos[item.id])||0, compra:(DB.sum_minimos&&DB.sum_minimos[item.id])||0, margenEfectivo:null, fuente:'formato_sin_confirmar'};
-  }
-  const tasa = tasaValidadaSum(item);
-  let demanda, fuente;
-  if(tasa!==null){
-    demanda = item.esBebidaPack ? tasa*asistFuturos : tasa*asistFuturos*diasFuturos;
-    fuente = 'validado';
-  } else {
-    demanda = null; fuente = 'sin_datos';
-  }
-  const stockUtilizable = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
+// Tres resultados posibles, nunca mezclados:
+//  "validado"    → Calculado: hay cierre real, cifra fiable.
+//  "provisional" → Provisional: solo hay estimaciones explícitas, cifra
+//                  editable/hipótesis a la vista, NO un cierre.
+//  "sin_datos" / "formato_sin_confirmar" → Pendiente: no hay NINGUNA cifra
+//                  de demanda (null, no 0), y la compra sugerida es null
+//                  salvo que exista un mínimo manual — un "no comprar" solo
+//                  puede salir cuando sí hay cálculo válido.
+function preverItemSum(item, asistFuturos, diasFuturos, margen, mismaDuracion){
   const minimo = (DB.sum_minimos && DB.sum_minimos[item.id]) || 0;
   const lote = item.tamanoLote||1;
-  if(demanda===null){
-    // Sin datos: la única compra posible es el mínimo manual, nunca una demanda inventada.
-    const compraMin = minimo>0 ? Math.ceil(minimo/lote)*lote : 0;
-    return {tasa:null, demanda:null, objetivo:null, stockUtilizable, minimo, compra:compraMin, margenEfectivo:null, fuente};
+  if(item.esBebidaPack && item.formatoConfirmado===false){
+    return {tasa:null, demanda:null, objetivo:null, stockUtilizable:0, minimo, compra:(minimo>0?Math.ceil(minimo/lote)*lote:null), margenEfectivo:null, fuente:'formato_sin_confirmar'};
   }
+  const {tasa, esProvisional} = tasaValidadaSum(item, mismaDuracion);
+  const stockUtilizable = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
+  if(tasa===null){
+    // Sin ningún dato: demanda desconocida de verdad (null), no cero.
+    // La única compra posible es un mínimo manual explícito.
+    return {tasa:null, demanda:null, objetivo:null, stockUtilizable, minimo, compra:(minimo>0?Math.ceil(minimo/lote)*lote:null), margenEfectivo:null, fuente:'sin_datos'};
+  }
+  const demanda = (item.esBebidaPack || mismaDuracion) ? tasa*asistFuturos : tasa*asistFuturos*diasFuturos;
   const objetivo = demanda * (1+margen);
   let compra = Math.max(0, Math.ceil((objetivo-stockUtilizable)/lote))*lote;
   if(compra < minimo) compra = Math.ceil(minimo/lote)*lote;
   const margenEfectivo = demanda>0 ? (stockUtilizable+compra-demanda)/demanda : null;
-  return {tasa, demanda, objetivo, stockUtilizable, minimo, compra, margenEfectivo, fuente};
+  return {tasa, demanda, objetivo, stockUtilizable, minimo, compra, margenEfectivo, fuente: esProvisional?'provisional':'validado'};
 }
 
 function calcularSuministros(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
   const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
+  const mismaDuracion = document.getElementById('sum-misma-duracion')?.checked!==false;
+  const diasWrap = document.getElementById('sum-dias-wrap'); if(diasWrap) diasWrap.style.opacity = mismaDuracion?'.4':'1';
   const el = document.getElementById('sum-categorias');
   if(!el) return;
 
   el.innerHTML = SUMINISTROS_DATA.map(cat=>{
     const itemsHTML = cat.items.map(item=>{
-      const p = preverItemSum(item, asist, dias, margen);
+      const p = preverItemSum(item, asist, dias, margen, mismaDuracion);
       const fuenteChip = p.fuente==='validado'
-        ? '<span class="chip chip-green" title="Calculado con consumo real validado de eventos guardados">✓ validado</span>'
-        : p.fuente==='formato_sin_confirmar'
-          ? '<span class="chip chip-red" title="Confirma con el proveedor cuántas unidades trae cada pack antes de prever este producto">⚠ confirmar formato</span>'
-          : '<span class="chip chip-gray" title="Aún no hay ningún post-evento validado para este producto">sin datos</span>';
+        ? '<span class="chip chip-green" title="Calculado con consumo real de eventos guardados">✓ Calculado</span>'
+        : p.fuente==='provisional'
+          ? '<span class="chip chip-amber" title="Estimación provisional: se asumió que no quedó stock final tras una reposición. Revisa y confirma cuando puedas.">≈ Provisional</span>'
+          : p.fuente==='formato_sin_confirmar'
+            ? '<span class="chip chip-red" title="Confirma con el proveedor cuántas unidades trae cada pack antes de prever este producto">⚠ confirmar formato</span>'
+            : '<span class="chip chip-gray" title="Aún no hay ningún dato de consumo guardado para este producto">Pendiente</span>';
       const unidadLabel = item.esBebidaPack ? ('pack'+(item.packSize?' ('+item.packSize+'u)':'')) : item.unidad;
-      const demandaLabel = p.demanda!==null ? p.demanda.toFixed(1) : '—';
-      const compraLabel = item.esBebidaPack ? 'Packs a pedir' : 'A comprar';
+      const demandaLabel = p.demanda!==null ? (p.fuente==='provisional'?'≈':'')+p.demanda.toFixed(1) : '—';
       const equivalencia = (item.esBebidaPack && item.packSize && p.compra>0) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} uds</div>` : '';
+
+      // Columna "A comprar": SOLO puede decir "No comprar" cuando hay un
+      // cálculo válido (validado o provisional) y el resultado es cero. Si no
+      // hay ningún cálculo, se muestra "Pendiente" — nunca "✓ OK".
+      let compraHTML;
+      if(p.demanda===null){
+        compraHTML = p.compra>0
+          ? `<span style="background:var(--surface);color:var(--ink2);font-weight:600;font-size:11px;padding:3px 10px;border-radius:20px" title="Mínimo manual, no hay previsión calculada">${p.compra} (mínimo manual)</span>`
+          : `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">Pendiente</span>`;
+      } else if(p.compra>0){
+        const colorFondo = p.fuente==='provisional' ? 'var(--amber)' : 'var(--red)';
+        compraHTML = `<span style="background:${colorFondo};color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>${equivalencia}`;
+      } else {
+        compraHTML = `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">No comprar</span>`;
+      }
 
       return `<tr>
         <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}</td>
@@ -5802,11 +5848,7 @@ function calcularSuministros(){
             style="width:56px;padding:4px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarMinimoSum('${item.id}',this.value)" oninput="this.onchange()">
         </td>
-        <td style="text-align:center;padding:8px 6px">
-          ${p.compra>0
-            ? `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>${equivalencia}`
-            : `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">✓ OK</span>`}
-        </td>
+        <td style="text-align:center;padding:8px 6px">${compraHTML}</td>
         <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(0)+'%':'—'}</td>
       </tr>`;
     }).join('');
@@ -5855,20 +5897,39 @@ async function guardarMinimoSum(itemId, valor){
 // Coca-Cola normal y Kas/Fanta Limón quedan como PENDIENTE DE CONCILIACIÓN
 // (hay dos cifras distintas en CSV y albarán) y no se usan para aprender.
 async function aplicarBebidasXAniversario(){
-  const RESUELTOS = [
+  // Bebidas: consumo = cantidad inicial − devoluciones (stock físico 0, todo lo
+  // no vendido se devolvió al proveedor). VALIDADO = cierre real.
+  const BEBIDAS_RESUELTAS = [
     {id:'coca_cola_zero', ci:14, extra:0, dev:1, nota:'14 packs iniciales, 1 devuelto (albarán) → consumo 13'},
     {id:'nestea',         ci:8,  extra:0, dev:5, nota:'Fuze limón / "Nestea": 8 packs iniciales, 5 devueltos → consumo 3'},
     {id:'kas_naranja',    ci:3,  extra:0, dev:1, nota:'Fanta naranja / "Kas Naranja": 3 packs iniciales, 1 devuelto → consumo 2'},
     {id:'cerveza_0',      ci:3,  extra:0, dev:3, nota:'Mahou 0,0: 3 packs iniciales, 3 devueltos → consumo 0'},
   ];
-  const PENDIENTES = [
+  const BEBIDAS_PENDIENTES = [
     {id:'coca_cola_normal', nota:'Conflicto: CSV registra 5 sobrantes, albarán registra 4 devueltos sobre 8 packs iniciales. Sin resolver.'},
     {id:'kas_limon',        nota:'Conflicto: CSV registra 1 sobrante, albarán registra 2 devueltos sobre 2 packs iniciales. Sin resolver.'},
   ];
-  if(!confirm('¿Aplicar los datos de bebidas conciliados de "X Aniversario" (114 asistentes)?\n\n'
-    +'Se guardarán como VALIDADOS: Coca-Cola Zero, Nestea/Fuze, Kas Naranja/Fanta, Cerveza 0%.\n'
-    +'Se marcarán como PENDIENTES DE CONCILIAR (sin usar para prever): Coca-Cola normal, Kas/Fanta Limón.\n\n'
-    +'No se toca ninguna otra categoría ni el stock actual.')) return;
+  // Comida/fungibles con balance completo en el CSV (Sobró no vacío) →
+  // VALIDADO: stockFisico = el propio "Sobró".
+  const COMIDA_VALIDADA = [
+    {id:'leche_entera',        ci:7,   sf:2, nota:'7 iniciales − 2 sobrantes = 5'},
+    {id:'tomate_con_aceite',   ci:7,   sf:0, nota:'7 iniciales − 0 sobrante = 7'},
+    {id:'bolleria',            ci:17,  sf:2, nota:'17 iniciales − 2 sobrantes = 15'},
+    {id:'patatillas_picantes', ci:3,   sf:1, nota:'3 iniciales − 1 sobrante = 2'},
+    {id:'nubes',               ci:4,   sf:1, nota:'4 iniciales − 1 sobrante = 3'},
+  ];
+  // Sobró negativo en el CSV (reposición) y sin dato de sobrante posterior →
+  // PROVISIONAL: se asume que no quedó nada tras la reposición.
+  const COMIDA_PROVISIONAL = [
+    {id:'leche_sin_lactosa', ci:6,   extra:4,   nota:'6 + 4 repuestos = 10, asumiendo que no quedó nada (provisional)'},
+    {id:'leche_soja',        ci:4,   extra:2,   nota:'4 + 2 repuestos = 6, asumiendo que no quedó nada (provisional)'},
+    {id:'platos',            ci:200, extra:100, nota:'200 + 100 repuestos = 300, asumiendo que no quedó nada (provisional)'},
+  ];
+  if(!confirm('¿Aplicar los datos conciliados de "X Aniversario" (114 asistentes)?\n\n'
+    +'VALIDADO (cierre real): Coca-Cola Zero, Nestea/Fuze, Kas Naranja/Fanta, Cerveza 0%, Leche entera, Tomate con aceite, Bollería, Patatillas picantes, Nubes.\n\n'
+    +'PROVISIONAL (estimación, no cierre real): Leche sin lactosa, Leche soja, Platos.\n\n'
+    +'PENDIENTE DE CONCILIAR (sin usar para prever): Coca-Cola normal, Kas/Fanta Limón.\n\n'
+    +'No se toca ninguna otra categoría, producto ni el stock actual.')) return;
 
   if(!DB.sum_historial) DB.sum_historial=[];
   let ed = DB.sum_historial.find(function(e){ return e.nombre==='X Aniversario'; });
@@ -5876,21 +5937,35 @@ async function aplicarBebidasXAniversario(){
   ed.asistentes=114;
   if(!ed.registros) ed.registros={};
 
-  RESUELTOS.forEach(function(r){
+  BEBIDAS_RESUELTAS.forEach(function(r){
     const item=itemSumPorId(r.id); if(!item) return;
     const reg={cantidadInicial:r.ci, comprasExtra:r.extra, devoluciones:r.dev, stockFisico:0, mermas:0, packSizeUsado:item.packSize, nota:r.nota};
     const c=calcularConsumoRegistro(reg);
     reg.consumo=c.consumo; reg.estado=c.estado;
     ed.registros[r.id]=reg;
   });
-  PENDIENTES.forEach(function(p){
+  BEBIDAS_PENDIENTES.forEach(function(p){
     const item=itemSumPorId(p.id); if(!item) return;
     ed.registros[p.id]={pendienteConciliacion:true, consumo:null, estado:'PENDIENTE_CONCILIACION', nota:p.nota};
   });
+  COMIDA_VALIDADA.forEach(function(r){
+    const item=itemSumPorId(r.id); if(!item) return;
+    const reg={cantidadInicial:r.ci, comprasExtra:0, devoluciones:0, stockFisico:r.sf, mermas:0, nota:r.nota};
+    const c=calcularConsumoRegistro(reg);
+    reg.consumo=c.consumo; reg.estado=c.estado;
+    ed.registros[r.id]=reg;
+  });
+  COMIDA_PROVISIONAL.forEach(function(r){
+    const item=itemSumPorId(r.id); if(!item) return;
+    const reg={cantidadInicial:r.ci, comprasExtra:r.extra, devoluciones:0, mermas:0, usarProvisional:true, nota:r.nota}; // stockFisico deliberadamente sin rellenar
+    const c=calcularConsumoRegistro(reg);
+    reg.consumo=c.consumo; reg.estado=c.estado;
+    ed.registros[r.id]=reg;
+  });
 
-  log('SUM_BEBIDAS_XANIV', 'aplicados '+RESUELTOS.length+' resueltos, '+PENDIENTES.length+' pendientes');
+  log('SUM_XANIV_APLICADO', (BEBIDAS_RESUELTAS.length+COMIDA_VALIDADA.length)+' validados, '+COMIDA_PROVISIONAL.length+' provisionales, '+BEBIDAS_PENDIENTES.length+' pendientes');
   const ok=await saveRemote();
-  if(ok){ toast('Datos de bebidas de X Aniversario aplicados ✓','ok'); if(_modoSum==='postevento') calcularPostEvento(); }
+  if(ok){ toast('Datos de X Aniversario aplicados ✓','ok'); if(_modoSum==='postevento') calcularPostEvento(); }
 }
 
 async function congelarPrevisionSum(){
@@ -5902,15 +5977,16 @@ async function congelarPrevisionSum(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
   const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
+  const mismaDuracion = document.getElementById('sum-misma-duracion')?.checked!==false;
   const items={};
   SUMINISTROS_DATA.forEach(function(cat){
     cat.items.forEach(function(item){
-      const p=preverItemSum(item, asist, dias, margen);
-      items[item.id]={nombre:item.nombre, unidad:item.unidad, previsto:Math.round(p.objetivo*10)/10, compra:p.compra, fuente:p.fuente};
+      const p=preverItemSum(item, asist, dias, margen, mismaDuracion);
+      items[item.id]={nombre:item.nombre, unidad:item.unidad, previsto: p.objetivo!==null?Math.round(p.objetivo*10)/10:null, compra:p.compra, fuente:p.fuente};
     });
   });
   DB.sum_previsiones_congeladas[nombre]={
-    fecha:new Date().toISOString(), asistentes:asist, dias:dias, margen:margen, items:items
+    fecha:new Date().toISOString(), asistentes:asist, dias:dias, mismaDuracion:mismaDuracion, margen:margen, items:items
   };
   log('CONGELAR_PREVISION_SUM', nombre);
   const ok=await saveRemote();
@@ -5921,11 +5997,12 @@ function exportSuministrosCSV(){
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
   const dias  = Number(document.getElementById('sum-dias')?.value||1);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
-  const lines=['"Categoria","Articulo","Unidad","Fuente","Tasa por persona-dia","Demanda","Stock","Minimo manual","A comprar","Margen efectivo %"'];
+  const mismaDuracion = document.getElementById('sum-misma-duracion')?.checked!==false;
+  const lines=['"Categoria","Articulo","Unidad","Fuente","Tasa","Demanda","Stock","Minimo manual","A comprar","Margen efectivo %"'];
   SUMINISTROS_DATA.forEach(cat=>{
     cat.items.forEach(item=>{
-      const p=preverItemSum(item, asist, dias, margen);
-      lines.push(`"${cat.cat}","${item.nombre}","${item.unidad}","${p.fuente}","${p.tasa!==null?p.tasa.toFixed(4):''}","${p.demanda?p.demanda.toFixed(1):0}","${p.stockUtilizable}","${p.minimo}","${p.compra}","${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(1):''}"`);
+      const p=preverItemSum(item, asist, dias, margen, mismaDuracion);
+      lines.push(`"${cat.cat}","${item.nombre}","${item.unidad}","${p.fuente}","${p.tasa!==null?p.tasa.toFixed(4):''}","${p.demanda!==null?p.demanda.toFixed(1):''}","${p.stockUtilizable}","${p.minimo}","${p.compra!==null?p.compra:''}","${p.margenEfectivo!==null?(p.margenEfectivo*100).toFixed(1):''}"`);
     });
   });
   dlCSV(lines.join('\n'),'suministros_prevision.csv');
@@ -5962,10 +6039,12 @@ function calcularPostEvento(){
         VALIDADO:'<span class="chip chip-green">✓ Validado</span>',
         PENDIENTE:'<span class="chip chip-gray">Falta cant. inicial</span>',
         INCOMPLETO:'<span class="chip chip-amber">Falta stock físico</span>',
+        PROVISIONAL:'<span class="chip chip-amber" title="Se asume que no quedó nada — estimación, no un cierre real">≈ Provisional</span>',
         EXCLUIDO:'<span class="chip chip-red">Excluido</span>',
         PENDIENTE_CONCILIACION:'<span class="chip chip-red" title="'+(reg.nota||'')+'">⚠ Conciliar</span>',
       }[r.estado];
       const val = function(campo){ return esVacio(reg[campo]) ? '' : reg[campo]; };
+      const faltaStock = esVacio(reg.cantidadInicial)===false && esVacio(reg.stockFisico) && !reg.pendienteConciliacion;
       return `<tr>
         <td style="font-size:13px;font-weight:500;padding:8px 10px">${item.nombre}</td>
         <td style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 6px">${item.unidad}</td>
@@ -5978,9 +6057,12 @@ function calcularPostEvento(){
         <td style="text-align:center;padding:4px"><input type="number" value="${val('devoluciones')}" placeholder="0" title="Unidades devueltas al proveedor"
             style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarRegistroSum('${item.id}','devoluciones',this.value)"></td>
-        <td style="text-align:center;padding:4px"><input type="number" value="${val('stockFisico')}" placeholder="?" title="Stock que quedó conservado al terminar (sin contar lo ya devuelto)"
+        <td style="text-align:center;padding:4px">
+          <input type="number" value="${val('stockFisico')}" placeholder="?" title="Stock que quedó conservado al terminar (sin contar lo ya devuelto)"
             style="width:56px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--green-l);color:var(--green);font-size:12px"
-            onchange="guardarRegistroSum('${item.id}','stockFisico',this.value)"></td>
+            onchange="guardarRegistroSum('${item.id}','stockFisico',this.value)">
+          ${faltaStock?`<label style="display:block;font-size:8px;color:var(--amber);margin-top:2px;cursor:pointer" title="Asume que no quedó nada (stock físico 0) SOLO como estimación provisional, nunca como cierre real"><input type="checkbox" ${reg.usarProvisional?'checked':''} onchange="guardarRegistroSum('${item.id}','usarProvisional',this.checked)" style="width:10px;height:10px;vertical-align:middle"> usar como ref.</label>`:''}
+        </td>
         <td style="text-align:center;padding:4px"><input type="number" value="${val('mermas')}" placeholder="0" title="Roturas, caducados, pérdidas..."
             style="width:52px;padding:5px;text-align:center;border:1px solid var(--border2);border-radius:var(--rs);background:var(--paper);color:var(--ink);font-size:12px"
             onchange="guardarRegistroSum('${item.id}','mermas',this.value)"></td>
@@ -6000,7 +6082,7 @@ function calcularPostEvento(){
             <th style="color:var(--accent)">Cant.<br>inicial</th>
             <th>Compras<br>extra</th>
             <th>Devol.</th>
-            <th style="color:var(--green)">Stock<br>final</th>
+            <th style="color:var(--green)">Stock<br>físico</th>
             <th>Mermas</th>
             <th>Consumo</th>
             <th>Estado</th>
@@ -6015,7 +6097,7 @@ function calcularPostEvento(){
 async function guardarRegistroSum(itemId, campo, valor){
   if(!DB.sum_registro) DB.sum_registro={};
   if(!DB.sum_registro[itemId]) DB.sum_registro[itemId]={};
-  if(campo==='excluir'){ DB.sum_registro[itemId][campo]=!!valor; }
+  if(campo==='excluir' || campo==='usarProvisional'){ DB.sum_registro[itemId][campo]=!!valor; }
   else { DB.sum_registro[itemId][campo]= valor===''? '' : (Number(valor)||0); }
   lsSet('jdb',DB); // guardado local inmediato; se sincroniza al guardar el post-evento
   calcularPostEvento(); // repinta esa fila con el consumo/estado recalculado
@@ -6067,11 +6149,11 @@ function exportPostEventoCSV(nombre, asist){
       const reg = registros[item.id] || {};
       const r = calcularConsumoRegistro(reg);
       const previstoItem = congelada ? congelada.items[item.id] : null;
-      const previsto = previstoItem ? previstoItem.previsto : '';
+      const previsto = (previstoItem && previstoItem.previsto!==null && previstoItem.previsto!==undefined) ? previstoItem.previsto : '';
       let errorFirmado='', errorRel='';
-      if(previsto!=='' && r.consumo!==null && r.consumo!==0){
-        errorFirmado = (Number(previsto)-r.consumo).toFixed(1);
-        errorRel = (100*(Number(previsto)-r.consumo)/r.consumo).toFixed(1);
+      if(previsto!=='' && r.consumo!==null){
+        errorFirmado = (previsto-r.consumo).toFixed(1);
+        errorRel = r.consumo!==0 ? (100*(previsto-r.consumo)/r.consumo).toFixed(1) : '';
       }
       lines.push(`"${nombre}","${asist}","${cat.cat}","${item.nombre}","${item.unidad}","${previsto}","${esVacio(reg.cantidadInicial)?'':reg.cantidadInicial}","${Number(reg.comprasExtra)||0}","${Number(reg.devoluciones)||0}","${esVacio(reg.stockFisico)?'':reg.stockFisico}","${Number(reg.mermas)||0}","${r.consumo!==null?r.consumo:''}","${errorFirmado}","${errorRel}","${r.estado}"`);
     });
