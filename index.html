@@ -1100,7 +1100,7 @@ tbody tr:hover td{background:var(--paper)}
                 ⬆ Importar CSV antiguo
                 <input type="file" accept=".csv" style="display:none" onchange="importarPostEventoLegadoCSV(this)">
               </label>
-              <button class="btn btn-sm" onclick="aplicarBebidasXAniversario()" title="Aplica los productos ya conciliados de X Aniversario (bebidas, leche, bollería, platos...) con su estado correcto: validado, provisional o pendiente">📋 Aplicar datos X Aniversario</button>
+              <button class="btn btn-sm" onclick="migrarReferenciasSum()" title="Corrige y sincroniza las referencias de X Aniversario, con copia de seguridad previa. Elimina cualquier valor editado antiguo que pudiera estar pisando el correcto en estos productos.">🔧 Corregir referencias X Aniversario</button>
             </div>
           </div>
         </div>
@@ -1602,6 +1602,7 @@ const DB = {
   sum_historial:[],   // [{nombre,asistentes,dias,fecha,registros:{itemId:{...,consumo,estado}}}] — post-eventos ya guardados
   sum_minimos:{},      // (sin uso actualmente)
   sum_referencias:{},   // {itemId: cantidad} edición manual de la cantidad de referencia (114 asistentes)
+  sum_backups:[],        // copias de seguridad automáticas antes de cada migración de referencias
   sum_previsiones_congeladas:{}, // {nombreEdicion: {fecha,asistentes,dias,margen,items:{itemId:{previsto,compra,fuente}}}} — INMUTABLE
   modulos:{ alojamiento:false },
   config:{ nombre:CFG.EVENTO, fechas:'', aviso:'', aloj_apertura:'' },
@@ -1700,7 +1701,7 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock',
          'camisetas_extra','mercadillo','confra','confra_apuntados','confra_platos',
          'confra_peticiones','confra_llevar','modulos','config',
-         'sum_registro','sum_historial','sum_minimos','sum_referencias','sum_previsiones_congeladas','logs',
+         'sum_registro','sum_historial','sum_minimos','sum_referencias','sum_backups','sum_previsiones_congeladas','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
          'premios_votos','premios_config','desayunos_marsol','partidas_chat',
          'topjuegos_config','topjuegos_extra','topjuegos_votos'].forEach(k=>{
@@ -1921,7 +1922,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 109; // se incrementa con cada versión desplegada
+const APP_VERSION = 110; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -5605,9 +5606,9 @@ function slugSum(s){
 // nadie guarde nada, para que la previsión funcione desde el primer momento.
 const SUMINISTROS_DATA = [
   {cat:'🥤 Bebidas', items:[
-    // packSize = unidades por pack, solo para mostrar la equivalencia; nunca
-    // se ha usado como si fuera una cantidad de packs comprados.
-    {nombre:'Agua (pack 42L)',       hist:[42,42,42],  unidad:'pack',   packSize:null},
+    // packSize = unidades por pack (formato de compra CONFIRMADO). Nunca se
+    // usa como si fuera una cantidad de packs comprados/consumidos.
+    {nombre:'Agua',                  hist:[42,42,42],  unidad:'pack',   packSize:42},
     {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack',   packSize:24,   refNota:'Conflicto sin resolver: CSV registra 5 sobrantes, albarán 4 devueltos sobre 8 packs iniciales.'},
     {nombre:'Coca Cola Zero',        hist:[0,0,24],    unidad:'pack',   packSize:24,   refCantidad:13, asistentesRef:114, refEstado:'calculado', refNota:'14 packs iniciales − 1 devuelto (albarán) = 13'},
     {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack',   packSize:24,   refNota:'Conflicto sin resolver: CSV registra 1 sobrante, albarán 2 devueltos sobre 2 packs iniciales.'},
@@ -5615,12 +5616,12 @@ const SUMINISTROS_DATA = [
     {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack',   packSize:24},
     {nombre:'Energéticas',           hist:[90,90,100], unidad:'uds'},
     {nombre:'Nestea',                hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:3,  asistentesRef:114, refEstado:'calculado', refNota:'Fuze limón / "Nestea": 8 packs iniciales − 5 devueltos = 3'},
-    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:null},
-    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:null},
-    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack',   packSize:null},
-    {nombre:'Casera',                hist:[6,6,6],     unidad:'pack',   packSize:null},
+    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:32},
+    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:32},
+    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack',   packSize:24},
+    {nombre:'Casera',                hist:[6,6,6],     unidad:'pack',   packSize:24},
     {nombre:'Sidra',                 hist:[1,1,1],     unidad:'uds'},
-    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:24,   refCantidad:0,  asistentesRef:114, refEstado:'calculado', refNota:'Mahou 0,0: 3 packs iniciales − 3 devueltos = 0'},
+    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:32,   refCantidad:0,  asistentesRef:114, refEstado:'calculado', refNota:'Mahou 0,0: 3 packs iniciales − 3 devueltos = 0'},
   ]},
   {cat:'🥐 Desayunos', items:[
     {nombre:'Leche sin lactosa',     hist:[6,6,6],     unidad:'briks 1L', refCantidad:10, asistentesRef:114, refEstado:'estimado', refNota:'6 + 4 repuestos = 10, asumiendo que no quedó nada (estimación)'},
@@ -5810,7 +5811,7 @@ function calcularSuministros(){
     const itemsHTML = cat.items.map(item=>{
       const p = preverItemSum(item, asist, margen);
       const ref = p.ref;
-      const unidadLabel = item.esBebidaPack ? ('pack'+(item.packSize?' ('+item.packSize+'u)':'')) : item.unidad;
+      const unidadLabel = item.esBebidaPack ? ('Pack de '+(item.packSize?item.packSize+' unidades':'formato sin confirmar')) : item.unidad;
 
       // Detalle secundario: qué referencia se está usando, editable.
       let refDetalle;
@@ -5829,8 +5830,9 @@ function calcularSuministros(){
       if(p.demanda===null){
         compraHTML = `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">Pendiente</span>`;
       } else if(p.compra>0){
-        const equivalencia = (item.esBebidaPack && item.packSize) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} uds</div>` : '';
-        compraHTML = `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}</span>${equivalencia}`;
+        const sufijo = item.esBebidaPack ? ' packs' : '';
+        const equivalencia = (item.esBebidaPack && item.packSize) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} unidades</div>` : '';
+        compraHTML = `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}${sufijo}</span>${equivalencia}`;
       } else {
         compraHTML = `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">No comprar</span>`;
       }
@@ -5854,8 +5856,8 @@ function calcularSuministros(){
         <table>
           <thead><tr>
             <th>Artículo</th><th>Formato</th>
-            <th>Cantidad<br><span style="font-size:10px;text-transform:none;font-weight:400">prevista</span></th>
-            <th>Stock<br><span style="font-size:10px;text-transform:none;font-weight:400">disponible</span></th>
+            <th>Demanda<br><span style="font-size:10px;text-transform:none;font-weight:400">sin margen</span></th>
+            <th>Stock<br><span style="font-size:10px;text-transform:none;font-weight:400">físico</span></th>
             <th style="color:var(--red)">A comprar</th>
           </tr></thead>
           <tbody>${itemsHTML}</tbody>
@@ -5882,76 +5884,77 @@ async function guardarStock(itemId, valor){
 //   porque todo lo no vendido se devolvió al proveedor, no se quedó en casa).
 // Coca-Cola normal y Kas/Fanta Limón quedan como PENDIENTE DE CONCILIACIÓN
 // (hay dos cifras distintas en CSV y albarán) y no se usan para aprender.
-async function aplicarBebidasXAniversario(){
-  // Bebidas: consumo = cantidad inicial − devoluciones (stock físico 0, todo lo
-  // no vendido se devolvió al proveedor). VALIDADO = cierre real.
-  const BEBIDAS_RESUELTAS = [
-    {id:'coca_cola_zero', ci:14, extra:0, dev:1, nota:'14 packs iniciales, 1 devuelto (albarán) → consumo 13'},
-    {id:'nestea',         ci:8,  extra:0, dev:5, nota:'Fuze limón / "Nestea": 8 packs iniciales, 5 devueltos → consumo 3'},
-    {id:'kas_naranja',    ci:3,  extra:0, dev:1, nota:'Fanta naranja / "Kas Naranja": 3 packs iniciales, 1 devuelto → consumo 2'},
-    {id:'cerveza_0',      ci:3,  extra:0, dev:3, nota:'Mahou 0,0: 3 packs iniciales, 3 devueltos → consumo 0'},
+async function migrarReferenciasSum(){
+  const ITEMS_CONOCIDOS = [
+    'coca_cola_zero','nestea','kas_naranja','cerveza_0','coca_cola_normal','kas_limon',
+    'leche_entera','tomate_con_aceite','bolleria','patatillas_picantes','nubes',
+    'leche_sin_lactosa','leche_soja','platos'
   ];
-  const BEBIDAS_PENDIENTES = [
-    {id:'coca_cola_normal', nota:'Conflicto: CSV registra 5 sobrantes, albarán registra 4 devueltos sobre 8 packs iniciales. Sin resolver.'},
-    {id:'kas_limon',        nota:'Conflicto: CSV registra 1 sobrante, albarán registra 2 devueltos sobre 2 packs iniciales. Sin resolver.'},
-  ];
-  // Comida/fungibles con balance completo en el CSV (Sobró no vacío) →
-  // VALIDADO: stockFisico = el propio "Sobró".
-  const COMIDA_VALIDADA = [
-    {id:'leche_entera',        ci:7,   sf:2, nota:'7 iniciales − 2 sobrantes = 5'},
-    {id:'tomate_con_aceite',   ci:7,   sf:0, nota:'7 iniciales − 0 sobrante = 7'},
-    {id:'bolleria',            ci:17,  sf:2, nota:'17 iniciales − 2 sobrantes = 15'},
-    {id:'patatillas_picantes', ci:3,   sf:1, nota:'3 iniciales − 1 sobrante = 2'},
-    {id:'nubes',               ci:4,   sf:1, nota:'4 iniciales − 1 sobrante = 3'},
-  ];
-  // Sobró negativo en el CSV (reposición) y sin dato de sobrante posterior →
-  // PROVISIONAL: se asume que no quedó nada tras la reposición.
-  const COMIDA_PROVISIONAL = [
-    {id:'leche_sin_lactosa', ci:6,   extra:4,   nota:'6 + 4 repuestos = 10, asumiendo que no quedó nada (provisional)'},
-    {id:'leche_soja',        ci:4,   extra:2,   nota:'4 + 2 repuestos = 6, asumiendo que no quedó nada (provisional)'},
-    {id:'platos',            ci:200, extra:100, nota:'200 + 100 repuestos = 300, asumiendo que no quedó nada (provisional)'},
-  ];
-  if(!confirm('¿Aplicar los datos conciliados de "X Aniversario" (114 asistentes)?\n\n'
-    +'VALIDADO (cierre real): Coca-Cola Zero, Nestea/Fuze, Kas Naranja/Fanta, Cerveza 0%, Leche entera, Tomate con aceite, Bollería, Patatillas picantes, Nubes.\n\n'
-    +'PROVISIONAL (estimación, no cierre real): Leche sin lactosa, Leche soja, Platos.\n\n'
-    +'PENDIENTE DE CONCILIAR (sin usar para prever): Coca-Cola normal, Kas/Fanta Limón.\n\n'
-    +'No se toca ninguna otra categoría, producto ni el stock actual.')) return;
+  if(!confirm('¿Ejecutar la migración/corrección de referencias de "X Aniversario"?\n\n'
+    +'Se hace copia de seguridad de lo que haya ahora ANTES de tocar nada.\n\n'
+    +'Solo se corrigen estos '+ITEMS_CONOCIDOS.length+' productos ya documentados (bebidas conciliadas + leche/tomate/bollería/patatillas/nubes/platos). '
+    +'Ningún otro producto se toca. Se puede ejecutar varias veces sin duplicar nada.')) return;
+
+  // 1) Copia de seguridad con marca de tiempo — nunca se pisa la anterior.
+  if(!DB.sum_backups) DB.sum_backups=[];
+  DB.sum_backups.push({
+    fecha:new Date().toISOString(),
+    sum_historial: JSON.parse(JSON.stringify(DB.sum_historial||[])),
+    sum_referencias: JSON.parse(JSON.stringify(DB.sum_referencias||{})),
+    suministros_stock: JSON.parse(JSON.stringify(DB.suministros_stock||{})),
+  });
+  if(DB.sum_backups.length>10) DB.sum_backups = DB.sum_backups.slice(-10);
+
+  // 2) Quitar cualquier edición manual ("editado") que pudiera estar pisando
+  // el valor correcto de estos productos concretos — no se toca ningún otro.
+  if(DB.sum_referencias){
+    ITEMS_CONOCIDOS.forEach(function(id){ delete DB.sum_referencias[id]; });
+  }
 
   if(!DB.sum_historial) DB.sum_historial=[];
   let ed = DB.sum_historial.find(function(e){ return e.nombre==='X Aniversario'; });
-  if(!ed){ ed={nombre:'X Aniversario', asistentes:114, dias:1, fecha:new Date().toISOString().split('T')[0], registros:{}}; DB.sum_historial.push(ed); }
+  if(!ed){ ed={nombre:'X Aniversario', asistentes:114, fecha:new Date().toISOString().split('T')[0], registros:{}}; DB.sum_historial.push(ed); }
   ed.asistentes=114;
   if(!ed.registros) ed.registros={};
 
-  BEBIDAS_RESUELTAS.forEach(function(r){
-    const item=itemSumPorId(r.id); if(!item) return;
-    const reg={cantidadInicial:r.ci, comprasExtra:r.extra, devoluciones:r.dev, stockFisico:0, mermas:0, packSizeUsado:item.packSize, nota:r.nota};
+  function fijarRegistro(id, reg){
+    const item=itemSumPorId(id); if(!item) return;
+    if(item.packSize) reg.packSizeUsado=item.packSize;
     const c=calcularConsumoRegistro(reg);
     reg.consumo=c.consumo; reg.estado=c.estado;
-    ed.registros[r.id]=reg;
-  });
-  BEBIDAS_PENDIENTES.forEach(function(p){
-    const item=itemSumPorId(p.id); if(!item) return;
-    ed.registros[p.id]={pendienteConciliacion:true, consumo:null, estado:'PENDIENTE_CONCILIACION', nota:p.nota};
-  });
-  COMIDA_VALIDADA.forEach(function(r){
-    const item=itemSumPorId(r.id); if(!item) return;
-    const reg={cantidadInicial:r.ci, comprasExtra:0, devoluciones:0, stockFisico:r.sf, mermas:0, nota:r.nota};
-    const c=calcularConsumoRegistro(reg);
-    reg.consumo=c.consumo; reg.estado=c.estado;
-    ed.registros[r.id]=reg;
-  });
-  COMIDA_PROVISIONAL.forEach(function(r){
-    const item=itemSumPorId(r.id); if(!item) return;
-    const reg={cantidadInicial:r.ci, comprasExtra:r.extra, devoluciones:0, mermas:0, usarProvisional:true, nota:r.nota}; // stockFisico deliberadamente sin rellenar
-    const c=calcularConsumoRegistro(reg);
-    reg.consumo=c.consumo; reg.estado=c.estado;
-    ed.registros[r.id]=reg;
-  });
+    ed.registros[id]=reg; // SIEMPRE se reescribe entera: repetir la migración no duplica nada.
+  }
 
-  log('SUM_XANIV_APLICADO', (BEBIDAS_RESUELTAS.length+COMIDA_VALIDADA.length)+' validados, '+COMIDA_PROVISIONAL.length+' provisionales, '+BEBIDAS_PENDIENTES.length+' pendientes');
+  // Bebidas: consumo = packs iniciales + extra − devueltos. Sin stock físico
+  // (todo lo no vendido se devolvió, nunca pasa a stock del siguiente evento).
+  fijarRegistro('coca_cola_zero', {cantidadInicial:14, comprasExtra:0, devoluciones:1, stockFisico:0, mermas:0, nota:'14 packs iniciales − 1 devuelto = 13'});
+  fijarRegistro('nestea',         {cantidadInicial:8,  comprasExtra:0, devoluciones:5, stockFisico:0, mermas:0, nota:'Fuze/"Nestea": 8 − 5 = 3'});
+  fijarRegistro('kas_naranja',    {cantidadInicial:3,  comprasExtra:0, devoluciones:1, stockFisico:0, mermas:0, nota:'Fanta/"Kas Naranja": 3 − 1 = 2'});
+  fijarRegistro('cerveza_0',      {cantidadInicial:3,  comprasExtra:0, devoluciones:3, stockFisico:0, mermas:0, nota:'Mahou 0,0: 3 − 3 = 0'});
+  ed.registros['coca_cola_normal'] = {pendienteConciliacion:true, consumo:null, estado:'PENDIENTE_CONCILIACION', nota:'Conflicto: CSV 5 sobrantes vs albarán 4 devueltos, sobre 8 packs iniciales.'};
+  ed.registros['kas_limon']        = {pendienteConciliacion:true, consumo:null, estado:'PENDIENTE_CONCILIACION', nota:'Conflicto: CSV 1 sobrante vs albarán 2 devueltos, sobre 2 packs iniciales.'};
+
+  // Comida con balance completo (cierre real):
+  fijarRegistro('leche_entera',        {cantidadInicial:7,   comprasExtra:0,   devoluciones:0, stockFisico:2, mermas:0, nota:'7 − 2 = 5'});
+  fijarRegistro('tomate_con_aceite',   {cantidadInicial:7,   comprasExtra:0,   devoluciones:0, stockFisico:0, mermas:0, nota:'7 − 0 = 7'});
+  fijarRegistro('bolleria',            {cantidadInicial:17,  comprasExtra:0,   devoluciones:0, stockFisico:2, mermas:0, nota:'17 − 2 = 15'});
+  fijarRegistro('patatillas_picantes', {cantidadInicial:3,   comprasExtra:0,   devoluciones:0, stockFisico:1, mermas:0, nota:'3 − 1 = 2'});
+  fijarRegistro('nubes',               {cantidadInicial:4,   comprasExtra:0,   devoluciones:0, stockFisico:1, mermas:0, nota:'4 − 1 = 3'});
+  // Comida con reposición sin remanente confirmado (provisional, no cierre real).
+  // OJO: aquí NO se vuelve a sumar la reposición aparte — está incluida UNA
+  // sola vez dentro de "comprasExtra" y el cálculo hace cantidadInicial+extra.
+  fijarRegistro('leche_sin_lactosa',   {cantidadInicial:6,   comprasExtra:4,   devoluciones:0, mermas:0, usarProvisional:true, nota:'6 + 4 repuestos = 10 (provisional)'});
+  fijarRegistro('leche_soja',          {cantidadInicial:4,   comprasExtra:2,   devoluciones:0, mermas:0, usarProvisional:true, nota:'4 + 2 repuestos = 6 (provisional)'});
+  fijarRegistro('platos',              {cantidadInicial:200, comprasExtra:100, devoluciones:0, mermas:0, usarProvisional:true, nota:'200 + 100 repuestos = 300 (provisional)'});
+
+  // 3) Asegurar que ninguna devolución de estas bebidas quedó migrada como
+  // stock disponible en algún momento anterior (lo devuelto no es stock).
+  if(!DB.suministros_stock) DB.suministros_stock={};
+  ['coca_cola_zero','nestea','kas_naranja','cerveza_0'].forEach(function(id){ DB.suministros_stock[id]=0; });
+
+  log('SUM_MIGRACION', ITEMS_CONOCIDOS.length+' productos corregidos (copia de seguridad guardada)');
   const ok=await saveRemote();
-  if(ok){ toast('Datos de X Aniversario aplicados ✓','ok'); if(_modoSum==='postevento') calcularPostEvento(); }
+  if(ok){ toast('Migración aplicada ✓ (con copia de seguridad)','ok'); if(_modoSum==='postevento') calcularPostEvento(); else calcularSuministros(); }
 }
 
 async function congelarPrevisionSum(){
