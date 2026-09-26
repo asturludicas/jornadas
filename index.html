@@ -1064,6 +1064,10 @@ tbody tr:hover td{background:var(--paper)}
           <!-- Modo previsión -->
           <div id="sum-modo-prev">
             <p style="font-size:12px;color:var(--ink3);margin:0 0 10px 0">Introduce los asistentes y el margen: la app calcula la cantidad prevista de cada producto. Sin referencia todavía, un producto sale como "Pendiente" — puedes añadirla tú (ver "editar" bajo el artículo).</p>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:10px;cursor:pointer">
+              <input type="checkbox" id="sum-usar-provisionales" onchange="guardarUsarProvisionalesSum(this.checked)">
+              Usar referencias provisionales (solo cantidad inicial del CSV, sin cierre confirmado) mientras completo los cierres reales
+            </label>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
               <div class="fg" style="margin-bottom:0;flex:0 0 160px">
                 <label>Asistentes previstos</label>
@@ -1603,6 +1607,10 @@ const DB = {
   sum_minimos:{},      // (sin uso actualmente)
   sum_referencias:{},   // {itemId: cantidad} edición manual de la cantidad de referencia (114 asistentes)
   sum_backups:[],        // copias de seguridad automáticas antes de cada migración de referencias
+  stock_confirmado:{},    // {itemId:true} el admin confirmó este stock a mano: el autosaneamiento nunca lo toca
+  sum_usar_provisionales:false, // activa/desactiva en bloque las referencias provisionales (solo cantidad inicial, sin cierre)
+  sum_no_ofrecer:{},      // {itemId:true} producto marcado como "no se ofrece este evento"
+  sum_objetivo_desactivado:{}, // {itemId:true} objetivo manual desactivado por el admin (vuelve al histórico)
   sum_previsiones_congeladas:{}, // {nombreEdicion: {fecha,asistentes,dias,margen,items:{itemId:{previsto,compra,fuente}}}} — INMUTABLE
   modulos:{ alojamiento:false },
   config:{ nombre:CFG.EVENTO, fechas:'', aviso:'', aloj_apertura:'' },
@@ -1701,7 +1709,8 @@ function iniciarListenerFirebase(){
          'comidas_optin','comidas_info','suministros_stock',
          'camisetas_extra','mercadillo','confra','confra_apuntados','confra_platos',
          'confra_peticiones','confra_llevar','modulos','config',
-         'sum_registro','sum_historial','sum_minimos','sum_referencias','sum_backups','sum_previsiones_congeladas','logs',
+         'sum_registro','sum_historial','sum_minimos','sum_referencias','sum_backups','sum_previsiones_congeladas',
+         'stock_confirmado','sum_usar_provisionales','sum_no_ofrecer','sum_objetivo_desactivado','logs',
          '_version','_snapLast','_minClientVersion','comida_dom_confirmado',
          'premios_votos','premios_config','desayunos_marsol','partidas_chat',
          'topjuegos_config','topjuegos_extra','topjuegos_votos'].forEach(k=>{
@@ -1922,7 +1931,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 112; // se incrementa con cada versión desplegada
+const APP_VERSION = 114; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -3420,7 +3429,7 @@ async function quitarAperturaAloj(){
 
 async function guardarHab(){
   const id=document.getElementById('hb-id').value||uid('H_');
-  const h={
+  const camposNuevos={
     ID:id,id,
     Hotel:document.getElementById('hb-hotel').value, hotel:document.getElementById('hb-hotel').value,
     NumeroHabitacion:document.getElementById('hb-num').value, num:document.getElementById('hb-num').value,
@@ -3430,7 +3439,11 @@ async function guardarHab(){
     Modalidades:document.getElementById('hb-mods').value,
   };
   const idx=DB.habitaciones.findIndex(x=>(x.ID||x.id||'')===id);
-  if(idx>=0) DB.habitaciones[idx]=h; else DB.habitaciones.push(h);
+  // OJO: se combina con el registro existente (no se sustituye entero), para
+  // no borrar ningún otro dato que esa habitación pudiera tener guardado.
+  if(idx>=0) DB.habitaciones[idx]=Object.assign({}, DB.habitaciones[idx], camposNuevos);
+  else DB.habitaciones.push(camposNuevos);
+  const h=camposNuevos;
   log('SAVE_HAB',`${h.hotel} ${h.num}`);
   await saveRemote(); closeModal('mo-hab'); renderAlojamiento(); toast('Habitación guardada','ok');
 }
@@ -4835,6 +4848,12 @@ function renderMiAloj(){
     }
   } else {
     var listH='';
+    // Grupo del inscrito (compañeros de su mismo GrupoID), sin contar
+    // invitados/inactivos, que todavía no tienen habitación asignada — se
+    // usa para exigir que las DOBLES se ocupen en pareja completa.
+    var grupoSinAsignar = gestiono.filter(function(x){
+      return !x._esInvitado && x.Activo!=='FALSE' && !DB.asignaciones[x.ID||x.id||''];
+    });
     if(!habs.length){
       listH='<p style="font-size:13px;color:var(--ink3)">Sin habitaciones disponibles a\u00fan.</p>';
     } else {
@@ -4846,7 +4865,13 @@ function renderMiAloj(){
         var llena=lib3===0;
         var names=ocu3.map(function(c){return c.Nick?'@'+c.Nick:(c.Nombre||'?');}).join(', ');
         var bord3=llena?'var(--red)':lib3===Number(h.Capacidad||h.cap||2)?'var(--green)':'var(--amber)';
-        listH+='<div style="background:var(--surface);border:1.5px solid '+bord3+';border-radius:12px;padding:14px 16px;margin-bottom:10px">';
+        // Fondo por tipo: dobles en azul, triples en verde (más oscuro si ya
+        // hay alguien apuntado). Individuales sin cambios (las asigna el admin a mano).
+        var tipoN=normTipoHab(h.tipo||h.Tipo);
+        var fondo3='var(--surface)';
+        if(tipoN==='doble') fondo3='#DCEEFB';
+        else if(tipoN==='triple') fondo3 = ocu3.length>0 ? '#BFEAD1' : '#E3F6EC';
+        listH+='<div style="background:'+fondo3+';border:1.5px solid '+bord3+';border-radius:12px;padding:14px 16px;margin-bottom:10px">';
         listH+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">';
         listH+='<div style="min-width:0"><div style="font-weight:700;font-size:14px">'+(h.hotel||h.Hotel||'')+' '+(h.num||h.NumeroHabitacion||'')+'</div>';
         listH+='<div style="font-size:11px;color:var(--ink3);margin-top:2px">'+(h.tipo||h.Tipo||'')+' \u00b7 '+((h.noches||'ambas')==='viernes'?'Vie\u2192Dom':'Jue\u2192Dom')+'</div>';
@@ -4863,20 +4888,35 @@ function renderMiAloj(){
       var lib3=Math.max(0,Number(h.Capacidad||h.cap||2)-ocu3.length);
       if(!lib3||esAnonimo2||n==='sin-alojamiento')return;
       var btnEl=document.getElementById('hbtn-'+hid3);
-      if(btnEl){
+      if(!btnEl) return;
+      var tipoN3=normTipoHab(h.tipo||h.Tipo);
+      if(estado==='PREVIEW'){
         var b=document.createElement('button');
-        if(estado==='PREVIEW'){
-          b.className='btn btn-sm';
-          b.style.marginTop='6px';
-          b.disabled=true;
-          b.textContent='🔒 Aún cerrado';
-          b.title='Aún no está abierto el reparto. Espera a la fecha indicada arriba.';
+        b.className='btn btn-sm'; b.style.marginTop='6px'; b.disabled=true;
+        b.textContent='🔒 Aún cerrado';
+        b.title='Aún no está abierto el reparto. Espera a la fecha indicada arriba.';
+        btnEl.appendChild(b);
+      } else if(tipoN3==='doble'){
+        // Las dobles solo se ocupan en pareja completa del mismo grupo — ya
+        // no vale apuntarse uno solo (por eso puede quedar 1 sitio suelto
+        // bloqueado para alguien sin pareja: es intencional en esta habitación).
+        if(grupoSinAsignar.length===2){
+          var b=document.createElement('button');
+          b.className='btn btn-primary btn-sm'; b.style.marginTop='6px';
+          b.textContent='Apuntar a mi pareja aquí';
+          (function(id,ids){ b.onclick=function(){ asignarHabParejaInscrito(id,ids); }; })(hid3, grupoSinAsignar.map(function(x){return x.ID||x.id||'';}));
+          btnEl.appendChild(b);
         } else {
-          b.className='btn btn-primary btn-sm';
-          b.style.marginTop='6px';
-          b.textContent='Elegir';
-          (function(id,p){b.onclick=function(){asignarHabInscrito(id,p,'');};})(hid3,pid);
+          var nota=document.createElement('div');
+          nota.style.cssText='font-size:10px;color:var(--ink3);margin-top:6px;max-width:110px;line-height:1.3';
+          nota.textContent = grupoSinAsignar.length<2 ? 'Necesitas venir en pareja (mismo grupo) para entrar aquí' : ('Sois '+grupoSinAsignar.length+' sin asignar — esta habitación es solo para 2');
+          btnEl.appendChild(nota);
         }
+      } else {
+        var b=document.createElement('button');
+        b.className='btn btn-primary btn-sm'; b.style.marginTop='6px';
+        b.textContent='Elegir';
+        (function(id,p){b.onclick=function(){asignarHabInscrito(id,p,'');};})(hid3,pid);
         btnEl.appendChild(b);
       }
     });
@@ -4967,6 +5007,46 @@ async function asignarHabInscrito(habId, personaId, nombre){
     log('ASIGNAR_HAB',`${personaId}→${habId}`);
     await saveRemote();
     if(ROLE==='inscrito') renderMiAloj(); else { renderAlojamiento(); }
+  } finally {
+    _asignando=false;
+    if(btn){ btn.disabled=false; }
+    setTimeout(()=>_asignando=false, 2000);
+  }
+}
+
+// Asignar una pareja COMPLETA (2 personas del mismo grupo) a una doble en un
+// solo paso — las dobles ya no se pueden ocupar apuntándose de uno en uno.
+async function asignarHabParejaInscrito(habId, personaIds){
+  if(_asignando){ toast('Espera un momento…'); return; }
+  if(ROLE!=='admin' && alojEstado()==='PREVIEW'){
+    toast('El reparto aún no está abierto. Espera a la fecha indicada.','err');
+    return;
+  }
+  if(!personaIds || personaIds.length!==2){ toast('Esta opción es solo para una pareja de 2 personas','err'); return; }
+  _asignando=true;
+  const btn=event?.target; if(btn){ btn.disabled=true; btn.textContent='…'; }
+  try{
+    const remote=await jbGet();
+    if(remote&&remote._jornadas){
+      if(remote._jornadas.asignaciones) DB.asignaciones=remote._jornadas.asignaciones;
+      if(remote._jornadas.habitaciones) DB.habitaciones=remote._jornadas.habitaciones;
+    }
+    const h=DB.habitaciones.find(x=>(x.ID||x.id||'')===habId);
+    const cap=Number(h?.Capacidad||h?.cap||2);
+    const ocupadosOtros=DB.personas.filter(p=>{
+      const pid=p.ID||p.id||'';
+      return DB.asignaciones[pid]===habId && !personaIds.includes(pid) && p.Activo!=='FALSE';
+    });
+    if(cap-ocupadosOtros.length < personaIds.length){
+      toast('⚠ Ya no queda sitio para los dos en esta habitación. Elige otra.','err');
+      renderMiAloj();
+      return;
+    }
+    personaIds.forEach(pid=>{ DB.asignaciones[pid]=habId; });
+    log('ASIGNAR_HAB_PAREJA', personaIds.join(',')+'→'+habId);
+    await saveRemote();
+    toast('Pareja asignada ✓','ok');
+    renderMiAloj();
   } finally {
     _asignando=false;
     if(btn){ btn.disabled=false; }
@@ -5608,57 +5688,73 @@ const SUMINISTROS_DATA = [
   {cat:'🥤 Bebidas', items:[
     // packSize = unidades por pack (formato de compra CONFIRMADO). Nunca se
     // usa como si fuera una cantidad de packs comprados/consumidos.
-    {nombre:'Agua',                  hist:[42,42,42],  unidad:'pack',   packSize:42},
-    {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack',   packSize:24,   refNota:'Conflicto sin resolver: CSV registra 5 sobrantes, albarán 4 devueltos sobre 8 packs iniciales.'},
+    // refUnidad='unidades' cuando la referencia está en latas/botellas
+    // sueltas en vez de packs: se convierte a packs completos al final,
+    // después del margen, nunca antes.
+    {nombre:'Agua',                  hist:[42,42,42],  unidad:'pack',   packSize:null,
+      refObjetivoManual:30, asistentesRef:114,
+      refNota:'Objetivo manual del organizador: 30 cajas para 114 personas (la compra anterior se consideró insuficiente). Formato de pack sin conciliar (42 según el usuario, 24 según el albarán) — se calcula en "cajas" del mismo formato que se repita, sin mostrar equivalencia en botellas/litros hasta confirmarlo.'},
+    {nombre:'Coca Cola normal',      hist:[0,0,24],    unidad:'pack',   packSize:24,   refUnidad:'unidades',
+      refCantidad:46, asistentesRef:114, refEstado:'calculado',
+      refNota:'8 packs iniciales (192 latas) − 4 devueltos (96 latas) − 50 latas sobrantes no devueltas = 46 latas consumidas. Se convierte a packs completos de 24 al calcular la compra.'},
     {nombre:'Coca Cola Zero',        hist:[0,0,24],    unidad:'pack',   packSize:24,   refCantidad:13, asistentesRef:114, refEstado:'calculado', refNota:'14 packs iniciales − 1 devuelto (albarán) = 13'},
-    {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack',   packSize:24,   refNota:'Conflicto sin resolver: CSV registra 1 sobrante, albarán 2 devueltos sobre 2 packs iniciales.'},
+    {nombre:'Kas Limón',             hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:1,  asistentesRef:114, refEstado:'calculado', refNota:'2 packs iniciales − 1 devuelto (confirmado) = 1'},
     {nombre:'Kas Naranja',           hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:2,  asistentesRef:114, refEstado:'calculado', refNota:'Fanta naranja / "Kas Naranja": 3 packs iniciales − 1 devuelto = 2'},
-    {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack',   packSize:24},
-    {nombre:'Energéticas',           hist:[90,90,100], unidad:'uds'},
+    {nombre:'Aquarade',              hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:2,  asistentesRef:114, refEstado:'calculado', refNota:'4 packs iniciales − 2 devueltos = 2'},
+    {nombre:'Energéticas',           hist:[90,90,100], unidad:'uds',
+      refObjetivoManual:150, asistentesRef:114,
+      refNota:'Objetivo manual del organizador: 150 latas individuales para 114 personas (faltaron la vez anterior). Si se compran solo por packs, redondear al formato real cuando se confirme — de momento se calcula en unidades sueltas.'},
     {nombre:'Nestea',                hist:[24,24,24],  unidad:'pack',   packSize:24,   refCantidad:3,  asistentesRef:114, refEstado:'calculado', refNota:'Fuze limón / "Nestea": 8 packs iniciales − 5 devueltos = 3'},
-    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:32},
-    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:32},
-    {nombre:'Vino',                  hist:[6,6,6],     unidad:'pack',   packSize:24},
-    {nombre:'Casera',                hist:[6,6,6],     unidad:'pack',   packSize:24},
-    {nombre:'Sidra',                 hist:[1,1,1],     unidad:'uds'},
-    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:32,   refCantidad:0,  asistentesRef:114, refEstado:'calculado', refNota:'Mahou 0,0: 3 packs iniciales − 3 devueltos = 0'},
+    {nombre:'Cerveza Mahou',         hist:[30,30,30],  unidad:'pack',   packSize:32,
+      refObjetivoManual:18, asistentesRef:114,
+      refNota:'Objetivo manual del organizador: 18 packs para 114 personas (la compra anterior de 16 fue insuficiente; se pidieron 1-2 packs de más). Formato: 32 unidades por pack.'},
+    {nombre:'Radler',                hist:[24,24,24],  unidad:'pack',   packSize:32,   refCantidad:3,  asistentesRef:114, refEstado:'calculado', refNota:'3 packs: se consumió todo y la cantidad fue adecuada. Formato: 32 unidades por pack.'},
+    {nombre:'Vino',                  hist:[6,6,6],     unidad:'botellas', packSize:null,
+      refObjetivoManual:12, asistentesRef:114,
+      refNota:'Objetivo manual del organizador: 12 BOTELLAS para 114 personas (no packs). El consumo real del X Aniversario se excluye del aprendizaje: una mala partida distorsionó la demanda. No se convierte a packs de 24 hasta confirmar el lote real de compra.'},
+    {nombre:'Casera',                hist:[6,6,6],     unidad:'botellas', packSize:null,
+      refObjetivoManual:12, asistentesRef:114,
+      refNota:'Objetivo manual del organizador: 12 BOTELLAS para 114 personas. El consumo real del X Aniversario se excluye del aprendizaje (dependía del mismo problema que el vino). No se convierte a packs de 24 hasta confirmar el lote real de compra.'},
+    {nombre:'Sidra',                 hist:[1,1,1],     unidad:'uds',                   refNota:'No hay cantidad inicial ni objetivo confirmado — el "1" del CSV era solo la previsión antigua, no un consumo real. Indica la cantidad realmente usada, o márcalo como "No ofrecer" si no se va a ofrecer esta vez.'},
+    {nombre:'Cerveza 0%',            hist:[24,24,0],   unidad:'pack',   packSize:32,   refCantidad:0,  asistentesRef:114, refEstado:'calculado', refNota:'Mahou 0,0: 3 packs iniciales − 3 devueltos = 0. Consumo cero confirmado — usa el mínimo manual si quieres seguir ofreciéndola.'},
   ]},
   {cat:'🥐 Desayunos', items:[
-    {nombre:'Leche sin lactosa',     hist:[6,6,6],     unidad:'briks 1L', refCantidad:10, asistentesRef:114, refEstado:'estimado', refNota:'6 + 4 repuestos = 10, asumiendo que no quedó nada (estimación)'},
+    {nombre:'Leche sin lactosa',     hist:[6,6,6],     unidad:'briks 1L', refProvisional:10, refNota:'6 iniciales + 4 repuestos = 10, asumiendo que no quedó nada (provisional, sin cierre confirmado)'},
     {nombre:'Leche entera',          hist:[5,5,4],     unidad:'pack 6u',  refCantidad:5,  asistentesRef:114, refEstado:'calculado', refNota:'7 iniciales − 2 sobrantes = 5'},
-    {nombre:'Leche soja',            hist:[0,0,2],     unidad:'briks',    refCantidad:6,  asistentesRef:114, refEstado:'estimado', refNota:'4 + 2 repuestos = 6, asumiendo que no quedó nada (estimación)'},
+    {nombre:'Leche soja',            hist:[0,0,2],     unidad:'briks',    refProvisional:6, refNota:'4 iniciales + 2 repuestos = 6, asumiendo que no quedó nada (provisional, sin cierre confirmado)'},
     {nombre:'Tomate con aceite',     hist:[5,5,4],     unidad:'pack 5x18',refCantidad:7,  asistentesRef:114, refEstado:'calculado', refNota:'7 iniciales − 0 sobrante = 7'},
     {nombre:'Bollería',              hist:[12,12,12],  unidad:'uds',      refCantidad:15, asistentesRef:114, refEstado:'calculado', refNota:'17 iniciales − 2 sobrantes = 15'},
-    {nombre:'Leche condensada',      hist:[1,1,2],     unidad:'botes'},
-    {nombre:'Colacao',               hist:[1,1,1],     unidad:'uds'},
-    {nombre:'Cápsulas café',         hist:[250,250,0], unidad:'uds'},
-    {nombre:'Cápsulas descafeinado', hist:[3,3,0],     unidad:'uds'},
-    {nombre:'Café Areces',           hist:[6,6,3],     unidad:'paquetes'},
-    {nombre:'Manzanilla',            hist:[0,0,1],     unidad:'cajas'},
-    {nombre:'Té verde',              hist:[0,0,1],     unidad:'cajas'},
+    {nombre:'Leche condensada',      hist:[1,1,2],     unidad:'botes',    refCantidad:2, asistentesRef:114, refEstado:'calculado', refNota:'Consumo confirmado por el usuario'},
+    {nombre:'Colacao',               hist:[1,1,1],     unidad:'uds',                    refProvisional:1},
+    {nombre:'Cápsulas café',         hist:[250,250,0], unidad:'uds',                    refProvisional:300},
+    {nombre:'Cápsulas descafeinado', hist:[3,3,0],     unidad:'uds',                    refProvisional:100},
+    {nombre:'Café Areces',           hist:[6,6,3],     unidad:'paquetes',               refProvisional:3},
+    {nombre:'Manzanilla',            hist:[0,0,1],     unidad:'cajas',                  refProvisional:1},
+    {nombre:'Té verde',              hist:[0,0,1],     unidad:'cajas',                  refProvisional:1},
   ]},
   {cat:'🍿 Picoteo', items:[
-    {nombre:'Mezcladitos 2kg',       hist:[3,3,3],     unidad:'bolsas'},
-    {nombre:'Palomitas',             hist:[1,1,1],     unidad:'uds'},
+    {nombre:'Mezcladitos 2kg',       hist:[3,3,3],     unidad:'bolsas',                 refProvisional:4},
+    {nombre:'Palomitas',             hist:[1,1,1],     unidad:'uds',                    refProvisional:2},
     {nombre:'Patatillas picantes',   hist:[2,2,1],     unidad:'bolsas',   refCantidad:2,  asistentesRef:114, refEstado:'calculado', refNota:'3 iniciales − 1 sobrante = 2'},
-    {nombre:'Patatitas normales',    hist:[2,2,2],     unidad:'bolsas'},
-    {nombre:'Cortezas 1kg',          hist:[1,1,1],     unidad:'bolsas'},
-    {nombre:'Conguitos 1kg',         hist:[6,6,0],     unidad:'bolsas'},
-    {nombre:'Barquillos',            hist:[1,1,1],     unidad:'kg'},
-    {nombre:'Gominolas 1kg',         hist:[6,6,8],     unidad:'bolsas'},
+    {nombre:'Patatitas normales',    hist:[2,2,2],     unidad:'bolsas',                 refProvisional:3},
+    {nombre:'Cortezas 1kg',          hist:[1,1,1],     unidad:'bolsas',                 refProvisional:2},
+    {nombre:'Conguitos 1kg',         hist:[6,6,0],     unidad:'bolsas',                 refProvisional:8},
+    {nombre:'Barquillos',            hist:[1,1,1],     unidad:'kg',                     refProvisional:2},
+    {nombre:'Gominolas 1kg',         hist:[6,6,8],     unidad:'bolsas',                 refProvisional:10},
     {nombre:'Nubes',                 hist:[2,2,2],     unidad:'bolsas',   refCantidad:3,  asistentesRef:114, refEstado:'calculado', refNota:'4 iniciales − 1 sobrante = 3'},
-    {nombre:'Regaliz',               hist:[3,3,3],     unidad:'kg'},
-    {nombre:'Galletitas saladas',    hist:[1,1,1],     unidad:'bolsas'},
+    {nombre:'Regaliz',               hist:[3,3,3],     unidad:'kg',                     refProvisional:4},
+    {nombre:'Galletitas saladas',    hist:[1,1,1],     unidad:'bolsas',                 refProvisional:2},
   ]},
   {cat:'🧻 Fungibles', items:[
-    {nombre:'Servilletas 200ud',     hist:[1,1,1],     unidad:'packs'},
-    {nombre:'Vasos café 240ud',      hist:[240,240,320],unidad:'uds'},
-    {nombre:'Vasos normales 350ud',  hist:[350,350,350],unidad:'uds'},
+    {nombre:'Servilletas 200ud',     hist:[1,1,1],     unidad:'packs',                  refProvisional:2},
+    {nombre:'Vasos café 240ud',      hist:[240,240,320],unidad:'uds',                   refProvisional:350},
+    {nombre:'Vasos normales 350ud',  hist:[350,350,350],unidad:'uds',                   refProvisional:500},
     {nombre:'Platos',                hist:[200,200,200],unidad:'uds',     refCantidad:300,asistentesRef:114, refEstado:'estimado', refNota:'200 + 100 repuestos = 300, asumiendo que no quedó nada (estimación)'},
-    {nombre:'Cuchillos',             hist:[0,0,200],   unidad:'uds'},
-    {nombre:'Tenedores',             hist:[0,0,200],   unidad:'uds'},
-    {nombre:'Papel higiénico',       hist:[24,24,24],  unidad:'rollos'},
-    {nombre:'Mantel rollo 50m',      hist:[1,1,0],     unidad:'rollos'},
+    {nombre:'Cuchillos',             hist:[0,0,200],   unidad:'uds',                    refProvisional:200},
+    {nombre:'Tenedores',             hist:[0,0,200],   unidad:'uds',      refCantidad:200,asistentesRef:114, refEstado:'estimado', refNota:'Cantidad inicial provisional: 200'},
+    {nombre:'Cucharas',              hist:[0,0,0],     unidad:'uds'},
+    {nombre:'Papel higiénico',       hist:[24,24,24],  unidad:'rollos',                 refProvisional:32},
+    {nombre:'Mantel rollo 50m',      hist:[1,1,0],     unidad:'rollos',                 refProvisional:1},
   ]},
 ];
 const ASISTENTES_REFERENCIA_DEFAULT = 114; // X Aniversario
@@ -5753,10 +5849,36 @@ function calcularConsumoRegistro(reg){
 // Las jornadas siempre duran lo mismo: NO hay ningún factor de días, solo
 // se escala por número de asistentes.
 function referenciaItem(item){
-  // Capa 3: ajuste manual explícito y activo.
+  // Capa 0: marcado explícitamente como "no ofrecer este evento".
+  if(DB.sum_no_ofrecer && DB.sum_no_ofrecer[item.id]){
+    return {cantidad:null, asistentes:null, estado:'no_ofrecido', editable:true, manual:false, nota:item.refNota};
+  }
+
+  // Capa 3: ajuste manual explícito y activo (sustituye cualquier otra capa).
   const manual = DB.sum_referencias && DB.sum_referencias[item.id];
   if(manual && manual.activo!==false && manual.valor!==null && manual.valor!==undefined){
-    return {cantidad:manual.valor, asistentes:ASISTENTES_REFERENCIA_DEFAULT, estado:'editado', editable:true, manual:true, nota:item.refNota};
+    return {cantidad:manual.valor, asistentes:ASISTENTES_REFERENCIA_DEFAULT, estado:'editado', tipoRef: manual.tipo||'consumo', editable:true, manual:true, nota:item.refNota};
+  }
+
+  // ¿Hay algún cierre histórico posterior guardado para este producto? (Solo
+  // para avisar si hay un objetivo manual activo — nunca lo sustituye solo.)
+  const hayCierrePosterior = (DB.sum_historial||[]).some(function(ed){
+    const reg=(ed.registros||{})[item.id];
+    return reg && (reg.estado==='VALIDADO'||reg.estado==='PROVISIONAL') && reg.consumo!==null;
+  });
+
+  // Capa "objetivo manual": cantidad ya decidida por el organizador — se
+  // escala por asistentes SIN añadir otro margen. Tiene prioridad sobre el
+  // histórico mientras no se desactive explícitamente, pero avisa si ya hay
+  // un cierre real posterior disponible.
+  if(item.refObjetivoManual!==undefined && item.refObjetivoManual!==null){
+    const desactivado = DB.sum_objetivo_desactivado && DB.sum_objetivo_desactivado[item.id];
+    if(!desactivado){
+      let nota = item.refNota||'';
+      if(hayCierrePosterior) nota += ' (Hay un cierre real posterior guardado sin usar — desactiva el objetivo manual para aprovecharlo.)';
+      return {cantidad:item.refObjetivoManual, asistentes:item.asistentesRef||ASISTENTES_REFERENCIA_DEFAULT, estado:'objetivo_manual', tipoRef:'objetivo', editable:true, manual:false, esObjetivoManual:true, nota:nota};
+    }
+    // Desactivado: cae al histórico de abajo como cualquier otro producto.
   }
 
   // Capas 1+2: construir la lista de cierres conocidos en orden cronológico
@@ -5773,11 +5895,24 @@ function referenciaItem(item){
     if(asist<=0 || reg.consumo===null) return; // consumo===0 SÍ es válido, solo se descarta null/asistentes desconocidos
     cierres.push({cantidad:reg.consumo, asistentes:asist, estado: reg.estado==='VALIDADO'?'calculado':'estimado', fecha: ed.fecha||'9999-99-99', nota:reg.nota, edicion:ed.nombre});
   });
-  if(!cierres.length) return {cantidad:null, asistentes:null, estado:'pendiente', editable:true, manual:false, nota:item.refNota};
+  if(cierres.length){
+    cierres.sort(function(a,b){ return String(a.fecha).localeCompare(String(b.fecha)); });
+    const ultimo = cierres[cierres.length-1];
+    return {cantidad:ultimo.cantidad, asistentes:ultimo.asistentes, estado:ultimo.estado, tipoRef:'consumo', editable:true, manual:false, nota:ultimo.nota, edicion:ultimo.edicion};
+  }
 
-  cierres.sort(function(a,b){ return String(a.fecha).localeCompare(String(b.fecha)); });
-  const ultimo = cierres[cierres.length-1];
-  return {cantidad:ultimo.cantidad, asistentes:ultimo.asistentes, estado:ultimo.estado, editable:true, manual:false, nota:ultimo.nota, edicion:ultimo.edicion};
+  // Capa "provisional en bloque": solo cantidad inicial del CSV, sin cierre
+  // (sobrante vacío). Se usa ÚNICAMENTE si el interruptor global está
+  // activado — mientras tanto, se queda en Pendiente para no fingir un
+  // consumo confirmado que en realidad no lo es.
+  if(item.refProvisional!==undefined && item.refProvisional!==null){
+    if(DB.sum_usar_provisionales){
+      return {cantidad:item.refProvisional, asistentes:ASISTENTES_REFERENCIA_DEFAULT, estado:'provisional', tipoRef:'consumo', editable:true, manual:false, nota:(item.refNota||'')+' Cantidad inicial del CSV sin sobrante registrado: solo se usa porque activaste "Usar referencias provisionales".'};
+    }
+    return {cantidad:null, asistentes:null, estado:'pendiente', editable:true, manual:false, nota:'Hay una cantidad inicial provisional ('+item.refProvisional+') pendiente de confirmar el sobrante. Activa "Usar referencias provisionales" para usarla mientras tanto.'};
+  }
+
+  return {cantidad:null, asistentes:null, estado:'pendiente', editable:true, manual:false, nota:item.refNota};
 }
 
 // ── Previsión de un producto (con margen configurable) ─────────────────
@@ -5787,19 +5922,72 @@ function referenciaItem(item){
 // Sin referencia, demanda es null (Pendiente) — nunca 0 disfrazado de "OK".
 function preverItemSum(item, asistFuturos, margen){
   const ref = referenciaItem(item);
-  const stockUtilizable = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
+  const stockRaw = (DB.suministros_stock && (DB.suministros_stock[item.id] ?? DB.suministros_stock[item.nombre])) || 0;
+  // El stock físico real nunca puede ser negativo. Si hay un valor negativo
+  // persistido (de una migración antigua que confundió una compra extra o
+  // una devolución con "stock"), se ignora aquí — nunca resta al revés.
+  const stockUtilizable = Math.max(0, stockRaw);
   const lote = item.tamanoLote||1;
+  const minimo = (DB.sum_minimos && DB.sum_minimos[item.id]) || 0;
   if(ref.cantidad===null || !ref.asistentes){
-    return {ref, demanda:null, objetivo:null, stockUtilizable, compra:null};
+    const compraMin = minimo>0 ? Math.ceil(minimo/lote)*lote : null;
+    return {ref, demanda:null, objetivo:null, stockUtilizable, minimo, compra:compraMin};
   }
   const demanda = ref.cantidad * asistFuturos / ref.asistentes;
-  const objetivo = demanda * (1+margen);
+  // Objetivo manual: SIN margen adicional (el organizador ya lo decidió).
+  // Consumo histórico/provisional: SÍ se le añade el margen elegido.
+  const objetivo = ref.tipoRef==='objetivo' ? demanda : demanda * (1+margen);
   // Tolerancia mínima antes de redondear hacia arriba, para que imprecisiones
   // de coma flotante (ej. 340*1.10 = 374.00000000000006 en JS) no añadan una
   // unidad de más. Solo afecta al redondeo final, nunca al cálculo interno.
   const EPS = 1e-9;
-  const compra = Math.max(0, Math.ceil((objetivo-stockUtilizable)/lote - EPS))*lote;
-  return {ref, demanda, objetivo, stockUtilizable, compra};
+  // Si la referencia está en unidades sueltas (ej. latas) pero el producto se
+  // compra en packs, se convierte AQUÍ, después del margen — nunca antes.
+  const objetivoEnLote = (item.esBebidaPack && item.refUnidad==='unidades' && item.packSize)
+    ? objetivo / item.packSize
+    : objetivo;
+  let compra = Math.max(0, Math.ceil((objetivoEnLote-stockUtilizable)/lote - EPS))*lote;
+  if(compra < minimo) compra = Math.ceil(minimo/lote)*lote;
+  return {ref, demanda, objetivo, stockUtilizable, minimo, compra};
+}
+
+async function toggleObjetivoManualSum(itemId){
+  if(!DB.sum_objetivo_desactivado) DB.sum_objetivo_desactivado={};
+  if(DB.sum_objetivo_desactivado[itemId]){
+    delete DB.sum_objetivo_desactivado[itemId];
+  } else {
+    if(!confirm('¿Desactivar el objetivo manual de este producto? Pasará a usar el histórico/aprendizaje automático en su lugar.')) return;
+    DB.sum_objetivo_desactivado[itemId]=true;
+  }
+  const ok = await saveRemote();
+  if(ok) calcularSuministros();
+}
+
+async function editarMinimoSum(itemId){
+  const actual = (DB.sum_minimos && DB.sum_minimos[itemId]) || '';
+  const val = prompt('Mínimo manual a comprar de todas formas (aunque la demanda calculada sea menor o cero). Déjalo en blanco para quitarlo.', actual);
+  if(val===null) return;
+  if(!DB.sum_minimos) DB.sum_minimos={};
+  if(val.trim()===''){ delete DB.sum_minimos[itemId]; }
+  else {
+    const n=Number(val);
+    if(isNaN(n)||n<0){ toast('Escribe un número válido','err'); return; }
+    DB.sum_minimos[itemId]=n;
+  }
+  const ok = await saveRemote();
+  if(ok) calcularSuministros();
+}
+
+async function toggleNoOfrecerSum(itemId){
+  if(!DB.sum_no_ofrecer) DB.sum_no_ofrecer={};
+  if(DB.sum_no_ofrecer[itemId]){
+    delete DB.sum_no_ofrecer[itemId];
+  } else {
+    if(!confirm('¿Marcar este producto como "No ofrecer" en la próxima edición? No se propondrá ninguna compra para él hasta que lo reactives.')) return;
+    DB.sum_no_ofrecer[itemId]=true;
+  }
+  const ok = await saveRemote();
+  if(ok) calcularSuministros();
 }
 
 async function editarReferenciaSum(itemId){
@@ -5821,7 +6009,17 @@ async function editarReferenciaSum(itemId){
   if(ok) calcularSuministros();
 }
 
+async function guardarUsarProvisionalesSum(valor){
+  DB.sum_usar_provisionales = !!valor;
+  const ok = await saveRemote();
+  if(ok) calcularSuministros();
+}
+
 function calcularSuministros(){
+  sanearStockSumSiHaceFalta();
+  sanearStockSumV2SiHaceFalta();
+  const chkProv = document.getElementById('sum-usar-provisionales');
+  if(chkProv) chkProv.checked = !!DB.sum_usar_provisionales;
   const asist = Number(document.getElementById('sum-asistentes')?.value||100);
   const margen = Number(document.getElementById('sum-margen')?.value||10)/100;
   const el = document.getElementById('sum-categorias');
@@ -5833,32 +6031,48 @@ function calcularSuministros(){
       const ref = p.ref;
       const unidadLabel = item.esBebidaPack ? ('Pack de '+(item.packSize?item.packSize+' unidades':'formato sin confirmar')) : item.unidad;
 
-      // Detalle secundario: qué referencia se está usando, editable solo si
-      // no está bloqueada por venir ya verificada del código.
+      // Detalle secundario: qué referencia se está usando, editable, con
+      // enlace para marcar/desmarcar "No ofrecer" en cualquier producto.
+      const noOfrecido = ref.estado==='no_ofrecido';
+      const enlaceNoOfrecer = noOfrecido
+        ? ` <a href="#" onclick="toggleNoOfrecerSum('${item.id}');return false" style="color:var(--accent-d)">reactivar</a>`
+        : ` <a href="#" onclick="toggleNoOfrecerSum('${item.id}');return false" style="color:var(--ink3)">no ofrecer</a>`;
       let refDetalle;
-      if(ref.cantidad===null){
+      if(noOfrecido){
+        refDetalle = `<div style="font-size:10px;color:var(--ink3);margin-top:2px">No se ofrece este evento${enlaceNoOfrecer}</div>`;
+      } else if(ref.cantidad===null){
         refDetalle = ref.editable
-          ? `<div style="font-size:10px;color:var(--ink3);margin-top:2px">Sin referencia<button class="btn btn-xs" style="margin-left:4px;padding:1px 6px" onclick="editarReferenciaSum('${item.id}')">+ añadir</button></div>`
-          : `<div style="font-size:10px;color:var(--ink3);margin-top:2px" title="${ref.nota||''}">Pendiente de conciliar</div>`;
+          ? `<div style="font-size:10px;color:var(--ink3);margin-top:2px" title="${ref.nota||''}">Sin referencia<button class="btn btn-xs" style="margin-left:4px;padding:1px 6px" onclick="editarReferenciaSum('${item.id}')">+ añadir</button>${enlaceNoOfrecer}</div>`
+          : `<div style="font-size:10px;color:var(--ink3);margin-top:2px" title="${ref.nota||''}">Pendiente de conciliar${enlaceNoOfrecer}</div>`;
       } else {
-        const etiqueta = ref.estado==='calculado' ? '' : ref.estado==='editado' ? ' (editado)' : ' (estimado)';
+        const etiqueta = ref.estado==='calculado' ? '' : ref.estado==='editado' ? ' (editado)' : ref.estado==='provisional' ? ' (provisional)' : ref.estado==='objetivo_manual' ? ' (objetivo manual, sin margen)' : ' (estimado)';
         const enlace = ref.editable ? ` <a href="#" onclick="editarReferenciaSum('${item.id}');return false" style="color:var(--accent-d)">editar</a>` : '';
-        refDetalle = `<div style="font-size:10px;color:var(--ink3);margin-top:2px" title="${ref.nota||''}">ref: ${ref.cantidad} / ${ref.asistentes}p${etiqueta}${enlace}</div>`;
+        const enlaceObjetivo = ref.esObjetivoManual ? ` <a href="#" onclick="toggleObjetivoManualSum('${item.id}');return false" style="color:var(--ink3)">desactivar objetivo</a>` : '';
+        refDetalle = `<div style="font-size:10px;color:var(--ink3);margin-top:2px" title="${ref.nota||''}">ref: ${ref.cantidad} / ${ref.asistentes}p${etiqueta}${enlace}${enlaceObjetivo}${enlaceNoOfrecer}</div>`;
+      }
+      if(DB.sum_objetivo_desactivado && DB.sum_objetivo_desactivado[item.id] && item.refObjetivoManual!==undefined){
+        refDetalle += `<div style="font-size:10px;color:var(--ink3)"><a href="#" onclick="toggleObjetivoManualSum('${item.id}');return false" style="color:var(--accent-d)">reactivar objetivo manual (${item.refObjetivoManual})</a></div>`;
       }
 
-      const demandaLabel = p.demanda!==null ? p.demanda.toFixed(1) : 'Pendiente';
+      const demandaLabel = p.demanda!==null ? p.demanda.toFixed(1) : (noOfrecido ? '—' : 'Pendiente');
+      const minimoActual = p.minimo||0;
+      const enlaceMinimo = ` <a href="#" onclick="editarMinimoSum('${item.id}');return false" style="color:var(--ink3);font-size:9px">${minimoActual>0?'mínimo: '+minimoActual+' (editar)':'+ mínimo manual'}</a>`;
 
       // "No comprar" solo puede salir con un cálculo real; si no hay
       // referencia, se muestra "Pendiente" — nunca "✓ OK" disfrazando un vacío.
       let compraHTML;
-      if(p.demanda===null){
-        compraHTML = `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">Pendiente</span>`;
+      if(noOfrecido){
+        compraHTML = `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">No ofrecido</span>`;
+      } else if(p.demanda===null){
+        compraHTML = p.compra>0
+          ? `<span style="background:var(--surface);color:var(--ink2);font-weight:600;font-size:11px;padding:3px 10px;border-radius:20px" title="Mínimo manual, sin previsión calculada">${p.compra} (mínimo)</span><div>${enlaceMinimo}</div>`
+          : `<span style="background:var(--surface);color:var(--ink3);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">Pendiente</span>`;
       } else if(p.compra>0){
         const sufijo = item.esBebidaPack ? ' packs' : '';
         const equivalencia = (item.esBebidaPack && item.packSize) ? `<div style="font-size:9px;color:var(--ink3);margin-top:2px">= ${p.compra*item.packSize} unidades</div>` : '';
         compraHTML = `<span style="background:var(--red);color:#fff;font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px">${p.compra}${sufijo}</span>${equivalencia}`;
       } else {
-        compraHTML = `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">No comprar</span>`;
+        compraHTML = `<span style="background:var(--green-l);color:var(--green);font-weight:600;font-size:12px;padding:3px 10px;border-radius:20px">No comprar</span><div>${enlaceMinimo}</div>`;
       }
 
       return `<tr>
@@ -5894,7 +6108,61 @@ function calcularSuministros(){
 async function guardarStock(itemId, valor){
   if(!DB.suministros_stock) DB.suministros_stock={};
   DB.suministros_stock[itemId] = Number(valor)||0;
+  // Marca este stock como confirmado a mano por el admin: a partir de ahora
+  // el autosaneamiento nunca lo vuelve a tocar, sea cual sea su valor.
+  if(!DB.stock_confirmado) DB.stock_confirmado={};
+  DB.stock_confirmado[itemId] = true;
   await saveRemote();
+}
+
+// Autosaneamiento de stock, UNA sola vez por dispositivo/base de datos, sin
+// pulsar nada: limpia la contaminación conocida de versiones anteriores (una
+// devolución de bebidas o una compra extra histórica que quedó guardada como
+// si fuera stock físico). Nunca toca un producto cuyo stock haya sido
+// confirmado explícitamente por el admin (DB.stock_confirmado).
+function sanearStockSumSiHaceFalta(){
+  if(DB._stock_saneado_v1) return;
+  const CONTAMINABLES = ['coca_cola_zero','nestea','kas_naranja','cerveza_0','platos','leche_sin_lactosa','leche_soja'];
+  let cambiado = false;
+  CONTAMINABLES.forEach(function(id){
+    if(DB.stock_confirmado && DB.stock_confirmado[id]) return; // confirmado a mano: no tocar
+    if(DB.suministros_stock && DB.suministros_stock[id]){
+      DB.suministros_stock[id] = 0;
+      cambiado = true;
+    }
+  });
+  DB._stock_saneado_v1 = true;
+  if(cambiado){ log('SUM_AUTOSANEO_STOCK','stock contaminado reseteado automáticamente'); saveRemote(); }
+}
+
+// Segunda pasada, automática y de una sola vez: aplica el stock físico
+// CONFIRMADO por el organizador para esta planificación, sustituyendo los
+// stocks antiguos. Guarda copia de seguridad antes. No se resta nada al
+// consumo histórico — solo afecta a la próxima compra.
+function sanearStockSumV2SiHaceFalta(){
+  if(DB._stock_saneado_v2) return;
+  if(!DB.sum_backups) DB.sum_backups=[];
+  DB.sum_backups.push({
+    fecha:new Date().toISOString(),
+    motivo:'antes de aplicar stock confirmado v2',
+    suministros_stock: JSON.parse(JSON.stringify(DB.suministros_stock||{})),
+  });
+  if(DB.sum_backups.length>10) DB.sum_backups = DB.sum_backups.slice(-10);
+
+  const STOCK_CONFIRMADO_V2 = {platos:50, tenedores:50, cucharas:50};
+  const nuevoStock = {};
+  SUMINISTROS_DATA.forEach(function(cat){
+    cat.items.forEach(function(it){
+      nuevoStock[it.id] = STOCK_CONFIRMADO_V2[it.id] || 0;
+    });
+  });
+  DB.suministros_stock = nuevoStock;
+  if(!DB.stock_confirmado) DB.stock_confirmado={};
+  Object.keys(STOCK_CONFIRMADO_V2).forEach(function(id){ DB.stock_confirmado[id]=true; });
+
+  DB._stock_saneado_v2 = true;
+  log('SUM_STOCK_CONFIRMADO_V2','Platos=50, Tenedores=50, Cucharas=50, resto=0 (copia de seguridad guardada)');
+  saveRemote();
 }
 
 // Congela la previsión actual (con sus asistentes/días/margen) para una
@@ -6036,6 +6304,8 @@ function renderSuministros(){
 }
 
 function calcularPostEvento(){
+  sanearStockSumSiHaceFalta();
+  sanearStockSumV2SiHaceFalta();
   const el = document.getElementById('sum-categorias');
   if(!el) return;
   const registros = DB.sum_registro || {};
