@@ -36,7 +36,10 @@ const CFG = {
   JSONBIN_BIN_ID:  '69e49d17aaba8821971556d2',
   JSONBIN_API_KEY: '$2a$10$3tBAHetPAkRj6THUGHfVjemFyPef/KqH2oKJBrPbhhXTJBTZRSnai',
   EVENTO:          'Jornadas Astur Lúdicas',
-  // Contraseña universal para inscritos (distinta de la de admins)
+  // Contraseña universal para inscritos (distinta de la de admins). Valor de
+  // FÁBRICA solamente: la contraseña real y editable vive en DB.config.inscritoPass
+  // (se pregunta cada vez que se crea una nueva edición). Este valor solo se
+  // usa si por lo que sea DB.config.inscritoPass no está definida todavía.
   INSCRITO_PASS:   'jornadas2025',
   // ACCESO_ABIERTO:
   //   true  → cualquier email entra (útil para pruebas)
@@ -935,6 +938,7 @@ tbody tr:hover td{background:var(--paper)}
           <div class="form-grid">
             <div class="fg"><label>Nombre del evento</label><input type="text" id="cfg-nombre" oninput="saveConfig()"></div>
             <div class="fg"><label>Fechas</label><input type="text" id="cfg-fechas" placeholder="Ej: 14–16 marzo 2026" oninput="saveConfig()"></div>
+            <div class="fg"><label>Contraseña de acceso (inscritos)</label><input type="text" id="cfg-pass-inscritos" placeholder="jornadas2025" oninput="saveConfig()"></div>
           </div>
           <div class="fg"><label>Aviso para inscritos</label><textarea id="cfg-aviso" rows="3" oninput="saveConfig()"></textarea></div>
         </div>
@@ -1931,7 +1935,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 114; // se incrementa con cada versión desplegada
+const APP_VERSION = 115; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
@@ -2373,9 +2377,12 @@ async function loginInscrito(){
   if(CFG.ADMINS.some(a => a.email === email)){
     showErr('err-i','Este email es de administrador. Usa el panel de admin.'); return;
   }
-  // Comprobar contraseña — comparación normalizada
-  const passOk = cod === CFG.INSCRITO_PASS
-              || cod.toLowerCase() === CFG.INSCRITO_PASS.toLowerCase();
+  // Comprobar contraseña — comparación normalizada. La contraseña real es la
+  // guardada en DB.config.inscritoPass (editable, se fija al crear cada
+  // edición); si no existe todavía, se usa la de fábrica como respaldo.
+  const passActual = (DB.config && DB.config.inscritoPass) || CFG.INSCRITO_PASS;
+  const passOk = cod === passActual
+              || cod.toLowerCase() === passActual.toLowerCase();
   if(!passOk){
     showErr('err-i', 'Contraseña incorrecta.');
     return;
@@ -4285,6 +4292,22 @@ async function ejecutarImport(){
     log('IMPORTAR_FORMS',`nuevos:${crea} ya-existian:${act} vinc:${vinc} grupos:${stats.grupos}`);
     await saveRemote();
 
+    // Detectar automáticamente los tipos de inscripción (valores distintos de
+    // "Modalidad") que trae este archivo, con cuántas personas y qué precio
+    // se puede extraer de cada uno — así no hay que ir a buscarlos a mano.
+    const modalidadesCount={};
+    personas.forEach(p=>{ const mo=String(p.Modalidad||'').trim(); if(mo) modalidadesCount[mo]=(modalidadesCount[mo]||0)+1; });
+    const modalidadesDetectadas=Object.keys(modalidadesCount).sort();
+    const modalidadesHTML=modalidadesDetectadas.length
+      ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'
+        +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink3);margin-bottom:6px">Tipos de inscripción detectados en este archivo</div>'
+        +modalidadesDetectadas.map(function(mo){
+            const precio=precioDeModalidad(mo);
+            return '<div style="font-size:12px;padding:3px 0">• '+mo+' — <strong>'+modalidadesCount[mo]+'</strong> persona'+(modalidadesCount[mo]>1?'s':'')+(precio?' · '+precio.toFixed(2)+'€':' · <span style="color:var(--amber)">sin precio detectable (añade "(NNN€)" al texto si lleva coste)</span>')+'</div>';
+          }).join('')
+        +'</div>'
+      : '';
+
     const res=document.getElementById('csv-res');
     res.style.display='block';
     const listaAct=nombresActualizados.length?'<div style="margin-top:6px;font-size:11px;color:var(--ink3)">Ya existían (no modificadas): '+nombresActualizados.slice(0,8).join(', ')+(nombresActualizados.length>8?` y ${nombresActualizados.length-8} más`:'')+'</div>':'';
@@ -4297,6 +4320,7 @@ async function ejecutarImport(){
         <span>👥 Grupos creados: <strong>${stats.grupos}</strong></span>
       </div>
       ${listaAct}
+      ${modalidadesHTML}
       <div style="margin-top:8px;font-size:12px;color:var(--ink3)">
         Las personas que ya existían no han sido modificadas (pagos, notas, importes intactos). Sólo se actualiza GrupoID/EsTitular si estaban vacíos.
       </div>
@@ -4319,6 +4343,7 @@ function renderConfig(){
   document.getElementById('cfg-nombre').value=DB.config.nombre||'';
   document.getElementById('cfg-fechas').value=DB.config.fechas||'';
   document.getElementById('cfg-aviso').value=DB.config.aviso||'';
+  document.getElementById('cfg-pass-inscritos').value=DB.config.inscritoPass||CFG.INSCRITO_PASS||'';
   // Toggle acceso
   const togAcceso=document.getElementById('tog-acceso');
   const lblAcceso=document.getElementById('lbl-acceso');
@@ -4343,6 +4368,7 @@ async function saveConfig(){
   DB.config.nombre=document.getElementById('cfg-nombre').value;
   DB.config.fechas=document.getElementById('cfg-fechas').value;
   DB.config.aviso=document.getElementById('cfg-aviso').value;
+  DB.config.inscritoPass=document.getElementById('cfg-pass-inscritos').value.trim()||CFG.INSCRITO_PASS;
   document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
   await saveRemote();
   toast('Configuración guardada','ok');
@@ -6912,10 +6938,39 @@ function diagnosticoAgenda(){
 async function nuevaEdicion(){
   var nombre=prompt('Nombre de la nueva edición (ej: AsturLúdicas 10ª):');
   if(!nombre) return;
-  if(!confirm('¿Iniciar la edición "'+nombre+'"?\n\nSe borrarán TODOS los datos: personas, pagos, partidas, habitaciones, asignaciones, mensajes, mercadillo, comida confraternización.\n\nSolo se conservan los SUMINISTROS.\n\n¿Continuar?')) return;
 
-  // Conservar solo suministros
-  var stockActual = DB.suministros_stock || {};
+  var resumen = 'Vas a crear la edición "'+nombre+'".\n\n'
+    +'❌ SE BORRA (empieza de cero):\n'
+    +'  • Personas, grupos y pagos\n'
+    +'  • Habitaciones y asignaciones\n'
+    +'  • Partidas del calendario\n'
+    +'  • Solicitudes, mensajes y sus lecturas\n'
+    +'  • Comidas (opt-in e info) y mercadillo\n'
+    +'  • Comida del jueves (info, entrantes y PLATOS — tendrás que meterlos otra vez cuando los sepáis)\n'
+    +'  • Historial de acciones (logs)\n'
+    +'  • La entrada del post-evento en curso en Suministros (sum_registro)\n\n'
+    +'✅ SE CONSERVA:\n'
+    +'  • Suministros: histórico de consumos, referencias corregidas, stock físico y previsiones congeladas — así aprende de una edición a la siguiente\n'
+    +'  • Los tipos de habitación/colores y demás configuración del propio código\n\n'
+    +'A continuación te preguntará la contraseña de acceso para los inscritos nuevos.\n\n¿Continuar?';
+  if(!confirm(resumen)) return;
+
+  var passNueva = prompt('Contraseña de acceso para los inscritos de "'+nombre+'"\n(la necesitarán junto a su email para entrar — nadie entra hasta que esté en la lista de inscritos de esta nueva edición):', DB.config?.inscritoPass||CFG.INSCRITO_PASS||'');
+  if(passNueva===null) return; // cancelado: no se borra nada
+  passNueva = passNueva.trim();
+  if(!passNueva){ toast('Necesitas poner una contraseña','err'); return; }
+
+  // Conservar Suministros tal cual (aprende de una edición a la siguiente)
+  var sumStock = DB.suministros_stock || {};
+  var sumHistorial = DB.sum_historial || [];
+  var sumReferencias = DB.sum_referencias || {};
+  var sumMinimos = DB.sum_minimos || {};
+  var sumNoOfrecer = DB.sum_no_ofrecer || {};
+  var sumObjetivoDesactivado = DB.sum_objetivo_desactivado || {};
+  var sumPrevisionesCongeladas = DB.sum_previsiones_congeladas || {};
+  var sumBackups = DB.sum_backups || [];
+  var stockConfirmado = DB.stock_confirmado || {};
+  var sumUsarProvisionales = DB.sum_usar_provisionales || false;
 
   // Reset completo de DB
   DB.personas=[];
@@ -6938,11 +6993,22 @@ async function nuevaEdicion(){
   DB.confra_peticiones=[];
   DB.confra_llevar=[];
   DB.modulos={ alojamiento:false };
-  DB.config={ nombre:nombre, fechas:'', aviso:'' };
+  DB.config={ nombre:nombre, fechas:'', aviso:'', inscritoPass:passNueva };
   DB.logs=[];
-  // Restaurar suministros (el histórico y las previsiones congeladas se conservan siempre)
-  DB.suministros_stock = stockActual;
-  DB.sum_registro={};
+  // Restaurar Suministros íntegro (histórico, referencias, stock, previsiones
+  // congeladas...) — es justo lo que le permite aprender de esta edición
+  // para la siguiente, no se toca al crear una edición nueva.
+  DB.suministros_stock = sumStock;
+  DB.sum_historial = sumHistorial;
+  DB.sum_referencias = sumReferencias;
+  DB.sum_minimos = sumMinimos;
+  DB.sum_no_ofrecer = sumNoOfrecer;
+  DB.sum_objetivo_desactivado = sumObjetivoDesactivado;
+  DB.sum_previsiones_congeladas = sumPrevisionesCongeladas;
+  DB.sum_backups = sumBackups;
+  DB.stock_confirmado = stockConfirmado;
+  DB.sum_usar_provisionales = sumUsarProvisionales;
+  DB.sum_registro={}; // el post-evento EN CURSO sí se limpia: es de la edición que acaba
 
   log('NUEVA_EDICION', nombre);
   await saveRemote();
