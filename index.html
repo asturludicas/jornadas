@@ -2017,6 +2017,7 @@ async function loadRemote(){
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
 const APP_VERSION = 124; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
+let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
 const SNAPSHOT_KEEP = 40;           // mantener los últimos N snapshots
 let _syncOK = true;                 // indicador visible de "estoy sincronizado"
@@ -2164,7 +2165,7 @@ async function saveRemote(){
       if(remH  >=  5 && nuevoH  < remH  * 0.5) anomalias.push('habitaciones '+remH+'→'+nuevoH);
       if(remG  >= 10 && nuevoG  < remG  * 0.5) anomalias.push('grupos '+remG+'→'+nuevoG);
       if(remPa >= 20 && nuevoPa < remPa * 0.5) anomalias.push('pagos '+remPa+'→'+nuevoPa);
-      if(anomalias.length){
+      if(anomalias.length && !_permitirVaciado){
         okFinal=false;
         _syncOK=false;
         actualizarSyncBadge();
@@ -7043,6 +7044,9 @@ async function nuevaEdicion(){
     +'  • Solicitudes, mensajes y sus lecturas\n'
     +'  • Comidas (opt-in e info) y mercadillo\n'
     +'  • Comida del jueves (info, entrantes y PLATOS — tendrás que meterlos otra vez cuando los sepáis)\n'
+    +'  • Top Juegos y Premios (votos, juegos añadidos y fechas de votación)\n'
+    +'  • Camisetas extra, desayunos y confirmaciones de la comida del domingo\n'
+    +'  • Chats de las partidas\n'
     +'  • Historial de acciones (logs)\n'
     +'  • La entrada del post-evento en curso en Suministros (sum_registro)\n\n'
     +'✅ SE CONSERVA:\n'
@@ -7055,6 +7059,14 @@ async function nuevaEdicion(){
   if(passNueva===null) return; // cancelado: no se borra nada
   passNueva = passNueva.trim();
   if(!passNueva){ toast('Necesitas poner una contraseña','err'); return; }
+
+  // Copia de seguridad completa de la edición que se cierra, ANTES de borrar nada
+  try{
+    var _antes = JSON.parse(JSON.stringify(DB));
+    _antes.personas = (_antes.personas||[]).filter(p=>!p._esInvitado&&!p._esOrganizador);
+    DB._snapLast = 0; // fuerza el snapshot aunque no toque por tiempo
+    await tomarSnapshotSiToca(_antes);
+  }catch(e){ console.warn('Snapshot previo a nueva edición falló:', e); }
 
   // Conservar Suministros tal cual (aprende de una edición a la siguiente)
   var sumStock = DB.suministros_stock || {};
@@ -7091,6 +7103,15 @@ async function nuevaEdicion(){
   DB.modulos={ alojamiento:false };
   DB.config={ nombre:nombre, fechas:'', aviso:'', inscritoPass:passNueva };
   DB.logs=[];
+  DB.topjuegos_votos={};
+  DB.topjuegos_extra={};
+  DB.topjuegos_config={inicio:'',fin:''};
+  DB.premios_votos={};
+  DB.premios_config={inicio:'',fin:''};
+  DB.partidas_chat={};
+  DB.camisetas_extra=[];
+  DB.desayunos_marsol={};
+  DB.comida_dom_confirmado={};
   // Restaurar Suministros íntegro (histórico, referencias, stock, previsiones
   // congeladas...) — es justo lo que le permite aprender de esta edición
   // para la siguiente, no se toca al crear una edición nueva.
@@ -7107,7 +7128,19 @@ async function nuevaEdicion(){
   DB.sum_registro={}; // el post-evento EN CURSO sí se limpia: es de la edición que acaba
 
   log('NUEVA_EDICION', nombre);
-  await saveRemote();
+  // Si hay otro guardado en curso, esperar: si no, saveRemote() solo lo encola
+  // y el guardado real se haría sin el permiso de vaciado.
+  while(_saving) await new Promise(r=>setTimeout(r,200));
+  var okGuardado=false;
+  _permitirVaciado=true;
+  try{ okGuardado = await saveRemote(); }
+  finally{ _permitirVaciado=false; }
+  if(!okGuardado){
+    toast('⚠ La nueva edición NO se ha guardado. Se recargan los datos del servidor; no se ha borrado nada.','err',15000);
+    try{ await loadRemote(); }catch(e){}
+    nav('dashboard'); renderDashboard();
+    return;
+  }
   toast('Nueva edición iniciada: '+nombre,'ok');
   nav('dashboard');
   renderDashboard();
