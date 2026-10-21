@@ -1777,6 +1777,18 @@ async function jbSet(data){
 // ─── TIEMPO REAL: Firebase SSE ─────────────────────────
 let _fbListener=null;
 var _ultimoGuardadoOk=true;
+// Firebase no guarda arrays ni objetos vacíos: si una rama se vacía (p. ej. al
+// crear una nueva edición), la clave DESAPARECE del servidor. Sin esto, el DB
+// local conservaría los datos viejos y un dispositivo abierto podría volver a
+// subirlos en su siguiente guardado.
+const DB_VACIOS_ARRAY=['personas','grupos','partidas','habitaciones','solicitudes','pagos','gastos','cobros','mensajes','camisetas_extra','mercadillo','confra_apuntados','confra_peticiones','confra_llevar','logs','sum_historial','sum_backups'];
+const DB_VACIOS_OBJ=['asignaciones','mensajes_leidos','comidas_optin','comidas_info','suministros_stock','confra_platos','modulos','config','sum_registro','sum_minimos','sum_referencias','sum_previsiones_congeladas','stock_confirmado','sum_no_ofrecer','sum_objetivo_desactivado','comida_dom_confirmado','premios_votos','premios_config','desayunos_marsol','partidas_chat','topjuegos_config','topjuegos_extra','topjuegos_votos'];
+function vaciarClavesAusentes(datos){
+  if(!datos||typeof datos!=='object') return;
+  DB_VACIOS_ARRAY.forEach(k=>{ if(datos[k]===undefined) DB[k]=[]; });
+  DB_VACIOS_OBJ.forEach(k=>{ if(datos[k]===undefined) DB[k]={}; });
+  if(datos.confra===undefined) DB.confra=null;
+}
 function iniciarListenerFirebase(){
   if(CFG.FIREBASE_URL.startsWith('PON_')) return;
   if(_fbListener){ try{_fbListener.close();}catch(e){} }
@@ -1788,7 +1800,7 @@ function iniciarListenerFirebase(){
         const msg=JSON.parse(e.data);
         if(!msg.data||_saving) return;
         const n=msg.data;
-        ['personas','partidas','habitaciones','asignaciones','solicitudes',
+        ['personas','grupos','partidas','habitaciones','asignaciones','solicitudes',
          'pagos','gastos','cobros','mensajes','mensajes_leidos',
          'comidas_optin','comidas_info','suministros_stock',
          'camisetas_extra','mercadillo','confra','confra_apuntados','confra_platos',
@@ -1800,6 +1812,7 @@ function iniciarListenerFirebase(){
          'topjuegos_config','topjuegos_extra','topjuegos_votos'].forEach(k=>{
           if(n[k]!==undefined) DB[k]=n[k];
         });
+        if(msg.path==='/') vaciarClavesAusentes(n);
         // Re-inyectar personajes fijos en memoria (limpieza robusta)
         DB.personas=(DB.personas||[]).filter(p=>{
           if(p._esInvitado||p._esOrganizador) return false;
@@ -1950,6 +1963,7 @@ async function loadRemote(){
   const r=await jbGet();
   if(r&&r._jornadas){
     Object.assign(DB,r._jornadas);
+    vaciarClavesAusentes(r._jornadas);
     lsSet('jdb',DB);
   } else {
     // jbGet devolvió null → la rama nueva (FIREBASE_PATH) está VACÍA.
