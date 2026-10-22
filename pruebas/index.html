@@ -2677,27 +2677,34 @@ async function loginInscrito(personaElegida){
   const btn = document.querySelector('#lp-inscrito .btn-primary');
   const orig = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Comprobando…'; }
+  let fase = 'servidor de acceso';
   try{
-    const r = await fetch(CFG.LOGIN_URL, {method:'POST', body:JSON.stringify({email, pass:cod, pid:personaElegida||''})});
-    const j = await r.json();
+    let j;
+    try{
+      const r = await fetch(CFG.LOGIN_URL, {method:'POST', body:JSON.stringify({email, pass:cod, pid:personaElegida||''})});
+      fase = 'respuesta del servidor de acceso ('+r.status+')';
+      j = await r.json();
+    }catch(e){ throw new Error('No se pudo contactar con el '+fase+': '+(e.message||e)); }
     if(j.error){
       const msg = {
         pass:'Contraseña incorrecta.',
         email:'❌ Tu email no está en la lista de inscritos. Contacta con la organización.',
         bloqueo:'Demasiados intentos fallidos. Espera 15 minutos y vuelve a probar.',
         config:'El acceso aún no está configurado. Avisa a la organización.'
-      }[j.error] || 'No se pudo entrar ('+j.error+').';
+      }[j.error] || 'No se pudo entrar ('+j.error+(j.detalle?': '+j.detalle:'')+').';
       showErr('err-i', msg); return;
     }
     if(j.elegir){
       mostrarSelectorGrupo(j.elegir.map(x=>({ID:x.id, NombreCompleto:x.nombre, Nick:x.nick, Modalidad:x.mod})), email);
       return;
     }
+    fase = 'inicio de sesión en Firebase';
     await fbAuth.signInWithCustomToken(j.token);
+    fase = 'carga de datos';
     await entrarComoInscrito(email);
   }catch(err){
-    showErr('err-i', 'Error de conexión. Comprueba tu internet e inténtalo de nuevo.');
-    console.warn(err);
+    console.error('Acceso inscrito — fallo en '+fase+':', err);
+    showErr('err-i', 'No se pudo entrar (fallo en '+fase+'): '+(err.code||err.message||err));
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = orig; }
   }
