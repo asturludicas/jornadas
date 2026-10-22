@@ -2678,6 +2678,7 @@ async function loginInscrito(personaElegida){
   const orig = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Comprobando…'; }
   let fase = 'servidor de acceso';
+  let j_token_info = '';
   try{
     let j;
     try{
@@ -2699,12 +2700,16 @@ async function loginInscrito(personaElegida){
       return;
     }
     fase = 'inicio de sesión en Firebase';
+    // Datos NO secretos del pase, para diagnosticar (emisor y proyecto de destino)
+    try{ const pl=JSON.parse(atob(String(j.token).split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); j_token_info='emisor '+pl.iss+' · uid '+pl.uid; }catch(e){ j_token_info='pase ilegible: '+String(j.token).slice(0,20); }
     await fbAuth.signInWithCustomToken(j.token);
     fase = 'carga de datos';
     await entrarComoInscrito(email);
   }catch(err){
     console.error('Acceso inscrito — fallo en '+fase+':', err);
-    showErr('err-i', 'No se pudo entrar (fallo en '+fase+'): '+(err.code||err.message||err));
+    let extra='';
+    if(fase==='inicio de sesión en Firebase' && j_token_info) extra=' · '+j_token_info;
+    showErr('err-i', 'No se pudo entrar (fallo en '+fase+'): '+((err.message||'')+' '+(err.code||'')).trim()+extra);
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = orig; }
   }
