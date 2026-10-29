@@ -4328,8 +4328,11 @@ function procesarCSV(mapeo, soloPreview=false){
 function calcularImporte(modalidad){
   if(!modalidad) return 0;
   const m=modalidad.toLowerCase();
-  // Buscar el número en la modalidad (ej: "Jueves (270€)" → 270)
-  const match=modalidad.match(/(\d+)€?/);
+  // Precio = el número que va pegado al € (ej: "Jueves tarde — Compartida (285€)" → 285).
+  // Así no se confunde con otros números del texto, como fechas.
+  const conEuro=modalidad.match(/(\d+(?:[.,]\d+)?)\s*€/);
+  if(conEuro) return parseFloat(conEuro[1].replace(',','.'));
+  const match=modalidad.match(/(\d+)/);
   if(match) return parseInt(match[1]);
   return 0;
 }
