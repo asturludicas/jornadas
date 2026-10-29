@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plazas AsturLúdicas</title>
+<style>
+  :root{--ink:#111;--paper:#EFE0C3;--surface:#fffaf1;--green:#176345;--green-l:#e0f9f1;--amber:#765000;--amber-l:#fff6d6;--red:#a12630;--red-l:#ffe3e4}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:transparent;color:var(--ink);padding:8px}
+  .caja{background:var(--surface);border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);padding:16px;max-width:520px}
+  h2{font-size:17px;margin-bottom:12px}
+  .fila{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #d9d0c1}
+  .fila:first-of-type{border-top:0}
+  .tipo{font-size:15px;font-weight:600}
+  .estado{font-size:13px;font-weight:700;border:1.5px solid currentColor;border-radius:20px;padding:3px 10px;white-space:nowrap}
+  .disponible{color:var(--green);background:var(--green-l)}
+  .ultimas{color:var(--amber);background:var(--amber-l)}
+  .espera{color:var(--red);background:var(--red-l)}
+  .pie{font-size:12px;color:#625d54;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="caja">
+  <h2>Plazas disponibles</h2>
+  <div id="filas"><div class="pie">Cargando…</div></div>
+  <div class="pie" id="pie"></div>
+</div>
+<script>
+const URL_PLAZAS = 'https://asturludicas-2016-default-rtdb.europe-west1.firebasedatabase.app/publico/plazas.json';
+const TIPOS = [['individual','Habitación individual'],['doble','Habitación doble'],['sin','Sin alojamiento']];
+const TXT = {disponible:'Disponible', ultimas:'Últimas plazas', espera:'Lista de espera'};
+async function cargar(){
+  try{
+    const r = await fetch(URL_PLAZAS, {cache:'no-store'});
+    const d = r.ok ? await r.json() : null;
+    const filas = TIPOS.filter(([k])=>d && TXT[d[k]]).map(([k,l])=>
+      '<div class="fila"><span class="tipo">'+l+'</span><span class="estado '+d[k]+'">'+TXT[d[k]]+'</span></div>').join('');
+    document.getElementById('filas').innerHTML = filas || '<div class="pie">Las inscripciones aún no están abiertas.</div>';
+    document.getElementById('pie').textContent = (d && d.actualizado) ? 'Actualizado: '+new Date(d.actualizado).toLocaleString('es-ES',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '';
+  }catch(e){
+    document.getElementById('filas').innerHTML = '<div class="pie">No se pudo cargar el estado de las plazas.</div>';
+  }
+}
+cargar();
+setInterval(cargar, 60000);
+</script>
+</body>
+</html>

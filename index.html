@@ -889,6 +889,9 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
         </div>
       </div>
 
+      <!-- Inscripciones (formulario) -->
+      <div id="page-inscripciones" class="page"><div id="inscripciones-content"></div></div>
+
       <!-- Solicitudes -->
       <div id="page-solicitudes" class="page">
         <div class="card">
@@ -1020,6 +1023,17 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
             <div class="fg"><label>Contraseña de acceso (inscritos)</label><input type="text" id="cfg-pass-inscritos" placeholder="jornadas2025" oninput="saveConfig()"></div>
           </div>
           <div class="fg"><label>Aviso para inscritos</label><textarea id="cfg-aviso" rows="3" oninput="saveConfig()"></textarea></div>
+        </div>
+
+        <!-- Plazas de la edición (contador público) -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Plazas de la edición</span></div>
+          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Con estos números y las personas aceptadas se calcula el contador que se ve en la web: Disponible, Últimas plazas (queda un 15 % o menos) o Lista de espera. Deja a 0 lo que no quieras mostrar.</p>
+          <div class="form-grid">
+            <div class="fg"><label>Plazas en habitación individual</label><input type="number" min="0" id="cfg-pl-ind" oninput="saveConfig()"></div>
+            <div class="fg"><label>Habitaciones dobles</label><input type="number" min="0" id="cfg-pl-dob" oninput="saveConfig()"></div>
+            <div class="fg"><label>Plazas sin alojamiento</label><input type="number" min="0" id="cfg-pl-sin" oninput="saveConfig()"></div>
+          </div>
         </div>
       </div>
 
@@ -2029,7 +2043,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 124; // se incrementa con cada versión desplegada
+const APP_VERSION = 125; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -2226,6 +2240,7 @@ async function saveRemote(){
     } else {
       _ultimoGuardadoOk=true;
       _syncOK=true;
+      if(ROLE==='admin' && typeof publicarPlazas==='function') publicarPlazas();
     }
     actualizarSyncBadge();
   } finally {
@@ -2544,6 +2559,8 @@ function bootApp(){
     document.getElementById('btn-logout-top').style.display='flex';
     iniciarListenerFirebase();
     buildNav('admin');
+    cargarInscripciones().then(()=>{ if(HIST[HIST.length-1]==='dashboard') renderDashboard(); });
+    iniciarListenerInscripciones();
     nav('dashboard');
   } else {
     // Verificación final: si ME es un admin, no permitir acceso como inscrito
@@ -2576,7 +2593,7 @@ const NAV_ADMIN=[
   {id:'confra-admin',ico:'🧙',label:'AsturL'},
   {id:'calendario',ico:'🎲',label:'Calendario'},
   {id:'personas',ico:'👥',label:'Personas'},
-  {sec:'Inscritos'},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
+  {sec:'Inscritos'},{id:'inscripciones',ico:'📨',label:'Inscripciones',badgeIns:true},{id:'solicitudes',ico:'📝',label:'Solicitudes',badge:true},
   {sec:'Evento'},{id:'alojamiento',ico:'🏨',label:'Alojamiento'},{id:'comidas',ico:'🍽',label:'Comidas'},{id:'mensajes',ico:'✉',label:'Mensajes'},{id:'premios-admin',ico:'🏆',label:'Premios'},{id:'topjuegos-admin',ico:'🥇',label:'Top Juegos'},
   {sec:'Economía avanzada'},{id:'tallas',ico:'👕',label:'Tallas camiseta'},{id:'contabilidad',ico:'📊',label:'Contabilidad'},{id:'suministros',ico:'📦',label:'Suministros'},
   {sec:'Sistema'},{id:'importar',ico:'📥',label:'Importar CSV'},{id:'snapshots',ico:'📦',label:'Snapshots'},{id:'config',ico:'⚙',label:'Config'},{id:'logs',ico:'📋',label:'Logs'},
@@ -2603,7 +2620,7 @@ function buildNav(role){
   let sb='';
   items.forEach(item=>{
     if(item.sec){ sb+=`<div class="sb-sec">${item.sec}</div>`; return; }
-    sb+=`<button class="si" id="si-${item.id}" onclick="nav('${item.id}')"><span class="si-ico">${item.ico}</span>${item.label}${item.badge?`<span class="si-badge" id="badge-sol">0</span>`:''}</button>`;
+    sb+=`<button class="si" id="si-${item.id}" onclick="nav('${item.id}')"><span class="si-ico">${item.ico}</span>${item.label}${item.badge?`<span class="si-badge" id="badge-sol">0</span>`:''}${item.badgeIns?`<span class="si-badge" id="badge-ins">0</span>`:''}</button>`;
   });
   document.getElementById('sb-nav').innerHTML=sb;
 
@@ -2627,7 +2644,7 @@ function nav(page, pushHist=true){
   ['si-'+page,'bn-'+page].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.add('active'); });
 
   const titles={
-    dashboard:'Menu Principal',personas:'Personas',solicitudes:'Solicitudes',
+    dashboard:'Menu Principal',personas:'Personas',solicitudes:'Solicitudes',inscripciones:'Inscripciones',
     pagos:'Pagos',alojamiento:'Alojamiento',comidas:'Comidas',mensajes:'Mensajes',
     importar:'Importar CSV',config:'Configuración',logs:'Logs',tallas:'Tallas de camiseta',contabilidad:'Contabilidad',calendario:'Calendario de partidas',suministros:'Suministros',
     'mi-ficha':'Mi ficha','mi-agenda':'Mi agenda','mi-aloj':'Alojamiento','mi-comidas':'Comidas',
@@ -2644,7 +2661,7 @@ function nav(page, pushHist=true){
   // Render
   const renders={
     dashboard:renderDashboard, personas:renderPersonas,
-    solicitudes:renderSolicitudes, pagos:renderPagos,
+    solicitudes:renderSolicitudes, inscripciones:renderInscripciones, pagos:renderPagos,
     alojamiento:renderAlojamiento, comidas:renderComidasAdmin,
     logs:renderLogs, config:renderConfig, snapshots:renderSnapshots,
     premios:renderPremios, 'premios-admin':renderPremiosAdmin,
@@ -2666,6 +2683,7 @@ function updateBadge(){
   const n=DB.solicitudes.filter(s=>s.estado==='PENDIENTE').length;
   const b=document.getElementById('badge-sol'); if(b){ b.textContent=n; b.classList.toggle('show',n>0); }
   const bd=document.getElementById('bndot-sol'); if(bd) bd.classList.toggle('show',n>0);
+  if(typeof actualizarBadgeInscripciones==='function') actualizarBadgeInscripciones();
 }
 
 // ─── DASHBOARD ─────────────────────────────────────────
@@ -2720,6 +2738,7 @@ function renderDashboard(){
   var menus=[
     {id:'personas',ico:'\ud83d\udc65',label:'Personas'},
     {id:'calendario',ico:'\ud83c\udfb2',label:'Calendario'},
+    {id:'inscripciones',ico:'\ud83d\udce8',label:'Inscripciones',badge:inscripcionesPendientes()},
     {id:'solicitudes',ico:'\ud83d\udcdd',label:'Solicitudes',badge:solP},
     {id:'alojamiento',ico:'\ud83c\udfe8',label:'Alojamiento'},
     {id:'comidas',ico:'\ud83c\udf7d',label:'Comidas'},
@@ -2733,7 +2752,7 @@ function renderDashboard(){
     {id:'suministros',ico:'\ud83d\udce6',label:'Suministros'},
     {id:'config',ico:'\u2699',label:'Config'}
   ];
-  var grupos=[{label:'Asistentes',ids:['personas','solicitudes','alojamiento','comidas','tallas','mensajes']},{label:'Actividades',ids:['calendario','confra-admin','mercadillo-admin','premios-admin','topjuegos-admin']},{label:'Administración',ids:['contabilidad','suministros','config']}];
+  var grupos=[{label:'Asistentes',ids:['personas','inscripciones','solicitudes','alojamiento','comidas','tallas','mensajes']},{label:'Actividades',ids:['calendario','confra-admin','mercadillo-admin','premios-admin','topjuegos-admin']},{label:'Administración',ids:['contabilidad','suministros','config']}];
   var menuHTML='<div class="card"><div class="card-hd"><span class="card-title">Acceso rápido</span></div>';
   grupos.forEach(function(grupo){
     menuHTML+='<div class="dashboard-menu-group"><div class="dashboard-menu-label">'+grupo.label+'</div><div class="dashboard-menu-grid">';
@@ -4432,6 +4451,10 @@ function renderConfig(){
   document.getElementById('cfg-nombre').value=DB.config.nombre||'';
   document.getElementById('cfg-fechas').value=DB.config.fechas||'';
   document.getElementById('cfg-aviso').value=DB.config.aviso||'';
+  const _pl=DB.config.plazas||{};
+  document.getElementById('cfg-pl-ind').value=_pl.individual||0;
+  document.getElementById('cfg-pl-dob').value=_pl.dobles||0;
+  document.getElementById('cfg-pl-sin').value=_pl.sin||0;
   document.getElementById('cfg-pass-inscritos').value=DB.config.inscritoPass||CFG.INSCRITO_PASS||'';
   // Toggle acceso
   const togAcceso=document.getElementById('tog-acceso');
@@ -4457,6 +4480,11 @@ async function saveConfig(){
   DB.config.nombre=document.getElementById('cfg-nombre').value;
   DB.config.fechas=document.getElementById('cfg-fechas').value;
   DB.config.aviso=document.getElementById('cfg-aviso').value;
+  DB.config.plazas={
+    individual:Math.max(0,parseInt(document.getElementById('cfg-pl-ind').value,10)||0),
+    dobles:Math.max(0,parseInt(document.getElementById('cfg-pl-dob').value,10)||0),
+    sin:Math.max(0,parseInt(document.getElementById('cfg-pl-sin').value,10)||0)
+  };
   DB.config.inscritoPass=document.getElementById('cfg-pass-inscritos').value.trim()||CFG.INSCRITO_PASS;
   document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
   await saveRemote();
@@ -7061,6 +7089,7 @@ async function nuevaEdicion(){
     +'  • Top Juegos y Premios (votos, juegos añadidos y fechas de votación)\n'
     +'  • Camisetas extra, desayunos y confirmaciones de la comida del domingo\n'
     +'  • Chats de las partidas\n'
+    +'  • Inscripciones recibidas del formulario\n'
     +'  • Historial de acciones (logs)\n'
     +'  • La entrada del post-evento en curso en Suministros (sum_registro)\n\n'
     +'✅ SE CONSERVA:\n'
@@ -7155,6 +7184,8 @@ async function nuevaEdicion(){
     nav('dashboard'); renderDashboard();
     return;
   }
+  try{ await fetch(insUrl(), {method:'DELETE'}); INSCR={}; actualizarBadgeInscripciones(); }catch(e){}
+  publicarPlazas(true);
   toast('Nueva edición iniciada: '+nombre,'ok');
   nav('dashboard');
   renderDashboard();
@@ -10066,6 +10097,282 @@ async function reloadData(){
   toast('Datos actualizados','ok');
 }
 function logout(){ ['role','persona_id','session_ts','admin_email','persona_email','jdb'].forEach(k=>lsSet(k,null)); ROLE=null; ME=null; _premiosQuien=null; location.reload(); }
+
+// ═══════════════════════════════════════════════════════════════
+// INSCRIPCIONES — solicitudes que llegan del Google Forms
+// ═══════════════════════════════════════════════════════════════
+// Las envía el Apps Script de la hoja de respuestas a /inscripciones/<id>:
+//   {datos:{ts, email, nombre, nick, telefono, ciudad, modalidad, talla,
+//           alergias, notas, acompanantes:[{nombre,nick,talla,alergias}]},
+//    estado:'pendiente'|'aceptada'|'espera'|'rechazada', decision:{por,ts,ids}}
+// Van fuera del documento de la edición para que ningún guardado las pise.
+// Al aceptar, el grupo se crea en Personas igual que con la importación CSV.
+// El contador público vive en /publico/plazas (sin datos personales).
+let INSCR = {};
+let _insListener = null;
+let _insFiltro = 'pendiente';
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const insUrl = p => CFG.FIREBASE_URL + '/inscripciones' + (p||'') + '.json?auth=' + CFG.FIREBASE_SECRET;
+
+async function cargarInscripciones(){
+  try{
+    const r = await fetch(insUrl());
+    if(r.ok) INSCR = (await r.json()) || {};
+  }catch(e){ console.warn('Inscripciones:', e); }
+  actualizarBadgeInscripciones();
+}
+function iniciarListenerInscripciones(){
+  if(_insListener){ try{ _insListener.close(); }catch(e){} }
+  try{
+    _insListener = new EventSource(insUrl());
+    const aplicar = esPatch => e => {
+      try{
+        const m = JSON.parse(e.data); if(!m) return;
+        const segs = String(m.path||'/').split('/').filter(Boolean);
+        if(!segs.length){
+          if(esPatch) Object.entries(m.data||{}).forEach(([k,v])=>{ if(v===null) delete INSCR[k]; else INSCR[k]=v; });
+          else INSCR = m.data||{};
+        } else {
+          let n = INSCR;
+          for(let i=0;i<segs.length-1;i++){ if(n[segs[i]]==null||typeof n[segs[i]]!=='object') n[segs[i]]={}; n=n[segs[i]]; }
+          const k = segs[segs.length-1];
+          if(esPatch){ n[k]=Object.assign(n[k]||{}, m.data||{}); }
+          else if(m.data===null) delete n[k]; else n[k]=m.data;
+        }
+        actualizarBadgeInscripciones();
+        if(HIST[HIST.length-1]==='inscripciones') renderInscripciones();
+      }catch(err){ console.warn('Inscripciones tiempo real:', err); }
+    };
+    _insListener.addEventListener('put', aplicar(false));
+    _insListener.addEventListener('patch', aplicar(true));
+    _insListener.onerror = ()=>{};
+  }catch(e){ console.warn('Inscripciones: sin tiempo real', e); }
+}
+function inscripcionesPendientes(){
+  return Object.values(INSCR||{}).filter(x=>x && x.datos && (x.estado||'pendiente')==='pendiente').length;
+}
+function actualizarBadgeInscripciones(){
+  const n = inscripcionesPendientes();
+  const b = document.getElementById('badge-ins');
+  if(b){ b.textContent = n; b.classList.toggle('show', n>0); }
+}
+
+// ─── Plazas ────────────────────────────────────────────
+// Cada persona ocupa una plaza de un tipo según su modalidad.
+function tipoPlaza(modalidad){
+  const m = String(modalidad||'').toLowerCase();
+  if(sinAlojamientoModalidad(m)) return 'sin';
+  if(m.includes('individual')) return 'individual';
+  return 'doble';
+}
+const PLAZAS_TIPOS = [
+  {k:'individual', label:'Habitación individual'},
+  {k:'doble',      label:'Habitación doble'},
+  {k:'sin',        label:'Sin alojamiento'}
+];
+function capacidadPlazas(){
+  const c = (DB.config && DB.config.plazas) || {};
+  return { individual:Number(c.individual)||0, doble:(Number(c.dobles)||0)*2, sin:Number(c.sin)||0 };
+}
+function ocupacionPlazas(){
+  const o = {individual:0, doble:0, sin:0};
+  (DB.personas||[]).forEach(p=>{
+    if(p._esInvitado || p._esOrganizador || p.Activo==='FALSE' || p.EsInvitadoGratuito==='SI') return;
+    o[tipoPlaza(p.Modalidad)]++;
+  });
+  return o;
+}
+function estadoPlaza(libres, cap){
+  if(!cap) return null;
+  if(libres<=0) return 'espera';
+  if(libres <= Math.ceil(cap*0.15)) return 'ultimas';
+  return 'disponible';
+}
+const ESTADO_PLAZA_TXT = {disponible:'Disponible', ultimas:'Últimas plazas', espera:'Lista de espera'};
+function calcularPlazas(){
+  const cap = capacidadPlazas(), oc = ocupacionPlazas(), r = {};
+  PLAZAS_TIPOS.forEach(t=>{
+    const libres = cap[t.k]-oc[t.k];
+    r[t.k] = { cap:cap[t.k], ocupadas:oc[t.k], libres, estado:estadoPlaza(libres, cap[t.k]) };
+  });
+  return r;
+}
+let _ultimoPublico = '';
+async function publicarPlazas(forzar){
+  if(ROLE!=='admin') return;
+  const pl = calcularPlazas();
+  const pub = {};
+  PLAZAS_TIPOS.forEach(t=>{ if(pl[t.k].estado) pub[t.k]=pl[t.k].estado; });
+  const firma = JSON.stringify(pub);
+  if(!forzar && firma===_ultimoPublico) return;
+  try{
+    const r = await fetch(CFG.FIREBASE_URL+'/publico/plazas.json?auth='+CFG.FIREBASE_SECRET, {method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign({}, pub, {actualizado:new Date().toISOString()}))});
+    if(r.ok) _ultimoPublico = firma;
+  }catch(e){ console.warn('Contador público:', e); }
+}
+
+// ─── Pantalla ──────────────────────────────────────────
+// Los textos del formulario son públicos: se quitan < y > para que nadie pueda
+// colar código que se ejecute en otras pantallas de la app.
+const limpio = v => String(v==null?'':v).replace(/[<>]/g,'').trim();
+function personasDeInscripcion(d){
+  const lista = [{nombre:d.nombre, nick:d.nick, talla:d.talla, alergias:d.alergias, titular:true}];
+  (d.acompanantes||[]).forEach(a=>{ if(a && a.nombre) lista.push(Object.assign({}, a, {titular:false})); });
+  return lista;
+}
+function yaEnLaApp(email, nombre){
+  const e = String(email||'').trim().toLowerCase(), n = String(nombre||'').trim().toLowerCase();
+  return (DB.personas||[]).some(p=>String(p.Email||'').trim().toLowerCase()===e && String(p.NombreCompleto||'').trim().toLowerCase()===n);
+}
+function setFiltroInscripciones(f){ _insFiltro=f; renderInscripciones(); }
+function renderInscripciones(){
+  const el = document.getElementById('inscripciones-content');
+  if(!el) return;
+  const pl = calcularPlazas();
+  const cap = capacidadPlazas();
+  const hayCap = cap.individual||cap.doble||cap.sin;
+  const resumen = '<div class="card"><div class="card-hd"><span class="card-title">Plazas</span>'
+    +'<button class="btn btn-xs" onclick="nav(\'config\')">Configurar</button></div>'
+    +(hayCap ? '<div class="stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">'
+      +PLAZAS_TIPOS.filter(t=>pl[t.k].cap).map(t=>{
+        const x=pl[t.k];
+        const col = x.estado==='espera'?'var(--red)':x.estado==='ultimas'?'var(--amber)':'var(--green)';
+        return '<div class="stat"><div class="stat-l">'+t.label+'</div><div class="stat-n">'+x.ocupadas+' / '+x.cap+'</div>'
+          +'<div style="font-size:12px;font-weight:700;color:'+col+'">'+ESTADO_PLAZA_TXT[x.estado]+(t.k==='doble'?' · '+Math.ceil(x.ocupadas/2)+' hab.':'')+'</div></div>';
+      }).join('')+'</div>'
+      : '<p style="font-size:13px;color:var(--ink3)">Indica en Configuración cuántas plazas hay de cada tipo para ver el contador.</p>')
+    +'</div>';
+
+  const todas = Object.entries(INSCR||{}).filter(([id,x])=>x&&x.datos).map(([id,x])=>Object.assign({id}, x)).sort((a,b)=>String(a.datos.ts||'').localeCompare(String(b.datos.ts||'')));
+  const cuenta = e => todas.filter(x=>(x.estado||'pendiente')===e).length;
+  const pestanas = [['pendiente','Pendientes'],['espera','Lista de espera'],['aceptada','Aceptadas'],['rechazada','Rechazadas']];
+  const tabs = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'
+    +pestanas.map(([k,l])=>'<button class="btn btn-sm '+(_insFiltro===k?'btn-primary':'')+'" onclick="setFiltroInscripciones(\''+k+'\')">'+l+' ('+cuenta(k)+')</button>').join('')+'</div>';
+  const lista = todas.filter(x=>(x.estado||'pendiente')===_insFiltro);
+
+  const tarjetas = lista.length ? lista.map(x=>{
+    const d = x.datos, ps = personasDeInscripcion(d), tipo = tipoPlaza(d.modalidad);
+    const libres = pl[tipo].cap ? pl[tipo].libres : null;
+    const aviso = (libres!==null && libres < ps.length && (x.estado||'pendiente')!=='aceptada')
+      ? '<div style="font-size:12px;color:var(--red);font-weight:700;margin-top:6px">⚠ No quedan plazas suficientes de este tipo ('+Math.max(0,libres)+' libres, el grupo son '+ps.length+')</div>' : '';
+    const fecha = d.ts ? new Date(d.ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    const filas = ps.map(p=>'<tr><td>'+esc(p.nombre)+(p.titular?' <span class="chip chip-blue">Titular</span>':'')
+      +(yaEnLaApp(d.email,p.nombre)?' <span class="chip chip-amber">Ya en la app</span>':'')+'</td><td>'+esc(p.nick)+'</td><td>'+esc(p.talla)+'</td><td>'+esc(p.alergias)+'</td></tr>').join('');
+    const est = x.estado||'pendiente';
+    const botones = est==='aceptada'
+      ? '<span class="chip chip-green">Aceptada'+(x.decision&&x.decision.ts?' · '+new Date(x.decision.ts).toLocaleDateString('es-ES'):'')+'</span>'
+      : '<button class="btn btn-sm btn-primary" onclick="aceptarInscripcion(\''+esc(x.id)+'\')">✓ Aceptar grupo</button>'
+        +(est!=='espera'?'<button class="btn btn-sm" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'espera\')">Lista de espera</button>':'')
+        +(est!=='rechazada'?'<button class="btn btn-sm btn-danger" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'rechazada\')">Rechazar</button>':'')
+        +(est!=='pendiente'?'<button class="btn btn-sm" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'pendiente\')">Volver a pendiente</button>':'');
+    return '<div class="card" style="margin-bottom:12px">'
+      +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">'
+      +'<div><div style="font-weight:700;font-size:15px">'+esc(d.nombre)+(d.nick?' (@'+esc(d.nick)+')':'')+'</div>'
+      +'<div style="font-size:12px;color:var(--ink3)">'+esc(fecha)+' · '+ps.length+' persona'+(ps.length>1?'s':'')+'</div></div>'
+      +'<span class="chip chip-purple">'+esc(d.modalidad)+'</span></div>'
+      +'<div style="font-size:13px;margin:8px 0;line-height:1.6">✉ '+esc(d.email)+(d.telefono?' · ☎ '+esc(d.telefono):'')+(d.ciudad?' · 📍 '+esc(d.ciudad):'')+'</div>'
+      +'<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Nick</th><th>Talla</th><th>Alergias</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+      +(d.notas?'<div style="font-size:13px;margin-top:8px;padding:8px 10px;background:var(--accent-l);border-radius:8px">💬 '+esc(d.notas)+'</div>':'')
+      +aviso
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+botones+'</div>'
+      +'</div>';
+  }).join('') : '<div class="card"><p style="text-align:center;color:var(--ink3);padding:12px">No hay inscripciones en este apartado.</p></div>';
+
+  el.innerHTML = resumen + tabs + tarjetas;
+}
+
+// ─── Decisiones ────────────────────────────────────────
+async function guardarEstadoInscripcion(id, estado, extra){
+  const cuerpo = Object.assign({ estado, decision:{ por:lsGet('admin_email','admin'), ts:new Date().toISOString() } }, extra||{});
+  if(extra && extra.decision) cuerpo.decision = Object.assign(cuerpo.decision, extra.decision);
+  const r = await fetch(insUrl('/'+encodeURIComponent(id)), {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cuerpo)});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  INSCR[id] = Object.assign(INSCR[id]||{}, cuerpo);
+}
+async function cambiarEstadoInscripcion(id, estado){
+  const x = INSCR[id]; if(!x) return;
+  try{
+    await guardarEstadoInscripcion(id, estado);
+    log('INSCRIPCION_'+estado.toUpperCase(), (x.datos&&x.datos.email)||id);
+    toast(estado==='espera'?'Pasada a lista de espera':estado==='rechazada'?'Inscripción rechazada':'Vuelve a pendiente','ok');
+    actualizarBadgeInscripciones(); renderInscripciones();
+  }catch(e){ toast('No se pudo cambiar el estado: '+e.message,'err'); }
+}
+let _aceptando = false;
+async function aceptarInscripcion(id){
+  if(_aceptando) return;
+  const x = INSCR[id]; if(!x || !x.datos) return;
+  if(x.estado==='aceptada'){ toast('Esta inscripción ya está aceptada','err'); return; }
+  const d = x.datos, ps = personasDeInscripcion(d), tipo = tipoPlaza(d.modalidad);
+  const pl = calcularPlazas()[tipo];
+  let msg = '¿Aceptar a '+d.nombre+(ps.length>1?' y su grupo ('+ps.length+' personas)':'')+'?\n\nModalidad: '+d.modalidad;
+  if(pl.cap && pl.libres < ps.length) msg += '\n\n⚠ Quedan '+Math.max(0,pl.libres)+' plazas de este tipo y el grupo son '+ps.length+'. Si aceptas, se superará la capacidad configurada.';
+  if(!confirm(msg)) return;
+  _aceptando = true;
+  try{
+    // Datos frescos para no pisar cambios de otro admin
+    await loadRemote();
+    // Siguiente ID de persona y de grupo libres
+    const maxP = Math.max(0, ...DB.personas.map(p=>parseInt(String(p.ID||'').replace('P_',''))||0));
+    const maxG = Math.max(0, ...DB.personas.map(p=>{ const m=String(p.GrupoID||'').match(/^G_(\d+)$/); return m?parseInt(m[1],10):0; }),
+                            ...(DB.grupos||[]).map(g=>{ const m=String(g.ID||g.id||'').match(/^G_(\d+)$/); return m?parseInt(m[1],10):0; }));
+    const gid = 'G_'+String(maxG+1).padStart(3,'0');
+    const email = String(d.email||'').trim().toLowerCase();
+    const hoy = new Date().toISOString().split('T')[0];
+    const creados = [];
+    let n = maxP;
+    ps.forEach(p=>{
+      if(!p.nombre || yaEnLaApp(email, p.nombre)) return; // nunca duplicar
+      n++;
+      const partes = limpio(p.nombre).split(/\s+/);
+      const per = {
+        ID:'P_'+n, id:'P_'+n,
+        Nombre:limpio(partes[0]||p.nombre), Apellidos:limpio(partes.slice(1).join(' ')),
+        NombreCompleto:limpio(p.nombre),
+        Nick:limpio(p.nick)||limpio(partes[0]),
+        Email:limpio(email),
+        Telefono:p.titular?limpio(d.telefono):'',
+        Ciudad:limpio(d.ciudad),
+        Modalidad:limpio(d.modalidad),
+        TallaCamiseta:limpio(p.talla),
+        Alergenos:limpio(p.alergias),
+        Observaciones:p.titular?limpio(d.notas):'',
+        EsTitular:p.titular?'SI':'NO',
+        GrupoID:gid,
+        Alojamiento:sinAlojamientoModalidad(d.modalidad)?'NO':'SI',
+        ImporteTotal:calcularImporte(d.modalidad),
+        Activo:'TRUE',
+        FechaInscripcion:hoy,
+        InscripcionID:id
+      };
+      DB.personas.push(per);
+      creados.push(per.ID);
+    });
+    if(!creados.length){
+      await guardarEstadoInscripcion(id, 'aceptada', {decision:{ids:[], nota:'ya estaban en la app'}});
+      toast('Todas las personas de esta inscripción ya estaban en la app. Marcada como aceptada.','ok');
+      renderInscripciones(); return;
+    }
+    if(!DB.grupos.find(g=>(g.id||g.ID||'')===gid)){
+      DB.grupos.push({ id:gid, ID:gid, titular:limpio(d.nombre), TitularNombre:limpio(d.nombre), color:'azul', pagoTipo:'individual', obs:'' });
+    }
+    log('INSCRIPCION_ACEPTADA', email+' → '+creados.join(','));
+    const ok = await saveRemote();
+    if(!ok){
+      await loadRemote(); // deshacer en memoria lo que no se guardó
+      toast('No se pudo guardar el grupo en la app. La inscripción sigue pendiente.','err',10000);
+      renderInscripciones(); return;
+    }
+    await guardarEstadoInscripcion(id, 'aceptada', {decision:{ids:creados}});
+    await publicarPlazas();
+    toast('✓ '+creados.length+' persona'+(creados.length>1?'s':'')+' dada'+(creados.length>1?'s':'')+' de alta','ok');
+    actualizarBadgeInscripciones(); renderInscripciones();
+  }catch(e){
+    toast('Error al aceptar: '+e.message,'err');
+  }finally{ _aceptando = false; }
+}
 
 // ─── INIT ──────────────────────────────────────────────
 (async()=>{
