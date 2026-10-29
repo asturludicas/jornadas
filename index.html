@@ -1035,6 +1035,13 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
             <div class="fg"><label>Plazas sin alojamiento</label><input type="number" min="0" id="cfg-pl-sin" oninput="saveConfig()"></div>
           </div>
         </div>
+
+        <!-- Formulario de inscripción de la edición -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Formulario de inscripción</span></div>
+          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Pega el enlace de <strong>edición</strong> del Google Forms de esta edición (el que termina en <code>/edit</code>). Las respuestas nuevas llegan solas al panel Inscripciones cada pocos minutos. Al crear una edición nueva este campo se vacía.</p>
+          <div class="fg"><label>Enlace del formulario</label><input type="url" id="cfg-form" placeholder="https://docs.google.com/forms/d/…/edit" oninput="saveConfig()"></div>
+        </div>
       </div>
 
       <!-- Logs -->
@@ -2043,7 +2050,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 125; // se incrementa con cada versión desplegada
+const APP_VERSION = 126; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -4458,6 +4465,7 @@ function renderConfig(){
   document.getElementById('cfg-pl-ind').value=_pl.individual||0;
   document.getElementById('cfg-pl-dob').value=_pl.dobles||0;
   document.getElementById('cfg-pl-sin').value=_pl.sin||0;
+  document.getElementById('cfg-form').value=DB.config.formularioInscripcion||'';
   document.getElementById('cfg-pass-inscritos').value=DB.config.inscritoPass||CFG.INSCRITO_PASS||'';
   // Toggle acceso
   const togAcceso=document.getElementById('tog-acceso');
@@ -4488,6 +4496,7 @@ async function saveConfig(){
     dobles:Math.max(0,parseInt(document.getElementById('cfg-pl-dob').value,10)||0),
     sin:Math.max(0,parseInt(document.getElementById('cfg-pl-sin').value,10)||0)
   };
+  DB.config.formularioInscripcion=document.getElementById('cfg-form').value.trim();
   DB.config.inscritoPass=document.getElementById('cfg-pass-inscritos').value.trim()||CFG.INSCRITO_PASS;
   document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
   await saveRemote();
@@ -7187,7 +7196,7 @@ async function nuevaEdicion(){
     nav('dashboard'); renderDashboard();
     return;
   }
-  try{ await fetch(insUrl(), {method:'DELETE'}); INSCR={}; actualizarBadgeInscripciones(); }catch(e){}
+  try{ await fetch(insUrl(), {method:'DELETE'}); await fetch(CFG.FIREBASE_URL+'/inscripciones_meta.json?auth='+CFG.FIREBASE_SECRET, {method:'DELETE'}); INSCR={}; INSCR_META=null; _insConocidas=new Set(); actualizarBadgeInscripciones(); }catch(e){}
   publicarPlazas(true);
   toast('Nueva edición iniciada: '+nombre,'ok');
   nav('dashboard');
@@ -10118,12 +10127,43 @@ let _insFiltro = 'pendiente';
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const insUrl = p => CFG.FIREBASE_URL + '/inscripciones' + (p||'') + '.json?auth=' + CFG.FIREBASE_SECRET;
 
+let INSCR_META = null;        // lo que deja el script del formulario: título, última revisión, errores
+let _insConocidas = null;     // ids ya vistos al abrir la app (no avisan)
+let _insNuevas = 0;           // nuevas desde que se avisó por última vez
+const _tituloBase = document.title;
 async function cargarInscripciones(){
   try{
-    const r = await fetch(insUrl());
+    const [r, m] = await Promise.all([fetch(insUrl()), fetch(CFG.FIREBASE_URL+'/inscripciones_meta.json?auth='+CFG.FIREBASE_SECRET)]);
     if(r.ok) INSCR = (await r.json()) || {};
+    if(m.ok) INSCR_META = await m.json();
   }catch(e){ console.warn('Inscripciones:', e); }
+  if(_insConocidas===null) _insConocidas = new Set(Object.keys(INSCR||{}));
   actualizarBadgeInscripciones();
+}
+// Un solo globo que va sumando: con muchas inscripciones seguidas no se apilan avisos
+function avisarInscripcionesNuevas(){
+  if(_insConocidas===null) return;
+  const nuevas = Object.keys(INSCR||{}).filter(id=>!_insConocidas.has(id) && INSCR[id] && INSCR[id].datos);
+  if(!nuevas.length) return;
+  nuevas.forEach(id=>_insConocidas.add(id));
+  if(HIST[HIST.length-1]==='inscripciones') return; // ya las está viendo
+  _insNuevas += nuevas.length;
+  let g = document.getElementById('globo-ins');
+  if(!g){
+    g = document.createElement('div');
+    g.id = 'globo-ins';
+    g.style.cssText = 'position:fixed;right:16px;bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);z-index:250;display:flex;align-items:center;gap:8px;background:#fffaf1;color:var(--ink);border:2px solid var(--ink);border-radius:999px;box-shadow:3px 3px 0 var(--ink);padding:8px 8px 8px 14px;font-weight:700;font-size:14px;cursor:pointer;max-width:calc(100vw - 32px)';
+    g.onclick = e=>{ if(e.target.dataset.cerrar) return; cerrarGloboInscripciones(); nav('inscripciones'); };
+    document.body.appendChild(g);
+  }
+  g.innerHTML = '<span>📨 '+_insNuevas+' inscripci'+(_insNuevas===1?'ón nueva':'ones nuevas')+'</span>'
+    +'<button data-cerrar="1" onclick="cerrarGloboInscripciones()" aria-label="Cerrar aviso" style="border:0;background:var(--accent-l);border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer">✕</button>';
+  document.title = '('+_insNuevas+') '+_tituloBase;
+}
+function cerrarGloboInscripciones(){
+  _insNuevas = 0;
+  document.title = _tituloBase;
+  const g = document.getElementById('globo-ins'); if(g) g.remove();
 }
 function iniciarListenerInscripciones(){
   if(_insListener){ try{ _insListener.close(); }catch(e){} }
@@ -10144,6 +10184,7 @@ function iniciarListenerInscripciones(){
           else if(m.data===null) delete n[k]; else n[k]=m.data;
         }
         actualizarBadgeInscripciones();
+        avisarInscripcionesNuevas();
         if(HIST[HIST.length-1]==='inscripciones') renderInscripciones();
       }catch(err){ console.warn('Inscripciones tiempo real:', err); }
     };
@@ -10229,10 +10270,26 @@ function yaEnLaApp(email, nombre){
   const e = String(email||'').trim().toLowerCase(), n = String(nombre||'').trim().toLowerCase();
   return (DB.personas||[]).some(p=>String(p.Email||'').trim().toLowerCase()===e && String(p.NombreCompleto||'').trim().toLowerCase()===n);
 }
+function htmlEstadoFormulario(){
+  const enlace = (DB.config&&DB.config.formularioInscripcion)||'';
+  const m = INSCR_META||{};
+  let linea;
+  if(!enlace) linea = '⚠ No hay formulario conectado. Pega su enlace en Configuración → Formulario de inscripción.';
+  else if(m.error) linea = '⚠ '+esc(m.error);
+  else if(m.ultimaRevision) linea = '✓ '+esc(m.formulario||'Formulario')+' · revisado '+esc(tiempoRelativo(Date.parse(m.ultimaRevision)))+(m.nuevas?' · '+m.nuevas+' nuevas en la última revisión':'');
+  else linea = 'Formulario conectado. Las respuestas aparecerán aquí en unos minutos.';
+  return '<div id="ins-formulario" style="font-size:13px;margin-bottom:12px;color:'+(!enlace||m.error?'var(--red)':'var(--ink2)')+'">'+linea+'</div>';
+}
 function setFiltroInscripciones(f){ _insFiltro=f; renderInscripciones(); }
 function renderInscripciones(){
   const el = document.getElementById('inscripciones-content');
   if(!el) return;
+  cerrarGloboInscripciones();
+  const ahoraMs = Date.now();
+  if(!renderInscripciones._metaTs || ahoraMs-renderInscripciones._metaTs>60000){
+    renderInscripciones._metaTs = ahoraMs;
+    fetch(CFG.FIREBASE_URL+'/inscripciones_meta.json?auth='+CFG.FIREBASE_SECRET).then(r=>r.ok?r.json():null).then(m=>{ INSCR_META=m; const c=document.getElementById('ins-formulario'); if(c) c.outerHTML=htmlEstadoFormulario(); }).catch(()=>{});
+  }
   const pl = calcularPlazas();
   const cap = capacidadPlazas();
   const hayCap = cap.individual||cap.doble||cap.sin;
@@ -10283,7 +10340,7 @@ function renderInscripciones(){
       +'</div>';
   }).join('') : '<div class="card"><p style="text-align:center;color:var(--ink3);padding:12px">No hay inscripciones en este apartado.</p></div>';
 
-  el.innerHTML = resumen + tabs + tarjetas;
+  el.innerHTML = htmlEstadoFormulario() + resumen + tabs + tarjetas;
 }
 
 // ─── Decisiones ────────────────────────────────────────
