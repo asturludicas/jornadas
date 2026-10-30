@@ -1042,6 +1042,19 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
           <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Pega el enlace de <strong>edición</strong> del Google Forms de esta edición (el que termina en <code>/edit</code>). Las respuestas nuevas llegan solas al panel Inscripciones cada pocos minutos. Al crear una edición nueva este campo se vacía.</p>
           <div class="fg"><label>Enlace del formulario</label><input type="url" id="cfg-form" placeholder="https://docs.google.com/forms/d/…/edit" oninput="saveConfig()"></div>
         </div>
+
+        <!-- Correos automáticos de inscripción -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Correos de inscripción</span></div>
+          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Al aceptar o pasar a lista de espera una inscripción, se envía este correo desde asturludicas@gmail.com unos 5 minutos después. Si cambiáis el estado antes, no sale. Estos textos se conservan de una edición a otra.</p>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:12px"><input type="checkbox" id="pl-activo" onchange="guardarPlantillas()"> Enviar los correos automáticamente</label>
+          <p style="font-size:12px;color:var(--ink3);margin-bottom:12px">Huecos que se rellenan solos: <code>{nombre}</code> nombre del titular · <code>{nombre_completo}</code> · <code>{grupo}</code> nombres de todo el grupo · <code>{personas}</code> · <code>{modalidad}</code> · <code>{importe}</code> por persona · <code>{total}</code> del grupo · <code>{email}</code> · <code>{contraseña}</code> de la app en esta edición</p>
+          <div class="fg"><label>Asunto · plaza confirmada</label><input type="text" id="pl-ac-asunto" oninput="guardarPlantillas()"></div>
+          <div class="fg"><label>Texto · plaza confirmada</label><textarea id="pl-ac-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
+          <div class="fg"><label>Asunto · lista de espera</label><input type="text" id="pl-es-asunto" oninput="guardarPlantillas()"></div>
+          <div class="fg"><label>Texto · lista de espera</label><textarea id="pl-es-texto" rows="8" oninput="guardarPlantillas()"></textarea></div>
+          <div id="pl-estado" style="font-size:12px;color:var(--ink3)"></div>
+        </div>
       </div>
 
       <!-- Logs -->
@@ -4466,6 +4479,7 @@ function renderConfig(){
   document.getElementById('cfg-pl-dob').value=_pl.dobles||0;
   document.getElementById('cfg-pl-sin').value=_pl.sin||0;
   document.getElementById('cfg-form').value=DB.config.formularioInscripcion||'';
+  cargarPlantillas();
   document.getElementById('cfg-pass-inscritos').value=DB.config.inscritoPass||CFG.INSCRITO_PASS||'';
   // Toggle acceso
   const togAcceso=document.getElementById('tog-acceso');
@@ -10278,7 +10292,53 @@ function htmlEstadoFormulario(){
   else if(m.error) linea = '⚠ '+esc(m.error);
   else if(m.ultimaRevision) linea = '✓ '+esc(m.formulario||'Formulario')+' · revisado '+esc(tiempoRelativo(Date.parse(m.ultimaRevision)))+(m.nuevas?' · '+m.nuevas+' nuevas en la última revisión':'');
   else linea = 'Formulario conectado. Las respuestas aparecerán aquí en unos minutos.';
-  return '<div id="ins-formulario" style="font-size:13px;margin-bottom:12px;color:'+(!enlace||m.error?'var(--red)':'var(--ink2)')+'">'+linea+'</div>';
+  let correo = '';
+  if(m.errorCorreos) correo = '<div style="color:var(--red)">⚠ Correos: '+esc(m.errorCorreos)+'</div>';
+  else if(m.correos==='desactivados') correo = '<div>✉ Envío automático de correos desactivado (Configuración → Correos de inscripción).</div>';
+  else if(m.correosEnviados) correo = '<div>✉ '+m.correosEnviados+' correo'+(m.correosEnviados>1?'s':'')+' enviado'+(m.correosEnviados>1?'s':'')+' en la última revisión.</div>';
+  return '<div id="ins-formulario" style="font-size:13px;margin-bottom:12px;color:'+(!enlace||m.error?'var(--red)':'var(--ink2)')+'">'+linea+correo+'</div>';
+}
+// ─── Plantillas de correo (fuera de la edición: /inscripciones_plantillas) ───
+const PLANTILLAS_DEF = {
+  activo:false,
+  aceptadaAsunto:'Plaza confirmada — AsturLúdicas',
+  aceptadaTexto:'Hola {nombre}:\n\nTu inscripción en AsturLúdicas está confirmada.\n\nPersonas: {grupo}\nModalidad: {modalidad}\nImporte por persona: {importe} €\nTotal a pagar: {total} €\n\nPara completar la inscripción, haz una transferencia de {total} € a:\nIBAN: ES18 1465 0360 19 1760177551\nTitular: Daniel Méndez-Bonito\nConcepto: AsturLúdicas {nombre_completo}\n\nYa puedes entrar en la app de las jornadas:\nhttps://asturludicas.github.io/jornadas/\nEmail: {email}\nContraseña: {contraseña}\n\nUn saludo,\nLa organización de AsturLúdicas',
+  esperaAsunto:'Lista de espera — AsturLúdicas',
+  esperaTexto:'Hola {nombre}:\n\nGracias por inscribirte en AsturLúdicas. Ahora mismo no quedan plazas en la modalidad que elegiste ({modalidad}), así que tu solicitud ({grupo}) queda en lista de espera.\n\nSi se libera una plaza, te escribiremos a este correo. Por ahora no tienes que hacer ningún pago.\n\nUn saludo,\nLa organización de AsturLúdicas'
+};
+const plUrl = () => CFG.FIREBASE_URL+'/inscripciones_plantillas.json?auth='+CFG.FIREBASE_SECRET;
+let _plCargadas = false, _plTimer = null;
+async function cargarPlantillas(){
+  let pl = null;
+  try{ const r = await fetch(plUrl()); if(r.ok) pl = await r.json(); }catch(e){}
+  pl = Object.assign({}, PLANTILLAS_DEF, pl||{});
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=v||''; } };
+  set('pl-activo', pl.activo); set('pl-ac-asunto', pl.aceptadaAsunto); set('pl-ac-texto', pl.aceptadaTexto);
+  set('pl-es-asunto', pl.esperaAsunto); set('pl-es-texto', pl.esperaTexto);
+  _plCargadas = true;
+  const e=document.getElementById('pl-estado'); if(e) e.textContent = pl.activo ? 'Los correos se envían automáticamente.' : 'Envío automático desactivado: revisa los textos y marca la casilla cuando estén listos.';
+}
+function guardarPlantillas(){
+  if(!_plCargadas) return;
+  clearTimeout(_plTimer);
+  _plTimer = setTimeout(async ()=>{
+    const v=id=>{ const el=document.getElementById(id); return el ? (el.type==='checkbox' ? el.checked : el.value) : ''; };
+    const pl = { activo:v('pl-activo'), aceptadaAsunto:v('pl-ac-asunto'), aceptadaTexto:v('pl-ac-texto'), esperaAsunto:v('pl-es-asunto'), esperaTexto:v('pl-es-texto') };
+    const e=document.getElementById('pl-estado');
+    try{
+      const r = await fetch(plUrl(), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(pl)});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      if(e) e.textContent = (pl.activo ? 'Los correos se envían automáticamente.' : 'Envío automático desactivado.')+' Guardado.';
+    }catch(err){ if(e) e.textContent='⚠ No se pudieron guardar los textos: '+err.message; }
+  }, 600);
+}
+function chipCorreo(x){
+  const est = x.estado||'pendiente';
+  if(est!=='aceptada' && est!=='espera') return '';
+  const c = x.correo||{};
+  if(c.estado===est) return ' <span class="chip chip-green">✉ Correo enviado'+(c.ts?' '+new Date(c.ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+'</span>';
+  if(c.error) return ' <span class="chip chip-red">✉ '+esc(c.error)+'</span>';
+  return ' <span class="chip chip-amber">✉ Correo pendiente de envío</span>';
 }
 function setFiltroInscripciones(f){ _insFiltro=f; renderInscripciones(); }
 function renderInscripciones(){
@@ -10322,11 +10382,12 @@ function renderInscripciones(){
       +(yaEnLaApp(d.email,p.nombre)?' <span class="chip chip-amber">Ya en la app</span>':'')+'</td><td>'+esc(p.nick)+'</td><td>'+esc(p.talla)+'</td><td>'+esc(p.alergias)+'</td></tr>').join('');
     const est = x.estado||'pendiente';
     const botones = est==='aceptada'
-      ? '<span class="chip chip-green">Aceptada'+(x.decision&&x.decision.ts?' · '+new Date(x.decision.ts).toLocaleDateString('es-ES'):'')+'</span>'
+      ? '<span class="chip chip-green">Aceptada'+(x.decision&&x.decision.ts?' · '+new Date(x.decision.ts).toLocaleDateString('es-ES'):'')+'</span>'+chipCorreo(x)
       : '<button class="btn btn-sm btn-primary" onclick="aceptarInscripcion(\''+esc(x.id)+'\')">✓ Aceptar grupo</button>'
         +(est!=='espera'?'<button class="btn btn-sm" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'espera\')">Lista de espera</button>':'')
         +(est!=='rechazada'?'<button class="btn btn-sm btn-danger" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'rechazada\')">Rechazar</button>':'')
-        +(est!=='pendiente'?'<button class="btn btn-sm" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'pendiente\')">Volver a pendiente</button>':'');
+        +(est!=='pendiente'?'<button class="btn btn-sm" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'pendiente\')">Volver a pendiente</button>':'')
+        +(est==='espera'?chipCorreo(x):'');
     return '<div class="card" style="margin-bottom:12px">'
       +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">'
       +'<div><div style="font-weight:700;font-size:15px">'+esc(d.nombre)+(d.nick?' (@'+esc(d.nick)+')':'')+'</div>'
