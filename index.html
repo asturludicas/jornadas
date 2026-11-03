@@ -1063,11 +1063,12 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
         <!-- Correos automáticos de inscripción -->
         <div class="card">
           <div class="card-hd"><span class="card-title">Correos de inscripción</span></div>
-          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Al aceptar o pasar a lista de espera una inscripción, se envía este correo desde asturludicas@gmail.com unos 5 minutos después. Si cambiáis el estado antes, no sale. Estos textos se conservan de una edición a otra.</p>
-          <label style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:12px"><input type="checkbox" id="pl-activo" onchange="guardarPlantillas()"> Enviar los correos automáticamente</label>
+          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Los correos no salen solos: los enviáis vosotros desde Inscripciones → Correos, a todos los que aún no lo tienen. Cada persona recibe cada correo una sola vez. Salen desde asturludicas@gmail.com en los 5 minutos siguientes. Estos textos se conservan de una edición a otra.</p>
           <p style="font-size:12px;color:var(--ink3);margin-bottom:12px">Huecos que se rellenan solos: <code>{nombre}</code> nombre del titular · <code>{nombre_completo}</code> · <code>{grupo}</code> nombres de todo el grupo · <code>{personas}</code> · <code>{modalidad}</code> · <code>{importe}</code> por persona · <code>{total}</code> del grupo · <code>{email}</code> · <code>{contraseña}</code> de la app en esta edición</p>
-          <div class="fg"><label>Asunto · plaza confirmada</label><input type="text" id="pl-ac-asunto" oninput="guardarPlantillas()"></div>
-          <div class="fg"><label>Texto · plaza confirmada</label><textarea id="pl-ac-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
+          <div class="fg"><label>Asunto · admitidos con alojamiento</label><input type="text" id="pl-ac-asunto" oninput="guardarPlantillas()"></div>
+          <div class="fg"><label>Texto · admitidos con alojamiento</label><textarea id="pl-ac-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
+          <div class="fg"><label>Asunto · admitidos sin alojamiento</label><input type="text" id="pl-sin-asunto" oninput="guardarPlantillas()"></div>
+          <div class="fg"><label>Texto · admitidos sin alojamiento</label><textarea id="pl-sin-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
           <div class="fg"><label>Asunto · lista de espera</label><input type="text" id="pl-es-asunto" oninput="guardarPlantillas()"></div>
           <div class="fg"><label>Texto · lista de espera</label><textarea id="pl-es-texto" rows="8" oninput="guardarPlantillas()"></textarea></div>
           <div id="pl-estado" style="font-size:12px;color:var(--ink3)"></div>
@@ -2080,7 +2081,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 129; // se incrementa con cada versión desplegada
+const APP_VERSION = 130; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -10543,13 +10544,11 @@ function htmlEstadoFormulario(){
   else linea = 'Formulario conectado. Las respuestas aparecerán aquí en unos minutos.';
   let correo = '';
   if(m.errorCorreos) correo = '<div style="color:var(--red)">⚠ Correos: '+esc(m.errorCorreos)+'</div>';
-  else if(m.correos==='desactivados') correo = '<div>✉ Envío automático de correos desactivado (Configuración → Correos de inscripción).</div>';
   else if(m.correosEnviados) correo = '<div>✉ '+m.correosEnviados+' correo'+(m.correosEnviados>1?'s':'')+' enviado'+(m.correosEnviados>1?'s':'')+' en la última revisión.</div>';
   return '<div id="ins-formulario" style="font-size:13px;margin-bottom:12px;color:'+(!enlace||m.error?'var(--red)':'var(--ink2)')+'">'+linea+correo+'</div>';
 }
 // ─── Plantillas de correo (fuera de la edición: /inscripciones_plantillas) ───
 const PLANTILLAS_DEF = {
-  activo:false,
   aceptadaAsunto:'Plaza confirmada — AsturLúdicas',
   aceptadaTexto:'Hola {nombre}:\n\nTu inscripción en AsturLúdicas está confirmada.\n\nPersonas: {grupo}\nModalidad: {modalidad}\nImporte por persona: {importe} €\nTotal a pagar: {total} €\n\nPara completar la inscripción, haz una transferencia de {total} € a:\nIBAN: ES18 1465 0360 19 1760177551\nTitular: Daniel Méndez-Bonito\nConcepto: AsturLúdicas {nombre_completo}\n\nYa puedes entrar en la app de las jornadas:\nhttps://asturludicas.github.io/jornadas/\nEmail: {email}\nContraseña: {contraseña}\n\nUn saludo,\nLa organización de AsturLúdicas',
   esperaAsunto:'Lista de espera — AsturLúdicas',
@@ -10561,34 +10560,89 @@ async function cargarPlantillas(){
   let pl = null;
   try{ const r = await fetch(plUrl()); if(r.ok) pl = await r.json(); }catch(e){}
   pl = Object.assign({}, PLANTILLAS_DEF, pl||{});
+  if(!pl.sinAsunto) pl.sinAsunto = pl.aceptadaAsunto;
+  if(!pl.sinTexto) pl.sinTexto = pl.aceptadaTexto;
   const set=(id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=v||''; } };
-  set('pl-activo', pl.activo); set('pl-ac-asunto', pl.aceptadaAsunto); set('pl-ac-texto', pl.aceptadaTexto);
+  set('pl-ac-asunto', pl.aceptadaAsunto); set('pl-ac-texto', pl.aceptadaTexto);
+  set('pl-sin-asunto', pl.sinAsunto); set('pl-sin-texto', pl.sinTexto);
   set('pl-es-asunto', pl.esperaAsunto); set('pl-es-texto', pl.esperaTexto);
   _plCargadas = true;
-  const e=document.getElementById('pl-estado'); if(e) e.textContent = pl.activo ? 'Los correos se envían automáticamente.' : 'Envío automático desactivado: revisa los textos y marca la casilla cuando estén listos.';
+  const e=document.getElementById('pl-estado'); if(e) e.textContent = '';
 }
 function guardarPlantillas(){
   if(!_plCargadas) return;
   clearTimeout(_plTimer);
   _plTimer = setTimeout(async ()=>{
     const v=id=>{ const el=document.getElementById(id); return el ? (el.type==='checkbox' ? el.checked : el.value) : ''; };
-    const pl = { activo:v('pl-activo'), aceptadaAsunto:v('pl-ac-asunto'), aceptadaTexto:v('pl-ac-texto'), esperaAsunto:v('pl-es-asunto'), esperaTexto:v('pl-es-texto') };
+    const pl = { aceptadaAsunto:v('pl-ac-asunto'), aceptadaTexto:v('pl-ac-texto'), sinAsunto:v('pl-sin-asunto'), sinTexto:v('pl-sin-texto'), esperaAsunto:v('pl-es-asunto'), esperaTexto:v('pl-es-texto') };
     const e=document.getElementById('pl-estado');
     try{
       const r = await fetch(plUrl(), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(pl)});
       if(!r.ok) throw new Error('HTTP '+r.status);
-      if(e) e.textContent = (pl.activo ? 'Los correos se envían automáticamente.' : 'Envío automático desactivado.')+' Guardado.';
+      if(e) e.textContent = 'Textos guardados.';
     }catch(err){ if(e) e.textContent='⚠ No se pudieron guardar los textos: '+err.message; }
   }, 600);
 }
-function chipCorreo(x){
+// ─── Correos: los pedís vosotros; el script los envía (campo correoPedido) ───
+const TIPOS_CORREO = [['con','Admitidos con alojamiento'],['sin','Admitidos sin alojamiento'],['espera','Lista de espera']];
+function tipoCorreo(x){
   const est = x.estado||'pendiente';
-  if(est!=='aceptada' && est!=='espera') return '';
-  const c = x.correo||{};
-  if(c.estado===est) return ' <span class="chip chip-green">✉ Correo enviado'+(c.ts?' '+new Date(c.ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+'</span>';
-  if(c.error) return ' <span class="chip chip-red">✉ '+esc(c.error)+'</span>';
-  if(INSCR_META && INSCR_META.correos==='desactivados') return ' <span class="chip chip-gray">✉ Correos automáticos desactivados</span>';
-  return ' <span class="chip chip-amber">✉ Correo pendiente de envío</span>';
+  if(est==='espera') return 'espera';
+  if(est==='aceptada') return (x.datos && tipoPlaza(x.datos.modalidad)==='sin') ? 'sin' : 'con';
+  return null;
+}
+// Ya tiene el correo que le toca (los antiguos solo guardaban el estado)
+function correoHecho(x){
+  const c = x.correo, t = tipoCorreo(x);
+  if(!c || c.error || !t) return false;
+  return c.tipo ? c.tipo===t : c.estado===x.estado;
+}
+function fechaCorta(ts){ return ts ? new Date(ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : ''; }
+function chipCorreo(x){
+  const t = tipoCorreo(x); if(!t) return '';
+  const id = esc(x.id), c = x.correo||{};
+  if(x.correoPedido) return ' <span class="chip chip-amber">✉ En cola: sale en unos minutos</span>';
+  if(correoHecho(x)) return ' <span class="chip chip-green">✉ Enviado '+fechaCorta(c.ts)+'</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\',true)">Reenviar</button>';
+  if(c.error) return ' <span class="chip chip-red">✉ '+esc(c.error)+'</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\')">Reintentar</button>';
+  return ' <span class="chip chip-gray">✉ Sin enviar</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\')">Enviar correo</button>';
+}
+function inscripcionesConDatos(){ return Object.entries(INSCR||{}).filter(([id,x])=>x&&x.datos).map(([id,x])=>Object.assign({id}, x)); }
+function porEnviar(t){ return inscripcionesConDatos().filter(x=>tipoCorreo(x)===t && !x.correoPedido && !correoHecho(x)); }
+function htmlCorreos(){
+  const todas = inscripcionesConDatos();
+  const filas = TIPOS_CORREO.map(([t,l])=>{
+    const deEste = todas.filter(x=>tipoCorreo(x)===t);
+    if(!deEste.length) return '';
+    const n = porEnviar(t).length, cola = deEste.filter(x=>x.correoPedido).length, ok = deEste.filter(x=>!x.correoPedido && correoHecho(x)).length;
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line,#ddd)">'
+      +'<div><div style="font-weight:700">'+l+'</div><div style="font-size:12px;color:var(--ink3)">'+ok+' enviado'+(ok!==1?'s':'')+(cola?' · '+cola+' en cola':'')+' · <strong style="color:'+(n?'var(--amber)':'var(--ink3)')+'">'+n+' sin enviar</strong></div></div>'
+      +(n?'<button class="btn btn-sm btn-primary" onclick="enviarCorreosTipo(\''+t+'\')">Enviar a '+(n===1?'1 persona':'los '+n)+'</button>':'<span class="chip chip-green">Al día</span>')+'</div>';
+  }).join('');
+  if(!filas) return '';
+  return '<div class="card"><div class="card-hd"><span class="card-title">Correos</span><button class="btn btn-xs" onclick="nav(\'config\')">Editar textos</button></div>'
+    +'<p style="font-size:12px;color:var(--ink3);margin-bottom:4px">Solo se envía a quien aún no lo tiene. Salen en los 5 minutos siguientes.</p>'+filas+'</div>';
+}
+async function pedirCorreos(lista){
+  const cuerpo = {}; lista.forEach(x=>{ cuerpo[x.id+'/correoPedido'] = tipoCorreo(x); });
+  const r = await fetch(insUrl(), {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cuerpo)});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  lista.forEach(x=>{ if(INSCR[x.id]) INSCR[x.id].correoPedido = tipoCorreo(x); });
+}
+async function enviarCorreosTipo(t){
+  const lista = porEnviar(t); if(!lista.length) return;
+  const nombre = (TIPOS_CORREO.find(z=>z[0]===t)||[])[1]||t;
+  const nombres = lista.slice(0,15).map(x=>'• '+x.datos.nombre+' ('+x.datos.email+')').join('\n')+(lista.length>15?'\n… y '+(lista.length-15)+' más':'');
+  if(!confirm('Enviar el correo "'+nombre+'" a '+lista.length+' inscripción'+(lista.length>1?'es':'')+':\n\n'+nombres+'\n\nSaldrán en los próximos 5 minutos.')) return;
+  try{ await pedirCorreos(lista); log('CORREOS_'+t.toUpperCase(), lista.length+' inscripciones'); toast('Correos en cola: '+lista.length,'ok'); renderInscripciones(); }
+  catch(e){ toast('No se pudieron poner en cola: '+e.message,'err'); }
+}
+async function enviarCorreoUno(id, reenviar){
+  const x = INSCR[id]; if(!x || !x.datos) return;
+  const t = tipoCorreo(x); if(!t) return;
+  const nombre = (TIPOS_CORREO.find(z=>z[0]===t)||[])[1];
+  if(!confirm((reenviar?'¿Reenviar':'¿Enviar')+' el correo "'+nombre+'" a '+x.datos.nombre+' ('+x.datos.email+')?')) return;
+  try{ await pedirCorreos([Object.assign({id}, x)]); toast('Correo en cola','ok'); renderInscripciones(); }
+  catch(e){ toast('No se pudo poner en cola: '+e.message,'err'); }
 }
 const corto = l => { l=l.replace('Habitación ',''); return l.charAt(0).toUpperCase()+l.slice(1); };
 function setFiltroInscripciones(f){ _insFiltro=f; renderInscripciones(); }
@@ -10693,7 +10747,7 @@ function renderInscripciones(){
 
   const nIlegibles = Object.values(INSCR||{}).filter(x=>x && x._ilegible).length;
   const ilegibles = nIlegibles ? '<div class="card" style="border-color:var(--red)"><p style="font-size:13px;color:var(--red);font-weight:700">⚠ '+nIlegibles+' inscripción'+(nIlegibles>1?'es':'')+' no se pueden leer con la clave de esta app. Revisa que la propiedad CLAVE_CIFRADO del script sea la de Configuración → Clave para el script.</p></div>' : '';
-  el.innerHTML = htmlEstadoFormulario() + ilegibles + resumen + desglose + tabs + filtros + tarjetas;
+  el.innerHTML = htmlEstadoFormulario() + ilegibles + resumen + desglose + htmlCorreos() + tabs + filtros + tarjetas;
 }
 
 // ─── Decisiones ────────────────────────────────────────
