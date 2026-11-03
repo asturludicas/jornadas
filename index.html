@@ -1490,7 +1490,8 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
       <input type="hidden" id="hb-id">
       <div class="form-grid">
         <div class="fg"><label>Hotel</label><input type="text" id="hb-hotel"></div>
-        <div class="fg"><label>Nº / Nombre hab.</label><input type="text" id="hb-num" placeholder="101"></div>
+        <div class="fg"><label>Nº / Nombre hab.</label><input type="text" id="hb-num" placeholder="Vacío = automático (triple 3)"></div>
+        <div class="fg" id="hb-cant-fg"><label>Cuántas crear</label><input type="number" id="hb-cant" min="1" max="50" value="1"></div>
         <div class="fg"><label>Tipo</label><select id="hb-tipo" onchange="(function(){var m={individual:1,doble:2,triple:3,cuadruple:4};var t=document.getElementById('hb-tipo').value;var c=m[t.normalize('NFD').replace(/[\u0300-\u036f]/g,'')] || 2;document.getElementById('hb-cap').value=c;})()"><option>individual</option><option>doble</option><option>triple</option><option>cuádruple</option></select></div>
         <div class="fg"><label>Capacidad</label><input type="number" id="hb-cap" min="1" max="6" value="2"></div>
         <div class="fg"><label>Noches</label><select id="hb-noches"><option value="ambas">Jueves + Viernes → Dom</option><option value="viernes">Solo Viernes → Dom</option></select></div>
@@ -2083,7 +2084,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 131; // se incrementa con cada versión desplegada
+const APP_VERSION = 132; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -3704,8 +3705,51 @@ async function quitarAperturaAloj(){
   }
 }
 
+// Nombres de habitación: "<tipo> <n>" (con el hotel delante se ve "Marsol triple 2").
+// Nunca se repite el mismo nombre en el mismo hotel.
+function normHab(t){ return String(t||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' '); }
+function habExiste(hotel, num, salvoId){
+  const h=normHab(hotel), n=normHab(num);
+  return (DB.habitaciones||[]).some(x=>(x.ID||x.id||'')!==salvoId && normHab(x.Hotel||x.hotel)===h && normHab(x.NumeroHabitacion||x.num)===n);
+}
+function siguientesNombresHab(hotel, tipo, cuantas){
+  const h=normHab(hotel), t=normHab(tipo);
+  const re=new RegExp('^'+t+'\\s*0*(\\d+)$');
+  let max=0;
+  (DB.habitaciones||[]).forEach(x=>{
+    if(normHab(x.Hotel||x.hotel)!==h) return;
+    const m=normHab(x.NumeroHabitacion||x.num).match(re); if(m) max=Math.max(max, Number(m[1]));
+  });
+  const nombres=[];
+  for(let n=max+1; nombres.length<cuantas; n++){ const nom=tipo+' '+n; if(!habExiste(hotel, nom)) nombres.push(nom); }
+  return nombres;
+}
 async function guardarHab(){
-  const id=document.getElementById('hb-id').value||uid('H_');
+  const idEdit=document.getElementById('hb-id').value;
+  if(!idEdit){
+    const hotel=document.getElementById('hb-hotel').value.trim();
+    const tipo=document.getElementById('hb-tipo').value;
+    const numManual=document.getElementById('hb-num').value.trim();
+    const cuantas=Math.min(50, Math.max(1, parseInt(document.getElementById('hb-cant').value,10)||1));
+    if(numManual && cuantas>1){ toast('Para crear varias deja el nombre vacío: se numeran solas','err'); return; }
+    if(numManual && habExiste(hotel, numManual)){ toast('Ya existe "'+(hotel?hotel+' ':'')+numManual+'"','err'); return; }
+    const nombres = numManual ? [numManual] : siguientesNombresHab(hotel, tipo, cuantas);
+    if(cuantas>1 && !confirm('Se van a crear '+cuantas+' habitaciones:\n\n'+nombres.map(n=>'• '+(hotel?hotel+' ':'')+n).join('\n')+'\n\n¿Continuar?')) return;
+    nombres.forEach(nom=>{
+      const id=uid('H_');
+      DB.habitaciones.push({
+        ID:id,id, Hotel:hotel, hotel, NumeroHabitacion:nom, num:nom, Tipo:tipo, tipo,
+        Capacidad:(function(){var m={individual:1,doble:2,triple:3,cuadruple:4};return m[normHab(tipo)]||document.getElementById('hb-cap').value||2;})(), cap:document.getElementById('hb-cap').value,
+        noches:document.getElementById('hb-noches').value, Modalidades:document.getElementById('hb-mods').value,
+      });
+    });
+    log('SAVE_HAB', (hotel?hotel+' ':'')+nombres.join(', '));
+    await saveRemote(); closeModal('mo-hab'); renderAlojamiento();
+    toast(nombres.length>1?nombres.length+' habitaciones creadas':'Habitación "'+(hotel?hotel+' ':'')+nombres[0]+'" creada','ok');
+    return;
+  }
+  if(habExiste(document.getElementById('hb-hotel').value, document.getElementById('hb-num').value, idEdit)){ toast('Ya hay otra habitación con ese hotel y nombre','err'); return; }
+  const id=idEdit;
   const camposNuevos={
     ID:id,id,
     Hotel:document.getElementById('hb-hotel').value, hotel:document.getElementById('hb-hotel').value,
@@ -3733,7 +3777,9 @@ function editarHab(id){
   document.getElementById('hb-cap').value=h.Capacidad||h.cap||2;
   document.getElementById('hb-noches').value=h.noches||'ambas';
   document.getElementById('hb-mods').value=h.Modalidades||'TODAS';
-  openModal('mo-hab');
+  document.getElementById('hb-cant-fg').style.display='none';
+  // Se abre directamente: openModal('mo-hab') vacía el formulario (es el de "Nueva")
+  document.getElementById('mo-hab').classList.add('open');
 }
 async function eliminarHab(id){
   if(!confirm('¿Eliminar habitación?')) return;
@@ -4079,7 +4125,7 @@ window.openModal=function(id){
   if(id==='mo-pago') abrirModalPago();
   else if(id==='mo-gasto'){ abrirModalGasto(); }
   else if(id==='mo-cobro'){ abrirModalCobro(); }
-  else if(id==='mo-hab'){ document.getElementById('hb-id').value=''; ['hb-hotel','hb-num'].forEach(x=>document.getElementById(x).value=''); document.getElementById('hb-tipo').value='doble'; document.getElementById('hb-cap').value='2'; document.getElementById('hb-noches').value='ambas'; document.getElementById('hb-mods').value='TODAS'; document.getElementById('mo-hab').classList.add('open'); }
+  else if(id==='mo-hab'){ document.getElementById('hb-id').value=''; ['hb-hotel','hb-num'].forEach(x=>document.getElementById(x).value=''); document.getElementById('hb-tipo').value='doble'; document.getElementById('hb-cap').value='2'; document.getElementById('hb-noches').value='ambas'; document.getElementById('hb-mods').value='TODAS'; document.getElementById('hb-cant').value='1'; document.getElementById('hb-cant-fg').style.display=''; document.getElementById('mo-hab').classList.add('open'); }
   else document.getElementById(id).classList.add('open');
 };
 
