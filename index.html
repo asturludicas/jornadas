@@ -10282,7 +10282,10 @@ function personasDeInscripcion(d){
 }
 // Ediciones a las que dice haber venido (casillas del formulario, separadas por comas)
 function listaEdiciones(s){
-  return String(s||'').split(',').map(x=>x.trim()).filter(x=>x && !/primera vez/i.test(x));
+  s = String(s||'');
+  // El script separa las casillas con " | " (las opciones pueden llevar comas); las antiguas, con comas
+  const partes = s.includes('|') ? s.split('|') : s.split(',');
+  return partes.map(x=>x.trim()).filter(x=>x && !/primera vez/i.test(x));
 }
 function htmlEdiciones(s){
   if(!String(s||'').trim()) return '<span style="color:var(--ink3)">—</span>';
@@ -10348,6 +10351,7 @@ function chipCorreo(x){
   const c = x.correo||{};
   if(c.estado===est) return ' <span class="chip chip-green">✉ Correo enviado'+(c.ts?' '+new Date(c.ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+'</span>';
   if(c.error) return ' <span class="chip chip-red">✉ '+esc(c.error)+'</span>';
+  if(INSCR_META && INSCR_META.correos==='desactivados') return ' <span class="chip chip-gray">✉ Correos automáticos desactivados</span>';
   return ' <span class="chip chip-amber">✉ Correo pendiente de envío</span>';
 }
 function setFiltroInscripciones(f){ _insFiltro=f; renderInscripciones(); }
