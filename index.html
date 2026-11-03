@@ -1064,11 +1064,13 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
         <div class="card">
           <div class="card-hd"><span class="card-title">Correos de inscripción</span></div>
           <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Los correos no salen solos: los enviáis vosotros desde Inscripciones → Correos, a todos los que aún no lo tienen. Cada persona recibe cada correo una sola vez. Salen desde asturludicas@gmail.com en los 5 minutos siguientes. Estos textos se conservan de una edición a otra.</p>
-          <p style="font-size:12px;color:var(--ink3);margin-bottom:12px">Huecos que se rellenan solos: <code>{nombre}</code> nombre del titular · <code>{nombre_completo}</code> · <code>{grupo}</code> nombres de todo el grupo · <code>{personas}</code> · <code>{modalidad}</code> · <code>{importe}</code> por persona · <code>{total}</code> del grupo · <code>{email}</code> · <code>{contraseña}</code> de la app en esta edición</p>
+          <p style="font-size:12px;color:var(--ink3);margin-bottom:12px">Huecos que se rellenan solos: <code>{nombre}</code> nombre del titular · <code>{nombre_completo}</code> · <code>{grupo}</code> nombres de todo el grupo · <code>{personas}</code> · <code>{modalidad}</code> · <code>{importe}</code> por persona · <code>{total}</code> del grupo · <code>{email}</code> · <code>{contraseña}</code> de la app en esta edición · <code>{apertura_habitaciones}</code> fecha y hora en que se abre el reparto (Alojamiento)</p>
           <div class="fg"><label>Asunto · admitidos con alojamiento</label><input type="text" id="pl-ac-asunto" oninput="guardarPlantillas()"></div>
           <div class="fg"><label>Texto · admitidos con alojamiento</label><textarea id="pl-ac-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
           <div class="fg"><label>Asunto · admitidos sin alojamiento</label><input type="text" id="pl-sin-asunto" oninput="guardarPlantillas()"></div>
           <div class="fg"><label>Texto · admitidos sin alojamiento</label><textarea id="pl-sin-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
+          <div class="fg"><label>Asunto · reparto de habitaciones (solo admitidos con alojamiento)</label><input type="text" id="pl-hab-asunto" oninput="guardarPlantillas()"></div>
+          <div class="fg"><label>Texto · reparto de habitaciones</label><textarea id="pl-hab-texto" rows="12" oninput="guardarPlantillas()"></textarea></div>
           <div class="fg"><label>Asunto · lista de espera</label><input type="text" id="pl-es-asunto" oninput="guardarPlantillas()"></div>
           <div class="fg"><label>Texto · lista de espera</label><textarea id="pl-es-texto" rows="8" oninput="guardarPlantillas()"></textarea></div>
           <div id="pl-estado" style="font-size:12px;color:var(--ink3)"></div>
@@ -2081,7 +2083,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 130; // se incrementa con cada versión desplegada
+const APP_VERSION = 131; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -10551,6 +10553,8 @@ function htmlEstadoFormulario(){
 const PLANTILLAS_DEF = {
   aceptadaAsunto:'Plaza confirmada — AsturLúdicas',
   aceptadaTexto:'Hola {nombre}:\n\nTu inscripción en AsturLúdicas está confirmada.\n\nPersonas: {grupo}\nModalidad: {modalidad}\nImporte por persona: {importe} €\nTotal a pagar: {total} €\n\nPara completar la inscripción, haz una transferencia de {total} € a:\nIBAN: ES18 1465 0360 19 1760177551\nTitular: Daniel Méndez-Bonito\nConcepto: AsturLúdicas {nombre_completo}\n\nYa puedes entrar en la app de las jornadas:\nhttps://asturludicas.github.io/jornadas/\nEmail: {email}\nContraseña: {contraseña}\n\nUn saludo,\nLa organización de AsturLúdicas',
+  habAsunto:'Reparto de habitaciones — AsturLúdicas',
+  habTexto:'Hola {nombre}:\n\nComo vienes a AsturLúdicas con alojamiento, te contamos cómo funciona el reparto de habitaciones.\n\nSe hace desde la app de las jornadas:\nhttps://asturludicas.github.io/jornadas/\nEmail: {email}\nContraseña: {contraseña}\n\nEl reparto se abre el {apertura_habitaciones}. A partir de ese momento entra en la app, ve al apartado de alojamiento y elige tu habitación.\n\nUn saludo,\nLa organización de AsturLúdicas',
   esperaAsunto:'Lista de espera — AsturLúdicas',
   esperaTexto:'Hola {nombre}:\n\nGracias por inscribirte en AsturLúdicas. Ahora mismo no quedan plazas en la modalidad que elegiste ({modalidad}), así que tu solicitud ({grupo}) queda en lista de espera.\n\nSi se libera una plaza, te escribiremos a este correo. Por ahora no tienes que hacer ningún pago.\n\nUn saludo,\nLa organización de AsturLúdicas'
 };
@@ -10565,6 +10569,7 @@ async function cargarPlantillas(){
   const set=(id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=v||''; } };
   set('pl-ac-asunto', pl.aceptadaAsunto); set('pl-ac-texto', pl.aceptadaTexto);
   set('pl-sin-asunto', pl.sinAsunto); set('pl-sin-texto', pl.sinTexto);
+  set('pl-hab-asunto', pl.habAsunto); set('pl-hab-texto', pl.habTexto);
   set('pl-es-asunto', pl.esperaAsunto); set('pl-es-texto', pl.esperaTexto);
   _plCargadas = true;
   const e=document.getElementById('pl-estado'); if(e) e.textContent = '';
@@ -10574,7 +10579,7 @@ function guardarPlantillas(){
   clearTimeout(_plTimer);
   _plTimer = setTimeout(async ()=>{
     const v=id=>{ const el=document.getElementById(id); return el ? (el.type==='checkbox' ? el.checked : el.value) : ''; };
-    const pl = { aceptadaAsunto:v('pl-ac-asunto'), aceptadaTexto:v('pl-ac-texto'), sinAsunto:v('pl-sin-asunto'), sinTexto:v('pl-sin-texto'), esperaAsunto:v('pl-es-asunto'), esperaTexto:v('pl-es-texto') };
+    const pl = { aceptadaAsunto:v('pl-ac-asunto'), aceptadaTexto:v('pl-ac-texto'), sinAsunto:v('pl-sin-asunto'), sinTexto:v('pl-sin-texto'), habAsunto:v('pl-hab-asunto'), habTexto:v('pl-hab-texto'), esperaAsunto:v('pl-es-asunto'), esperaTexto:v('pl-es-texto') };
     const e=document.getElementById('pl-estado');
     try{
       const r = await fetch(plUrl(), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(pl)});
@@ -10584,7 +10589,7 @@ function guardarPlantillas(){
   }, 600);
 }
 // ─── Correos: los pedís vosotros; el script los envía (campo correoPedido) ───
-const TIPOS_CORREO = [['con','Admitidos con alojamiento'],['sin','Admitidos sin alojamiento'],['espera','Lista de espera']];
+const TIPOS_CORREO = [['con','Admitidos con alojamiento'],['sin','Admitidos sin alojamiento'],['hab','Reparto de habitaciones (admitidos con alojamiento)'],['espera','Lista de espera']];
 function tipoCorreo(x){
   const est = x.estado||'pendiente';
   if(est==='espera') return 'espera';
@@ -10597,6 +10602,13 @@ function correoHecho(x){
   if(!c || c.error || !t) return false;
   return c.tipo ? c.tipo===t : c.estado===x.estado;
 }
+// El correo del reparto de habitaciones va aparte (correoHab / correoHabPedido)
+function aplicaCorreo(x, t){
+  if(t==='hab') return (x.estado||'pendiente')==='aceptada' && !!x.datos && tipoPlaza(x.datos.modalidad)!=='sin';
+  return tipoCorreo(x)===t;
+}
+function correoEnCola(x, t){ return t==='hab' ? !!x.correoHabPedido : !!x.correoPedido; }
+function correoYaEnviado(x, t){ return t==='hab' ? !!(x.correoHab && !x.correoHab.error) : correoHecho(x); }
 function fechaCorta(ts){ return ts ? new Date(ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : ''; }
 function chipCorreo(x){
   const t = tipoCorreo(x); if(!t) return '';
@@ -10606,14 +10618,22 @@ function chipCorreo(x){
   if(c.error) return ' <span class="chip chip-red">✉ '+esc(c.error)+'</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\')">Reintentar</button>';
   return ' <span class="chip chip-gray">✉ Sin enviar</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\')">Enviar correo</button>';
 }
+function chipCorreoHab(x){
+  if(!aplicaCorreo(x,'hab')) return '';
+  const id = esc(x.id), c = x.correoHab||{};
+  if(x.correoHabPedido) return ' <span class="chip chip-amber">🛏 Habitaciones: en cola</span>';
+  if(correoYaEnviado(x,'hab')) return ' <span class="chip chip-green">🛏 Habitaciones: enviado '+fechaCorta(c.ts)+'</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\',true,\'hab\')">Reenviar</button>';
+  if(c.error) return ' <span class="chip chip-red">🛏 '+esc(c.error)+'</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\',false,\'hab\')">Reintentar</button>';
+  return ' <span class="chip chip-gray">🛏 Habitaciones: sin enviar</span><button class="btn btn-xs" onclick="enviarCorreoUno(\''+id+'\',false,\'hab\')">Enviar</button>';
+}
 function inscripcionesConDatos(){ return Object.entries(INSCR||{}).filter(([id,x])=>x&&x.datos).map(([id,x])=>Object.assign({id}, x)); }
-function porEnviar(t){ return inscripcionesConDatos().filter(x=>tipoCorreo(x)===t && !x.correoPedido && !correoHecho(x)); }
+function porEnviar(t){ return inscripcionesConDatos().filter(x=>aplicaCorreo(x,t) && !correoEnCola(x,t) && !correoYaEnviado(x,t)); }
 function htmlCorreos(){
   const todas = inscripcionesConDatos();
   const filas = TIPOS_CORREO.map(([t,l])=>{
-    const deEste = todas.filter(x=>tipoCorreo(x)===t);
+    const deEste = todas.filter(x=>aplicaCorreo(x,t));
     if(!deEste.length) return '';
-    const n = porEnviar(t).length, cola = deEste.filter(x=>x.correoPedido).length, ok = deEste.filter(x=>!x.correoPedido && correoHecho(x)).length;
+    const n = porEnviar(t).length, cola = deEste.filter(x=>correoEnCola(x,t)).length, ok = deEste.filter(x=>!correoEnCola(x,t) && correoYaEnviado(x,t)).length;
     return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line,#ddd)">'
       +'<div><div style="font-weight:700">'+l+'</div><div style="font-size:12px;color:var(--ink3)">'+ok+' enviado'+(ok!==1?'s':'')+(cola?' · '+cola+' en cola':'')+' · <strong style="color:'+(n?'var(--amber)':'var(--ink3)')+'">'+n+' sin enviar</strong></div></div>'
       +(n?'<button class="btn btn-sm btn-primary" onclick="enviarCorreosTipo(\''+t+'\')">Enviar a '+(n===1?'1 persona':'los '+n)+'</button>':'<span class="chip chip-green">Al día</span>')+'</div>';
@@ -10622,26 +10642,29 @@ function htmlCorreos(){
   return '<div class="card"><div class="card-hd"><span class="card-title">Correos</span><button class="btn btn-xs" onclick="nav(\'config\')">Editar textos</button></div>'
     +'<p style="font-size:12px;color:var(--ink3);margin-bottom:4px">Solo se envía a quien aún no lo tiene. Salen en los 5 minutos siguientes.</p>'+filas+'</div>';
 }
-async function pedirCorreos(lista){
-  const cuerpo = {}; lista.forEach(x=>{ cuerpo[x.id+'/correoPedido'] = tipoCorreo(x); });
+async function pedirCorreos(lista, t){
+  const campo = t==='hab' ? 'correoHabPedido' : 'correoPedido';
+  const valor = x => t==='hab' ? true : tipoCorreo(x);
+  const cuerpo = {}; lista.forEach(x=>{ cuerpo[x.id+'/'+campo] = valor(x); });
   const r = await fetch(insUrl(), {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cuerpo)});
   if(!r.ok) throw new Error('HTTP '+r.status);
-  lista.forEach(x=>{ if(INSCR[x.id]) INSCR[x.id].correoPedido = tipoCorreo(x); });
+  lista.forEach(x=>{ if(INSCR[x.id]) INSCR[x.id][campo] = valor(x); });
 }
 async function enviarCorreosTipo(t){
   const lista = porEnviar(t); if(!lista.length) return;
   const nombre = (TIPOS_CORREO.find(z=>z[0]===t)||[])[1]||t;
   const nombres = lista.slice(0,15).map(x=>'• '+x.datos.nombre+' ('+x.datos.email+')').join('\n')+(lista.length>15?'\n… y '+(lista.length-15)+' más':'');
   if(!confirm('Enviar el correo "'+nombre+'" a '+lista.length+' inscripción'+(lista.length>1?'es':'')+':\n\n'+nombres+'\n\nSaldrán en los próximos 5 minutos.')) return;
-  try{ await pedirCorreos(lista); log('CORREOS_'+t.toUpperCase(), lista.length+' inscripciones'); toast('Correos en cola: '+lista.length,'ok'); renderInscripciones(); }
+  if(t==='hab' && !(DB.config && DB.config.aloj_apertura) && !confirm('Todavía no hay fecha de apertura del reparto en Alojamiento, así que en el correo saldrá "la fecha que os indicaremos". ¿Enviar igualmente?')) return;
+  try{ await pedirCorreos(lista, t); log('CORREOS_'+t.toUpperCase(), lista.length+' inscripciones'); toast('Correos en cola: '+lista.length,'ok'); renderInscripciones(); }
   catch(e){ toast('No se pudieron poner en cola: '+e.message,'err'); }
 }
-async function enviarCorreoUno(id, reenviar){
+async function enviarCorreoUno(id, reenviar, cual){
   const x = INSCR[id]; if(!x || !x.datos) return;
-  const t = tipoCorreo(x); if(!t) return;
+  const t = cual==='hab' ? 'hab' : tipoCorreo(x); if(!t || !aplicaCorreo(x,t)) return;
   const nombre = (TIPOS_CORREO.find(z=>z[0]===t)||[])[1];
   if(!confirm((reenviar?'¿Reenviar':'¿Enviar')+' el correo "'+nombre+'" a '+x.datos.nombre+' ('+x.datos.email+')?')) return;
-  try{ await pedirCorreos([Object.assign({id}, x)]); toast('Correo en cola','ok'); renderInscripciones(); }
+  try{ await pedirCorreos([Object.assign({id}, x)], t); toast('Correo en cola','ok'); renderInscripciones(); }
   catch(e){ toast('No se pudo poner en cola: '+e.message,'err'); }
 }
 const corto = l => { l=l.replace('Habitación ',''); return l.charAt(0).toUpperCase()+l.slice(1); };
@@ -10724,7 +10747,7 @@ function renderInscripciones(){
       +(yaEnLaApp(d.email,p.nombre)?' <span class="chip chip-amber">Ya en la app</span>':'')+'</td><td>'+esc(p.nick)+'</td><td>'+esc(p.talla)+'</td><td>'+esc(p.alergias)+'</td><td>'+htmlEdiciones(p.ediciones)+'</td></tr>').join('');
     const est = x.estado||'pendiente';
     const botones = est==='aceptada'
-      ? '<span class="chip chip-green">Aceptada'+(x.decision&&x.decision.ts?' · '+new Date(x.decision.ts).toLocaleDateString('es-ES'):'')+'</span>'+chipCorreo(x)
+      ? '<span class="chip chip-green">Aceptada'+(x.decision&&x.decision.ts?' · '+new Date(x.decision.ts).toLocaleDateString('es-ES'):'')+'</span>'+chipCorreo(x)+chipCorreoHab(x)
       : '<button class="btn btn-sm btn-primary" onclick="aceptarInscripcion(\''+esc(x.id)+'\')">✓ Aceptar grupo</button>'
         +(est!=='espera'?'<button class="btn btn-sm" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'espera\')">Lista de espera</button>':'')
         +(est!=='rechazada'?'<button class="btn btn-sm btn-danger" onclick="cambiarEstadoInscripcion(\''+esc(x.id)+'\',\'rechazada\')">Rechazar</button>':'')
