@@ -1028,12 +1028,16 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
         <!-- Plazas de la edición (contador público) -->
         <div class="card">
           <div class="card-hd"><span class="card-title">Plazas de la edición</span></div>
-          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Con estos números y las personas aceptadas se calcula el contador que se ve en la web: Disponible, Últimas plazas (queda un 15 % o menos) o Lista de espera. Deja a 0 lo que no quieras mostrar.</p>
+          <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Cuántas habitaciones hay de cada tipo. Las dobles, triples y cuádruples forman las plazas en <strong>habitación compartida</strong> (la modalidad "Compartida" del formulario). Con esto y las personas aceptadas se calcula el contador de la web: Disponible, Últimas plazas (queda un 15 % o menos) o Lista de espera. Deja a 0 lo que no haya.</p>
           <div class="form-grid">
-            <div class="fg"><label>Plazas en habitación individual</label><input type="number" min="0" id="cfg-pl-ind" oninput="saveConfig()"></div>
+            <div class="fg"><label>Habitaciones individuales</label><input type="number" min="0" id="cfg-pl-ind" oninput="saveConfig()"></div>
             <div class="fg"><label>Habitaciones dobles</label><input type="number" min="0" id="cfg-pl-dob" oninput="saveConfig()"></div>
+            <div class="fg"><label>Habitaciones triples</label><input type="number" min="0" id="cfg-pl-tri" oninput="saveConfig()"></div>
+            <div class="fg"><label>Habitaciones cuádruples</label><input type="number" min="0" id="cfg-pl-cua" oninput="saveConfig()"></div>
             <div class="fg"><label>Plazas sin alojamiento</label><input type="number" min="0" id="cfg-pl-sin" oninput="saveConfig()"></div>
           </div>
+          <div id="cfg-pl-total" style="font-size:13px;margin-top:6px"></div>
+          <button class="btn btn-sm" style="margin-top:8px" onclick="plazasDesdeHabitaciones()">Contar desde el apartado Habitaciones</button>
         </div>
 
         <!-- Formulario de inscripción de la edición -->
@@ -2063,7 +2067,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 127; // se incrementa con cada versión desplegada
+const APP_VERSION = 128; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -4477,7 +4481,10 @@ function renderConfig(){
   const _pl=DB.config.plazas||{};
   document.getElementById('cfg-pl-ind').value=_pl.individual||0;
   document.getElementById('cfg-pl-dob').value=_pl.dobles||0;
+  document.getElementById('cfg-pl-tri').value=_pl.triples||0;
+  document.getElementById('cfg-pl-cua').value=_pl.cuadruples||0;
   document.getElementById('cfg-pl-sin').value=_pl.sin||0;
+  pintarTotalPlazas();
   document.getElementById('cfg-form').value=DB.config.formularioInscripcion||'';
   cargarPlantillas();
   document.getElementById('cfg-pass-inscritos').value=DB.config.inscritoPass||CFG.INSCRITO_PASS||'';
@@ -4508,8 +4515,11 @@ async function saveConfig(){
   DB.config.plazas={
     individual:Math.max(0,parseInt(document.getElementById('cfg-pl-ind').value,10)||0),
     dobles:Math.max(0,parseInt(document.getElementById('cfg-pl-dob').value,10)||0),
+    triples:Math.max(0,parseInt(document.getElementById('cfg-pl-tri').value,10)||0),
+    cuadruples:Math.max(0,parseInt(document.getElementById('cfg-pl-cua').value,10)||0),
     sin:Math.max(0,parseInt(document.getElementById('cfg-pl-sin').value,10)||0)
   };
+  pintarTotalPlazas();
   DB.config.formularioInscripcion=document.getElementById('cfg-form').value.trim();
   DB.config.inscritoPass=document.getElementById('cfg-pass-inscritos').value.trim()||CFG.INSCRITO_PASS;
   document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
@@ -10224,14 +10234,53 @@ function tipoPlaza(modalidad){
   if(m.includes('individual')) return 'individual';
   return 'doble';
 }
+// 'doble' es la bolsa de habitación compartida (dobles + triples + cuádruples);
+// se mantiene la clave por compatibilidad con el contador público.
 const PLAZAS_TIPOS = [
   {k:'individual', label:'Habitación individual'},
-  {k:'doble',      label:'Habitación doble'},
+  {k:'doble',      label:'Habitación compartida'},
   {k:'sin',        label:'Sin alojamiento'}
 ];
 function capacidadPlazas(){
   const c = (DB.config && DB.config.plazas) || {};
-  return { individual:Number(c.individual)||0, doble:(Number(c.dobles)||0)*2, sin:Number(c.sin)||0 };
+  const n = k => Number(c[k])||0;
+  return { individual:n('individual'), doble:n('dobles')*2+n('triples')*3+n('cuadruples')*4, sin:n('sin') };
+}
+function textoHabitaciones(){
+  const c = (DB.config && DB.config.plazas) || {}, n = k => Number(c[k])||0, partes = [];
+  if(n('dobles')) partes.push(n('dobles')+' doble'+(n('dobles')>1?'s':''));
+  if(n('triples')) partes.push(n('triples')+' triple'+(n('triples')>1?'s':''));
+  if(n('cuadruples')) partes.push(n('cuadruples')+' cuádruple'+(n('cuadruples')>1?'s':''));
+  return partes.join(' · ');
+}
+function pintarTotalPlazas(){
+  const el = document.getElementById('cfg-pl-total'); if(!el) return;
+  const leer = id => Math.max(0,parseInt((document.getElementById(id)||{}).value,10)||0);
+  const ind = leer('cfg-pl-ind'), comp = leer('cfg-pl-dob')*2+leer('cfg-pl-tri')*3+leer('cfg-pl-cua')*4, sin = leer('cfg-pl-sin');
+  el.innerHTML = 'Total: <strong>'+ind+'</strong> en individual · <strong>'+comp+'</strong> en compartida · <strong>'+sin+'</strong> sin alojamiento = <strong>'+(ind+comp+sin)+' personas</strong>';
+}
+function plazasDesdeHabitaciones(){
+  const cuenta = {individual:0, doble:0, triple:0, cuadruple:0};
+  (DB.habitaciones||[]).forEach(h=>{
+    const t = String(h.Tipo||h.tipo||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if(cuenta[t]!==undefined) cuenta[t]++;
+  });
+  const total = cuenta.individual+cuenta.doble+cuenta.triple+cuenta.cuadruple;
+  if(!total){ toast('No hay habitaciones creadas en el apartado Habitaciones','err'); return; }
+  if(!confirm('En Habitaciones hay: '+cuenta.individual+' individuales, '+cuenta.doble+' dobles, '+cuenta.triple+' triples y '+cuenta.cuadruple+' cuádruples.\n\n¿Usar estos números? (Las plazas sin alojamiento no cambian)')) return;
+  document.getElementById('cfg-pl-ind').value=cuenta.individual;
+  document.getElementById('cfg-pl-dob').value=cuenta.doble;
+  document.getElementById('cfg-pl-tri').value=cuenta.triple;
+  document.getElementById('cfg-pl-cua').value=cuenta.cuadruple;
+  saveConfig();
+}
+// Día de llegada según la modalidad
+const DIAS_LLEGADA = [['jueves','Jueves tarde'],['vmanana','Viernes mañana'],['vtarde','Viernes tarde']];
+function diaLlegada(modalidad){
+  const m = String(modalidad||'').toLowerCase();
+  if(m.includes('jueves')) return 'jueves';
+  if(m.includes('viernes')) return m.includes('tarde') ? 'vtarde' : 'vmanana';
+  return 'otro';
 }
 function ocupacionPlazas(){
   const o = {individual:0, doble:0, sin:0};
@@ -10354,7 +10403,10 @@ function chipCorreo(x){
   if(INSCR_META && INSCR_META.correos==='desactivados') return ' <span class="chip chip-gray">✉ Correos automáticos desactivados</span>';
   return ' <span class="chip chip-amber">✉ Correo pendiente de envío</span>';
 }
+const corto = l => { l=l.replace('Habitación ',''); return l.charAt(0).toUpperCase()+l.slice(1); };
 function setFiltroInscripciones(f){ _insFiltro=f; renderInscripciones(); }
+let _insFiltroAloj = '', _insFiltroDia = '';
+function setFiltroInsExtra(cual, v){ if(cual==='aloj') _insFiltroAloj=v; else _insFiltroDia=v; renderInscripciones(); }
 function renderInscripciones(){
   const el = document.getElementById('inscripciones-content');
   if(!el) return;
@@ -10374,17 +10426,53 @@ function renderInscripciones(){
         const x=pl[t.k];
         const col = x.estado==='espera'?'var(--red)':x.estado==='ultimas'?'var(--amber)':'var(--green)';
         return '<div class="stat"><div class="stat-l">'+t.label+'</div><div class="stat-n">'+x.ocupadas+' / '+x.cap+'</div>'
-          +'<div style="font-size:12px;font-weight:700;color:'+col+'">'+ESTADO_PLAZA_TXT[x.estado]+(t.k==='doble'?' · '+Math.ceil(x.ocupadas/2)+' hab.':'')+'</div></div>';
+          +'<div style="font-size:12px;font-weight:700;color:'+col+'">'+ESTADO_PLAZA_TXT[x.estado]+' · '+Math.max(0,x.libres)+' libres</div>'
+          +(t.k==='doble'&&textoHabitaciones()?'<div style="font-size:11px;color:var(--ink3)">'+textoHabitaciones()+'</div>':'')+'</div>';
       }).join('')+'</div>'
       : '<p style="font-size:13px;color:var(--ink3)">Indica en Configuración cuántas plazas hay de cada tipo para ver el contador.</p>')
     +'</div>';
 
   const todas = Object.entries(INSCR||{}).filter(([id,x])=>x&&x.datos).map(([id,x])=>Object.assign({id}, x)).sort((a,b)=>String(a.datos.ts||'').localeCompare(String(b.datos.ts||'')));
   const cuenta = e => todas.filter(x=>(x.estado||'pendiente')===e).length;
+
+  // Desglose: quién viene por día de llegada y alojamiento (aceptados = personas en la app)
+  const celda = () => ({ok:0, pend:0, esp:0});
+  const tabla = {}; DIAS_LLEGADA.concat([['otro','Otra']]).forEach(([d])=>{ tabla[d]={}; PLAZAS_TIPOS.forEach(t=>tabla[d][t.k]=celda()); });
+  (DB.personas||[]).forEach(p=>{
+    if(p._esInvitado || p._esOrganizador || p.Activo==='FALSE' || p.EsInvitadoGratuito==='SI') return;
+    tabla[diaLlegada(p.Modalidad)][tipoPlaza(p.Modalidad)].ok++;
+  });
+  todas.forEach(x=>{
+    const e = x.estado||'pendiente'; if(e!=='pendiente' && e!=='espera') return;
+    tabla[diaLlegada(x.datos.modalidad)][tipoPlaza(x.datos.modalidad)][e==='pendiente'?'pend':'esp'] += personasDeInscripcion(x.datos).length;
+  });
+  const filasDia = DIAS_LLEGADA.concat([['otro','Otra']]).filter(([d])=>d!=='otro' || PLAZAS_TIPOS.some(t=>{const c=tabla.otro[t.k]; return c.ok||c.pend||c.esp;}));
+  const pintaCelda = c => '<strong>'+c.ok+'</strong>'
+    +(c.pend?' <span style="font-size:11px;color:var(--amber)">+'+c.pend+' pend.</span>':'')
+    +(c.esp?' <span style="font-size:11px;color:var(--ink3)">+'+c.esp+' espera</span>':'');
+  const suma = (filtro) => { const c=celda(); filasDia.forEach(([d])=>PLAZAS_TIPOS.forEach(t=>{ if(filtro(d,t.k)){ const x=tabla[d][t.k]; c.ok+=x.ok; c.pend+=x.pend; c.esp+=x.esp; } })); return c; };
+  const desglose = '<div class="card"><div class="card-hd"><span class="card-title">Quién viene</span></div>'
+    +'<p style="font-size:12px;color:var(--ink3);margin-bottom:8px">En negrita, las personas ya aceptadas (están en la app). Al lado, las que esperan decisión y las de lista de espera.</p>'
+    +'<div class="tbl-wrap"><table><thead><tr><th>Llegada</th>'+PLAZAS_TIPOS.map(t=>'<th>'+corto(t.label)+'</th>').join('')+'<th>Total</th></tr></thead><tbody>'
+    +filasDia.map(([d,l])=>'<tr><td>'+l+'</td>'+PLAZAS_TIPOS.map(t=>'<td>'+pintaCelda(tabla[d][t.k])+'</td>').join('')+'<td>'+pintaCelda(suma(dd=>dd===d))+'</td></tr>').join('')
+    +'<tr style="font-weight:700"><td>Total</td>'+PLAZAS_TIPOS.map(t=>'<td>'+pintaCelda(suma((d,k)=>k===t.k))+'</td>').join('')+'<td>'+pintaCelda(suma(()=>true))+'</td></tr>'
+    +'</tbody></table></div></div>';
   const pestanas = [['pendiente','Pendientes'],['espera','Lista de espera'],['aceptada','Aceptadas'],['rechazada','Rechazadas']];
   const tabs = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'
     +pestanas.map(([k,l])=>'<button class="btn btn-sm '+(_insFiltro===k?'btn-primary':'')+'" onclick="setFiltroInscripciones(\''+k+'\')">'+l+' ('+cuenta(k)+')</button>').join('')+'</div>';
-  const lista = todas.filter(x=>(x.estado||'pendiente')===_insFiltro);
+  const enPestana = todas.filter(x=>(x.estado||'pendiente')===_insFiltro);
+  const pasaAloj = (x,k) => !k || tipoPlaza(x.datos.modalidad)===k;
+  const pasaDia = (x,k) => !k || diaLlegada(x.datos.modalidad)===k;
+  const chip = (activo, txt, n, fn) => '<button class="btn btn-xs '+(activo?'btn-primary':'')+'" onclick="'+fn+'">'+txt+' ('+n+')</button>';
+  const filtros = enPestana.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:var(--ink3);min-width:70px">Alojamiento</span>'
+      +chip(!_insFiltroAloj,'Todos',enPestana.filter(x=>pasaDia(x,_insFiltroDia)).length,"setFiltroInsExtra('aloj','')")
+      +PLAZAS_TIPOS.map(t=>chip(_insFiltroAloj===t.k,corto(t.label),enPestana.filter(x=>pasaDia(x,_insFiltroDia)&&pasaAloj(x,t.k)).length,"setFiltroInsExtra('aloj','"+t.k+"')")).join('')+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:var(--ink3);min-width:70px">Llegada</span>'
+      +chip(!_insFiltroDia,'Todas',enPestana.filter(x=>pasaAloj(x,_insFiltroAloj)).length,"setFiltroInsExtra('dia','')")
+      +DIAS_LLEGADA.map(([k,l])=>chip(_insFiltroDia===k,l,enPestana.filter(x=>pasaAloj(x,_insFiltroAloj)&&pasaDia(x,k)).length,"setFiltroInsExtra('dia','"+k+"')")).join('')+'</div>'
+    +'</div>' : '';
+  const lista = enPestana.filter(x=>pasaAloj(x,_insFiltroAloj) && pasaDia(x,_insFiltroDia));
 
   const tarjetas = lista.length ? lista.map(x=>{
     const d = x.datos, ps = personasDeInscripcion(d), tipo = tipoPlaza(d.modalidad);
@@ -10415,9 +10503,9 @@ function renderInscripciones(){
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+botones
       +'<button class="btn btn-sm" onclick="editarNotaInscripcion(\''+esc(x.id)+'\')">📝 '+(x.notaInterna?'Editar nota':'Añadir nota')+'</button></div>'
       +'</div>';
-  }).join('') : '<div class="card"><p style="text-align:center;color:var(--ink3);padding:12px">No hay inscripciones en este apartado.</p></div>';
+  }).join('') : '<div class="card"><p style="text-align:center;color:var(--ink3);padding:12px">No hay inscripciones en este apartado'+((_insFiltroAloj||_insFiltroDia)&&enPestana.length?' con estos filtros':'')+'.</p></div>';
 
-  el.innerHTML = htmlEstadoFormulario() + resumen + tabs + tarjetas;
+  el.innerHTML = htmlEstadoFormulario() + resumen + desglose + tabs + filtros + tarjetas;
 }
 
 // ─── Decisiones ────────────────────────────────────────
