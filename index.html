@@ -2063,7 +2063,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 126; // se incrementa con cada versión desplegada
+const APP_VERSION = 127; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -10411,7 +10411,9 @@ function renderInscripciones(){
       +'<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Nick</th><th>Talla</th><th>Alergias</th><th>Ediciones anteriores</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
       +(d.notas?'<div style="font-size:13px;margin-top:8px;padding:8px 10px;background:var(--accent-l);border-radius:8px">💬 '+esc(d.notas)+'</div>':'')
       +aviso
-      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+botones+'</div>'
+      +(x.notaInterna?'<div style="font-size:13px;margin-top:8px;padding:8px 10px;border:1px dashed var(--ink3);border-radius:8px">📝 <b>Nota interna:</b> '+esc(x.notaInterna)+'</div>':'')
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+botones
+      +'<button class="btn btn-sm" onclick="editarNotaInscripcion(\''+esc(x.id)+'\')">📝 '+(x.notaInterna?'Editar nota':'Añadir nota')+'</button></div>'
       +'</div>';
   }).join('') : '<div class="card"><p style="text-align:center;color:var(--ink3);padding:12px">No hay inscripciones en este apartado.</p></div>';
 
@@ -10426,10 +10428,33 @@ async function guardarEstadoInscripcion(id, estado, extra){
   if(!r.ok) throw new Error('HTTP '+r.status);
   INSCR[id] = Object.assign(INSCR[id]||{}, cuerpo);
 }
+// Nota interna: solo la ven los admins; se guarda aparte para que no se pierda al cambiar de estado
+function pedirNotaInscripcion(x, pregunta){
+  const n = prompt(pregunta, x.notaInterna||'');
+  return n===null ? null : String(n).replace(/[<>]/g,'').trim().slice(0,500);
+}
+async function editarNotaInscripcion(id){
+  const x = INSCR[id]; if(!x) return;
+  const nota = pedirNotaInscripcion(x, 'Nota interna (solo la veis los admins):');
+  if(nota===null) return;
+  try{
+    const r = await fetch(insUrl('/'+encodeURIComponent(id)+'/notaInterna'), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(nota||null)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    if(nota) x.notaInterna = nota; else delete x.notaInterna;
+    toast(nota?'Nota guardada':'Nota borrada','ok'); renderInscripciones();
+  }catch(e){ toast('No se pudo guardar la nota: '+e.message,'err'); }
+}
 async function cambiarEstadoInscripcion(id, estado){
   const x = INSCR[id]; if(!x) return;
+  let extra;
+  if(estado==='rechazada'){
+    const nota = pedirNotaInscripcion(x, 'Nota interna: ¿por qué se rechaza? (solo la veis los admins; la persona no recibe nada)');
+    if(nota===null) return;
+    if(!nota){ toast('Escribe una nota corta para poder rechazar','err'); return; }
+    extra = { notaInterna: nota };
+  }
   try{
-    await guardarEstadoInscripcion(id, estado);
+    await guardarEstadoInscripcion(id, estado, extra);
     log('INSCRIPCION_'+estado.toUpperCase(), (x.datos&&x.datos.email)||id);
     toast(estado==='espera'?'Pasada a lista de espera':estado==='rechazada'?'Inscripción rechazada':'Vuelve a pendiente','ok');
     actualizarBadgeInscripciones(); renderInscripciones();
