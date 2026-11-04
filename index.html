@@ -1058,6 +1058,8 @@ h1,h2,h3{letter-spacing:0;text-transform:none}
           <div class="card-hd"><span class="card-title">Formulario de inscripción</span></div>
           <p style="font-size:13px;color:var(--ink3);margin-bottom:12px">Pega el enlace de <strong>edición</strong> del Google Forms de esta edición (el que termina en <code>/edit</code>). Las respuestas nuevas llegan solas al panel Inscripciones cada pocos minutos. Al crear una edición nueva este campo se vacía.</p>
           <div class="fg"><label>Enlace del formulario</label><input type="url" id="cfg-form" placeholder="https://docs.google.com/forms/d/…/edit" oninput="saveConfig()"></div>
+          <div class="fg"><label>Apertura de las inscripciones (hora de España)</label><input type="datetime-local" id="cfg-apertura" onchange="saveConfig()"></div>
+          <p style="font-size:12px;color:var(--ink3)">A esa hora el formulario se abre solo y en la web el botón de la cuenta atrás pasa a "Inscríbete". Hasta entonces el enlace del formulario no se publica en ningún sitio.</p>
         </div>
 
         <!-- Correos automáticos de inscripción -->
@@ -2084,7 +2086,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 133; // se incrementa con cada versión desplegada
+const APP_VERSION = 134; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -4670,6 +4672,9 @@ function renderConfig(){
   document.getElementById('cfg-pl-sin').value=_pl.sin||0;
   pintarTotalPlazas();
   document.getElementById('cfg-form').value=DB.config.formularioInscripcion||'';
+  (function(){ const v=DB.config.aperturaInscripciones; const el=document.getElementById('cfg-apertura'); if(!el) return;
+    if(!v){ el.value=''; return; } const f=new Date(v); const z=n=>String(n).padStart(2,'0');
+    el.value = isNaN(f) ? '' : f.getFullYear()+'-'+z(f.getMonth()+1)+'-'+z(f.getDate())+'T'+z(f.getHours())+':'+z(f.getMinutes()); })();
   cargarPlantillas();
   document.getElementById('cfg-pass-inscritos').value=DB.config.inscritoPass||CFG.INSCRITO_PASS||'';
   // Toggle acceso
@@ -4705,6 +4710,7 @@ async function saveConfig(){
   };
   pintarTotalPlazas();
   DB.config.formularioInscripcion=document.getElementById('cfg-form').value.trim();
+  { const v=(document.getElementById('cfg-apertura')||{}).value; const f=v?new Date(v):null; DB.config.aperturaInscripciones = f&&!isNaN(f) ? f.toISOString() : ''; }
   DB.config.inscritoPass=document.getElementById('cfg-pass-inscritos').value.trim()||CFG.INSCRITO_PASS;
   document.getElementById('sb-name').textContent=DB.config.nombre||CFG.EVENTO;
   await saveRemote();
@@ -10547,6 +10553,7 @@ async function publicarPlazas(forzar){
   const pl = calcularPlazas();
   const pub = {};
   CONTADORES.forEach(t=>{ if(pl[t.k].estado) pub[t.k]=pl[t.k].estado; });
+  if(DB.config && DB.config.aperturaInscripciones) pub.apertura = DB.config.aperturaInscripciones;
   const firma = JSON.stringify(pub);
   if(!forzar && firma===_ultimoPublico) return;
   try{
