@@ -2084,7 +2084,7 @@ async function loadRemote(){
   return true;
 }
 // ─── ANTI-DUPLICADOS GLOBAL ────────────────────────────
-const APP_VERSION = 132; // se incrementa con cada versión desplegada
+const APP_VERSION = 133; // se incrementa con cada versión desplegada
 let _saving=false, _saveQueue=false;
 let _permitirVaciado=false; // solo lo activa nuevaEdicion(): permite guardar la DB vacía sin que salte el anti-rollback
 const SNAPSHOT_INTERVAL_HOURS = 3; // un snapshot automático cada 3h máximo
@@ -10810,7 +10810,8 @@ function renderInscripciones(){
       +aviso
       +(x.notaInterna?'<div style="font-size:13px;margin-top:8px;padding:8px 10px;border:1px dashed var(--ink3);border-radius:8px">📝 <b>Nota interna:</b> '+esc(x.notaInterna)+'</div>':'')
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+botones
-      +'<button class="btn btn-sm" onclick="editarNotaInscripcion(\''+esc(x.id)+'\')">📝 '+(x.notaInterna?'Editar nota':'Añadir nota')+'</button></div>'
+      +'<button class="btn btn-sm" onclick="editarNotaInscripcion(\''+esc(x.id)+'\')">📝 '+(x.notaInterna?'Editar nota':'Añadir nota')+'</button>'
+      +'<button class="btn btn-sm" style="margin-left:auto" title="Borrar de la app (pruebas o duplicados)" onclick="eliminarInscripcion(\''+esc(x.id)+'\')">🗑 Eliminar</button></div>'
       +'</div>';
   }).join('') : '<div class="card"><p style="text-align:center;color:var(--ink3);padding:12px">No hay inscripciones en este apartado'+((_insFiltroAloj||_insFiltroDia)&&enPestana.length?' con estos filtros':'')+'.</p></div>';
 
@@ -10831,6 +10832,21 @@ async function guardarEstadoInscripcion(id, estado, extra){
 function pedirNotaInscripcion(x, pregunta){
   const n = prompt(pregunta, x.notaInterna||'');
   return n===null ? null : String(n).replace(/[<>]/g,'').trim().slice(0,500);
+}
+// Borra la inscripción de la app (pruebas o duplicados). No toca el formulario ni Personas.
+async function eliminarInscripcion(id){
+  const x = INSCR[id]; if(!x) return;
+  const d = x.datos||{};
+  let msg = '¿Eliminar de la app la inscripción de '+(d.nombre||'(sin nombre)')+(d.email?' ('+d.email+')':'')+'?\n\nSolo para pruebas o duplicados: no se puede deshacer. Para alguien a quien no admitís, usad Rechazar.';
+  if(x.estado==='aceptada') msg += '\n\n⚠ Está aceptada: las personas que se crearon en Personas NO se borran; quítalas allí si hace falta.';
+  if(!confirm(msg)) return;
+  try{
+    const r = await fetch(insUrl('/'+encodeURIComponent(id)), {method:'DELETE'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    delete INSCR[id];
+    log('INSCRIPCION_ELIMINADA', d.email||id);
+    toast('Inscripción eliminada','ok'); actualizarBadgeInscripciones(); renderInscripciones();
+  }catch(e){ toast('No se pudo eliminar: '+e.message,'err'); }
 }
 async function editarNotaInscripcion(id){
   const x = INSCR[id]; if(!x) return;
